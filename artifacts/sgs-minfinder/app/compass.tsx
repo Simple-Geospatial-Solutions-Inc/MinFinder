@@ -1,7 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import * as Location from "expo-location";
-import * as WebBrowser from "expo-web-browser";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -32,6 +31,7 @@ export default function CompassScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [coords, setCoords] = useState<Location.LocationObjectCoords | null>(null);
   const [heading, setHeading] = useState<number>(0);
+  const [headingSource, setHeadingSource] = useState<"true" | "magnetic" | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
 
   const subPos = useRef<Location.LocationSubscription | null>(null);
@@ -88,8 +88,13 @@ export default function CompassScreen() {
       try {
         subHeading.current = await Location.watchHeadingAsync((h) => {
           if (cancelled) return;
-          const raw = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+          const useTrue = h.trueHeading >= 0;
+          const raw = useTrue ? h.trueHeading : h.magHeading;
           if (raw == null || Number.isNaN(raw)) return;
+          setHeadingSource((prev) => {
+            const next = useTrue ? "true" : "magnetic";
+            return prev === next ? prev : next;
+          });
           // Circular EMA: smooth sin/cos components so we never jump across 0°/360°.
           const rad = (raw * Math.PI) / 180;
           const s = Math.sin(rad);
@@ -147,13 +152,6 @@ export default function CompassScreen() {
 
   const accuracy = coords?.accuracy ?? null;
 
-  const officialUrl =
-    target?.MINFILNO
-      ? `https://minfile.gov.bc.ca/Summary.aspx?minfilno=${encodeURIComponent(
-          target.MINFILNO.trim(),
-        )}`
-      : null;
-
   if (loadError) {
     return (
       <View
@@ -203,18 +201,9 @@ export default function CompassScreen() {
         <CompassDial size={300} heading={heading} bearing={bearing} />
       </View>
 
-      <View style={styles.headerInfo}>
-        <Text style={styles.targetMinfilno}>
-          {target.MINFILNO?.trim()}
-        </Text>
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={8}
-          style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-        >
-          <Text style={styles.returnLink}>Return to Map</Text>
-        </Pressable>
-      </View>
+      <Text style={styles.targetMinfilno}>
+        {target.MINFILNO?.trim()}
+      </Text>
 
       <Text style={styles.targetName} numberOfLines={1}>
         {target.NAME1 || "Unnamed"}
@@ -229,7 +218,13 @@ export default function CompassScreen() {
       <View style={styles.detailsBlock}>
         <DetailRow
           label="Compass Direction"
-          value={`${Math.round(heading)}°`}
+          value={`${Math.round(heading)}° ${
+            headingSource === "true"
+              ? "True"
+              : headingSource === "magnetic"
+                ? "Magnetic"
+                : ""
+          }`.trim()}
         />
         <DetailRow
           label="Latitude"
@@ -255,18 +250,14 @@ export default function CompassScreen() {
         />
       </View>
 
-      {officialUrl && (
-        <Pressable
-          onPress={() => WebBrowser.openBrowserAsync(officialUrl)}
-          style={({ pressed }) => [
-            styles.linkBtn,
-            { opacity: pressed ? 0.7 : 1 },
-          ]}
-        >
-          <Feather name="external-link" size={14} color="#4DA3D9" />
-          <Text style={styles.linkBtnText}>Open official record</Text>
-        </Pressable>
-      )}
+      <View style={styles.hintBox}>
+        <Feather name="info" size={14} color="rgba(244,241,234,0.65)" />
+        <Text style={styles.hintText}>
+          If the needle seems off, hold the phone flat and trace a figure-8 in
+          the air a few times to recalibrate the compass. Keep away from metal
+          objects and vehicles for best accuracy.
+        </Text>
+      </View>
     </View>
   );
 }
@@ -318,22 +309,13 @@ const styles = StyleSheet.create({
   },
   errorBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
   dialWrap: { marginTop: 8 },
-  headerInfo: {
-    marginTop: 16,
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 10,
-  },
   targetMinfilno: {
+    marginTop: 16,
     color: "#F4F1EA",
     fontFamily: "Inter_700Bold",
     fontSize: 22,
     letterSpacing: 0.6,
-  },
-  returnLink: {
-    color: "#4DA3D9",
-    fontFamily: "Inter_500Medium",
-    fontSize: 14,
+    textAlign: "center",
   },
   targetName: {
     color: "#FCBA19",
@@ -383,15 +365,18 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     fontSize: 14,
   },
-  linkBtn: {
-    marginTop: 18,
+  hintBox: {
+    marginTop: 20,
     flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
+    alignItems: "flex-start",
+    gap: 8,
+    paddingHorizontal: 4,
   },
-  linkBtnText: {
-    color: "#4DA3D9",
-    fontFamily: "Inter_500Medium",
-    fontSize: 13,
+  hintText: {
+    flex: 1,
+    color: "rgba(244,241,234,0.65)",
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    lineHeight: 17,
   },
 });
