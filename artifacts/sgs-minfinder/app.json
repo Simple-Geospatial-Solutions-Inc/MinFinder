@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "sgs-minfinder",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/images/icon.png",
       "resizeMode": "contain",
