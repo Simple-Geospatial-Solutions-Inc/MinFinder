@@ -294,21 +294,14 @@ export default function MapScreen() {
               // unmounts/remounts when zoom crosses the threshold, capturing
               // a fresh static bitmap. With tracksViewChanges=false the pin
               // then stays rock-steady while panning/zooming.
-              key={`p-${c.id}-${showLabels ? "n" : "0"}-${
-                selected?.id === c.id ? "s" : "u"
-              }`}
+              key={`p-${c.id}-${selected?.id === c.id ? "s" : "u"}`}
               coordinate={{ latitude: c.lat, longitude: c.lon }}
               onPress={() => setSelected(c.occurrence)}
-              tracksViewChanges={false}
-              // Anchor at the SVG dot's centre. SVG is 40×40 (dot at y=20)
-              // when narrow, 200×68 (dot at y=18) when the label is shown.
-              anchor={{ x: 0.5, y: showLabels ? 18 / 68 : 20 / 40 }}
+              anchor={{ x: 0.5, y: 0.5 }}
             >
               <MarkerPin
                 code={c.occurrence.STATUS_C}
                 selected={selected?.id === c.id}
-                name={c.occurrence.NAME1}
-                showName={showLabels}
               />
             </TrackedMarker>
           ) : (
