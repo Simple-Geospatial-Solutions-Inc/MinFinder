@@ -51,7 +51,9 @@ export default function MapScreen() {
   const [statuses, setStatuses] = useState<string[]>([...STATUS_ORDER]);
   const [search, setSearch] = useState("");
   const [searchActive, setSearchActive] = useState(false);
-  const [heatmap, setHeatmap] = useState(true);
+  // 'auto' switches heatmap -> pins as you zoom in. The button lets the user
+  // force one mode regardless of zoom.
+  const [heatMode, setHeatMode] = useState<"auto" | "heat" | "pins">("auto");
 
   // All occurrences with coords, loaded once.
   const [allRows, setAllRows] = useState<Occurrence[]>([]);
@@ -107,6 +109,13 @@ export default function MapScreen() {
     if (statuses.length === STATUS_ORDER.length) return allRows;
     return allRows.filter((r) => statusSet.has(r.STATUS_C ?? ""));
   }, [allRows, statuses.length, statusSet]);
+
+  // Resolve the effective rendering mode. Auto = heatmap while zoomed out,
+  // pins once the user is at a regional/local zoom.
+  const HEAT_TO_PIN_DELTA = 0.5;
+  const heatmap =
+    heatMode === "heat" ||
+    (heatMode === "auto" && region.latitudeDelta >= HEAT_TO_PIN_DELTA);
 
   // Cluster the entire (status-filtered) dataset for the current zoom.
   // No bbox cull — clusters that fall offscreen are cheap; total ≤ ~900 cells.
@@ -335,10 +344,20 @@ export default function MapScreen() {
           </View>
           <View style={styles.topActions}>
             <TopIcon
-              icon={heatmap ? "map-pin" : "activity"}
-              label={heatmap ? "Show pins" : "Show heatmap"}
-              onPress={() => setHeatmap((h) => !h)}
-              accent={heatmap}
+              icon={
+                heatMode === "heat"
+                  ? "activity"
+                  : heatMode === "pins"
+                    ? "map-pin"
+                    : "layers"
+              }
+              label={`View: ${heatMode}`}
+              onPress={() =>
+                setHeatMode((m) =>
+                  m === "auto" ? "heat" : m === "heat" ? "pins" : "auto",
+                )
+              }
+              accent={heatMode !== "auto"}
             />
             <TopIcon
               icon="download-cloud"
