@@ -34,24 +34,11 @@ function cellSizeForDelta(latitudeDelta: number): number {
 export function clusterOccurrences(
   rows: Occurrence[],
   latitudeDelta: number,
-  // When false (deeply zoomed), skip clustering — every point renders solo.
-  enable: boolean = true,
 ): ClusterItem[] {
-  if (!enable || latitudeDelta < 0.05) {
-    const out: ClusterItem[] = [];
-    for (const r of rows) {
-      if (r.LATITUDE == null || r.LONGITUDE == null) continue;
-      out.push({
-        type: "point",
-        id: r.id,
-        lat: r.LATITUDE,
-        lon: r.LONGITUDE,
-        occurrence: r,
-      });
-    }
-    return out;
-  }
-
+  // Always cluster — at deep zoom the cell floor (~80m) means most cells
+  // contain a single point and render as a solo pin. This keeps the total
+  // marker count bounded at every zoom level (the 16k-pin worst case would
+  // otherwise lock up Android when zooming in over a dense area).
   const cell = cellSizeForDelta(latitudeDelta);
   // bucket key = `${gx}|${gy}` with running aggregates
   const buckets = new Map<
