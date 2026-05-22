@@ -63,10 +63,12 @@ export default function RootLayout() {
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
-    // Explicitly bundle the Feather icon font — Expo Go on Android (SDK 53/54)
-    // often fails to auto-load @expo/vector-icons fonts, leaving icons as
-    // empty/tofu boxes. Including it here forces the splash screen to wait
-    // until the icon font is actually registered.
+    // Pre-register the Feather icon font BEFORE any <Feather /> mounts.
+    // Expo Go on Android (SDK 53/54) does not reliably re-render the Icon
+    // component after its internal lazy Font.loadAsync resolves, so the
+    // glyphs render as missing-character tofu boxes. Loading the font here
+    // — and blocking the UI on it — guarantees the font family is registered
+    // by the time the first icon renders.
     ...Feather.font,
   });
 
