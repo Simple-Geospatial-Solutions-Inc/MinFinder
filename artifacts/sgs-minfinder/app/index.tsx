@@ -300,7 +300,9 @@ export default function MapScreen() {
               coordinate={{ latitude: c.lat, longitude: c.lon }}
               onPress={() => setSelected(c.occurrence)}
               tracksViewChanges={false}
-              anchor={{ x: 0.5, y: 0.5 }}
+              // Anchor at the dot's centre within the captured bitmap.
+              // Bitmap is wrap{40h or 68h} with dot at y = padding(4)+r(14) = 18.
+              anchor={{ x: 0.5, y: showLabels ? 18 / 68 : 18 / 40 }}
             >
               <MarkerPin
                 code={c.occurrence.STATUS_C}

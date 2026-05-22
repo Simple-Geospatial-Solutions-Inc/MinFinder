@@ -44,15 +44,19 @@ export function MarkerPin({
 const styles = StyleSheet.create({
   wrap: {
     alignItems: "center",
-    // A little padding so the drop-shadow isn't clipped by Android's bitmap
-    // capture (which sizes the snapshot to the measured bounds).
-    padding: 4,
+    // Fixed bitmap dimensions so Android captures the full custom view
+    // (dot + drop shadow) before the snapshot is taken. Without explicit
+    // size the snapshot can be clipped or mis-anchored.
+    width: 40,
+    height: 40,
+    paddingTop: 4,
   },
   wrapWide: {
-    // When a name label is shown, reserve enough width up-front so Android
-    // captures the full label without truncation. Without this, the bitmap
-    // measures only the 28px dot and crops the label that appears later.
+    // When a name label is shown, reserve enough width AND height up-front
+    // so the bitmap captures the full label. Keep top padding the same so
+    // the dot stays at a known offset (used by the anchor below).
     width: 200,
+    height: 68,
   },
   dot: {
     width: 28,
