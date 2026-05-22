@@ -13,7 +13,13 @@ import {
   TextInput,
   View,
 } from "react-native";
-import MapView, { Marker, PROVIDER_DEFAULT, Region, UrlTile } from "react-native-maps";
+import MapView, {
+  Heatmap,
+  Marker,
+  PROVIDER_DEFAULT,
+  Region,
+  UrlTile,
+} from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ClusterPin } from "@/components/ClusterPin";
@@ -45,6 +51,7 @@ export default function MapScreen() {
   const [statuses, setStatuses] = useState<string[]>([...STATUS_ORDER]);
   const [search, setSearch] = useState("");
   const [searchActive, setSearchActive] = useState(false);
+  const [heatmap, setHeatmap] = useState(true);
 
   // All occurrences with coords, loaded once.
   const [allRows, setAllRows] = useState<Occurrence[]>([]);
@@ -104,9 +111,21 @@ export default function MapScreen() {
   // Cluster the entire (status-filtered) dataset for the current zoom.
   // No bbox cull — clusters that fall offscreen are cheap; total ≤ ~900 cells.
   const clusters = useMemo<ClusterItem[]>(() => {
-    if (allFilteredRows.length === 0) return [];
+    if (heatmap || allFilteredRows.length === 0) return [];
     return clusterOccurrences(allFilteredRows, region.latitudeDelta);
-  }, [allFilteredRows, region.latitudeDelta]);
+  }, [allFilteredRows, region.latitudeDelta, heatmap]);
+
+  // Heatmap point list — native Google Maps heatmap handles 16k+ easily.
+  const heatPoints = useMemo(() => {
+    if (!heatmap) return [];
+    const pts: { latitude: number; longitude: number; weight?: number }[] = [];
+    for (const r of allFilteredRows) {
+      if (r.LATITUDE != null && r.LONGITUDE != null) {
+        pts.push({ latitude: r.LATITUDE, longitude: r.LONGITUDE });
+      }
+    }
+    return pts;
+  }, [allFilteredRows, heatmap]);
 
   // Show name labels only when zoomed in past a regional level. Computed
   // once per region change so every marker key uses the same flag.
@@ -245,7 +264,20 @@ export default function MapScreen() {
       >
         <UrlTile {...tileCacheConfig} maximumZ={19} flipY={false} zIndex={-1} />
 
-        {visibleClusters.map((c) =>
+        {heatmap && heatPoints.length > 0 && (
+          <Heatmap
+            points={heatPoints}
+            radius={40}
+            opacity={0.85}
+            gradient={{
+              colors: ["#16365C", "#1E88E5", "#43A047", "#FDD835", "#FB8C00", "#E53935"],
+              startPoints: [0.05, 0.2, 0.4, 0.6, 0.8, 1.0],
+              colorMapSize: 256,
+            }}
+          />
+        )}
+
+        {!heatmap && visibleClusters.map((c) =>
           c.type === "point" ? (
             <Marker
               // Include the label-visibility flag in the key so the marker
@@ -302,6 +334,12 @@ export default function MapScreen() {
             </Text>
           </View>
           <View style={styles.topActions}>
+            <TopIcon
+              icon={heatmap ? "map-pin" : "activity"}
+              label={heatmap ? "Show pins" : "Show heatmap"}
+              onPress={() => setHeatmap((h) => !h)}
+              accent={heatmap}
+            />
             <TopIcon
               icon="download-cloud"
               label="Offline"
@@ -470,19 +508,25 @@ function TopIcon({
   icon,
   label,
   onPress,
+  accent,
 }: {
   icon: React.ComponentProps<typeof Feather>["name"];
   label: string;
   onPress: () => void;
+  accent?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
       hitSlop={8}
       accessibilityLabel={label}
-      style={({ pressed }) => [styles.topIcon, { opacity: pressed ? 0.6 : 1 }]}
+      style={({ pressed }) => [
+        styles.topIcon,
+        accent && { backgroundColor: "rgba(252,186,25,0.22)" },
+        { opacity: pressed ? 0.6 : 1 },
+      ]}
     >
-      <Feather name={icon} size={20} color="#F4F1EA" />
+      <Feather name={icon} size={20} color={accent ? "#FCBA19" : "#F4F1EA"} />
     </Pressable>
   );
 }
