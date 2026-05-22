@@ -1,7 +1,7 @@
 export const COMPASS_DISC_XML = `<svg viewBox="-130 -130 260 260" xmlns="http://www.w3.org/2000/svg" version="1.0" overflow="visible">
     <g transform="matrix(1 0 0 -1 0 0)" stroke-width="1.0">
-        <circle fill="#0B1726" cx="0" cy="0" r="130"/>
-        <g color="#FCBA19" stroke="#FCBA19" fill="none" stroke-width="1.0">
+        <circle fill="#333333" cx="0" cy="0" r="130"/>
+        <g color="#42B8E3" stroke="#42B8E3" fill="none" stroke-width="1.0">
             <circle cx="0" cy="0" r="120"/>
             <line x1="-70.71067811865476" y1="-70.71067811865476" x2="-61.87184335382285" y2="-61.87184335382283"/>
             <line x1="8.715574274765796" y1="-99.61946980917457" x2="7.844016847289216" y2="-89.6575228282571"/>
@@ -80,24 +80,24 @@ export const COMPASS_DISC_XML = `<svg viewBox="-130 -130 260 260" xmlns="http://
             <line x1="-61.87184335382283" y1="61.87184335382286" x2="-70.71067811865474" y2="70.71067811865477"/>
             <line x1="0.0" y1="72.5" x2="0.0" y2="-72.5"/>
         </g>
-        <text font-size="18" font-weight="bold" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 150)" x="0" y="75" fill="#FCBA19" font-family="Arial">N</text>
-        <text font-size="14" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 106.06601717798222) rotate(-45 -53.03300858899104 53.03300858899111)" x="-53.03300858899104" y="53.03300858899111" fill="#F4F1EA" font-family="Arial">315</text>
-        <text font-size="16" font-weight="bold" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 0) rotate(-90 -75 0)" x="-75" y="0" fill="#F4F1EA" font-family="Arial">W</text>
-        <text font-size="14" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 -106.06601717798206) rotate(-135 -53.03300858899114 -53.03300858899103)" x="-53.03300858899114" y="-53.03300858899103" fill="#F4F1EA" font-family="Arial">225</text>
-        <text font-size="16" font-weight="bold" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 -150) rotate(-180 0 -75)" x="0" y="-75" fill="#F4F1EA" font-family="Arial">S</text>
-        <text font-size="14" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 -106.0660171779823) rotate(-225 53.033008588991 -53.03300858899115)" x="53.033008588991" y="-53.03300858899115" fill="#F4F1EA" font-family="Arial">135</text>
-        <text font-size="16" font-weight="bold" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 0) rotate(-270 75 0)" x="75" y="0" fill="#F4F1EA" font-family="Arial">E</text>
-        <text font-size="14" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 106.06601717798198) rotate(-315 53.03300858899113 53.03300858899099 )" x="53.03300858899113" y="53.03300858899099" fill="#F4F1EA" font-family="Arial">45</text>
+        <text font-size="15" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 150)" x="0" y="75" fill="#FFFFFF" font-family="Arial">0</text>
+        <text font-size="15" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 106.06601717798222) rotate(-45 -53.03300858899104 53.03300858899111)" x="-53.03300858899104" y="53.03300858899111" fill="#FFFFFF" font-family="Arial">315</text>
+        <text font-size="15" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 0) rotate(-90 -75 0)" x="-75" y="0" fill="#FFFFFF" font-family="Arial">270</text>
+        <text font-size="15" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 -106.06601717798206) rotate(-135 -53.03300858899114 -53.03300858899103)" x="-53.03300858899114" y="-53.03300858899103" fill="#FFFFFF" font-family="Arial">225</text>
+        <text font-size="15" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 -150) rotate(-180 0 -75)" x="0" y="-75" fill="#FFFFFF" font-family="Arial">180</text>
+        <text font-size="15" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 -106.0660171779823) rotate(-225 53.033008588991 -53.03300858899115)" x="53.033008588991" y="-53.03300858899115" fill="#FFFFFF" font-family="Arial">135</text>
+        <text font-size="15" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 0) rotate(-270 75 0)" x="75" y="0" fill="#FFFFFF" font-family="Arial">90</text>
+        <text font-size="15" text-anchor="middle" writing-mode="lr-tb" transform="matrix(1 0 0 -1 0 106.06601717798198) rotate(-315 53.03300858899113 53.03300858899099 )" x="53.03300858899113" y="53.03300858899099" fill="#FFFFFF" font-family="Arial">45</text>
     </g>
 </svg>`;
 
 export const COMPASS_ARROW_XML = `<svg viewBox="-130 -130 260 260" xmlns="http://www.w3.org/2000/svg" version="1.0" overflow="visible">
     <g transform="matrix(1 0 0 -1 0 0)" stroke-width="1.0">
-        <circle fill="#1A2436" cx="0" cy="0" r="30" />
+        <circle fill="#444444" cx="0" cy="0" r="30" />
         <g color="#ffffff" stroke="currentColor" fill="none" stroke-width="1.0">
-            <path fill="#FCBA19" d="M -18.1196112679053 -43.74461126790529 L 0 51.25 L 0 -30 L -18.1196112679053 -43.74461126790529"/>
-            <path fill="#E0A015" d="M 18.11961126790526 -43.74461126790529 L 0 51.25 L 0 -30 L 18.11961126790526 -43.74461126790529"/>
-            <circle fill="#1A2436" cx="0" cy="0" r="2.5"/>
+            <path fill="#42B8E3" d="M -18.1196112679053 -43.74461126790529 L 0 51.25 L 0 -30 L -18.1196112679053 -43.74461126790529"/>
+            <path fill="#42B8E3" d="M 18.11961126790526 -43.74461126790529 L 0 51.25 L 0 -30 L 18.11961126790526 -43.74461126790529"/>
+            <circle fill="#444444" cx="0" cy="0" r="2.5"/>
         </g>
     </g>
 </svg>`;
