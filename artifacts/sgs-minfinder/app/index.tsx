@@ -26,6 +26,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ClusterPin } from "@/components/ClusterPin";
 import { DetailsSheet } from "@/components/DetailsSheet";
 import { MarkerPin } from "@/components/MarkerPin";
+import { QuickInfoCard } from "@/components/QuickInfoCard";
+import { UserLocationDot } from "@/components/UserLocationDot";
 import { STATUS_MAP, STATUS_ORDER, getStatusInfo } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
 import { clusterOccurrences, type ClusterItem } from "@/lib/cluster";
@@ -55,12 +57,18 @@ export default function MapScreen() {
 
   // All occurrences with coords, loaded once.
   const [allRows, setAllRows] = useState<Occurrence[]>([]);
+  // Two-tier popup: tapping a marker shows `quickInfo` (small preview card).
+  // The "+" expand button promotes that occurrence into `selected`, which
+  // opens the full DetailsSheet. The expand action is intended to be
+  // paywalled in a future release.
+  const [quickInfo, setQuickInfo] = useState<Occurrence | null>(null);
   const [selected, setSelected] = useState<Occurrence | null>(null);
   const [searchResults, setSearchResults] = useState<Occurrence[] | null>(null);
 
   // Load full dataset once on mount + request location
   useEffect(() => {
     let cancelled = false;
+    let watcher: Location.LocationSubscription | undefined;
     (async () => {
       try {
         const rows = await queryOccurrences({ limit: 100_000 });
@@ -95,9 +103,30 @@ export default function MapScreen() {
       } catch (err) {
         console.warn("location error", err);
       }
+
+      // Keep the blue dot moving as the user walks around.
+      try {
+        const sub = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            distanceInterval: 5,
+            timeInterval: 2000,
+          },
+          (loc) => {
+            if (!cancelled) setUserLoc(loc);
+          },
+        );
+        // If the component unmounted while watchPositionAsync was resolving,
+        // remove the subscription immediately so it doesn't leak.
+        if (cancelled) sub.remove();
+        else watcher = sub;
+      } catch (err) {
+        console.warn("watchPosition error", err);
+      }
     })();
     return () => {
       cancelled = true;
+      watcher?.remove();
     };
   }, []);
 
@@ -227,6 +256,7 @@ export default function MapScreen() {
     setSearch("");
     setSearchActive(false);
     setSearchResults(null);
+    setQuickInfo(null); // search picks go straight to the full sheet
     if (row.LATITUDE == null || row.LONGITUDE == null) return;
     const next: Region = {
       latitude: row.LATITUDE,
@@ -261,7 +291,11 @@ export default function MapScreen() {
         style={StyleSheet.absoluteFill}
         initialRegion={BC_REGION}
         onRegionChangeComplete={setRegion}
-        showsUserLocation={!permissionDenied}
+        // We render our own <UserLocationDot/> below because the native
+        // blue dot does not paint reliably above a custom UrlTile overlay
+        // on Android (mapType="none"). Disabling the native dot also
+        // prevents a double-render on platforms where it does work.
+        showsUserLocation={false}
         showsMyLocationButton={false}
         showsCompass={false}
         toolbarEnabled={false}
@@ -282,6 +316,14 @@ export default function MapScreen() {
           />
         )}
 
+        {userLoc && (
+          <UserLocationDot
+            latitude={userLoc.coords.latitude}
+            longitude={userLoc.coords.longitude}
+            heading={userLoc.coords.heading}
+          />
+        )}
+
         {!heatmap && visibleClusters.map((c) =>
           c.type === "point" ? (
             <TrackedMarker
@@ -289,14 +331,14 @@ export default function MapScreen() {
               // unmounts/remounts when zoom crosses the threshold, capturing
               // a fresh static bitmap. With tracksViewChanges=false the pin
               // then stays rock-steady while panning/zooming.
-              key={`p-${c.id}-${selected?.id === c.id ? "s" : "u"}`}
+              key={`p-${c.id}-${quickInfo?.id === c.id || selected?.id === c.id ? "s" : "u"}`}
               coordinate={{ latitude: c.lat, longitude: c.lon }}
-              onPress={() => setSelected(c.occurrence)}
+              onPress={() => setQuickInfo(c.occurrence)}
               anchor={{ x: 0.5, y: 0.5 }}
             >
               <MarkerPin
                 code={c.occurrence.STATUS_C}
-                selected={selected?.id === c.id}
+                selected={quickInfo?.id === c.id || selected?.id === c.id}
               />
             </TrackedMarker>
           ) : (
@@ -492,6 +534,16 @@ export default function MapScreen() {
           </Text>
         </View>
       )}
+
+      <QuickInfoCard
+        occurrence={quickInfo}
+        onClose={() => setQuickInfo(null)}
+        onExpand={() => {
+          if (quickInfo) setSelected(quickInfo);
+          setQuickInfo(null);
+        }}
+        bottomOffset={insets.bottom + 96}
+      />
 
       <DetailsSheet occurrence={selected} onClose={() => setSelected(null)} />
     </View>
