@@ -25,9 +25,9 @@ export type ClusterItem = ClusterPoint | ClusterGroup;
 // Grid cell size in degrees as a function of latitudeDelta (proxy for zoom).
 // Smaller delta == more zoomed in == finer grid.
 function cellSizeForDelta(latitudeDelta: number): number {
-  // Aim for ~30 cells across the visible area.
-  // Floor at a level where singletons start to appear at street zoom.
-  const target = latitudeDelta / 30;
+  // Aim for ~12 cells across the visible area. Fewer, bigger clusters means
+  // far fewer native Marker views — the main cost on Android at low zoom.
+  const target = latitudeDelta / 12;
   return Math.max(target, 0.0008);
 }
 

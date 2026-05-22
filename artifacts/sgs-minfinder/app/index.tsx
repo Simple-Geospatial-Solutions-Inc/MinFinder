@@ -244,20 +244,21 @@ export default function MapScreen() {
         {visibleClusters.map((c) =>
           c.type === "point" ? (
             <Marker
-              // Include the label-visible flag in the key so the marker
-              // remounts (and re-renders its bitmap) when zoom crosses the
-              // threshold for showing the mine name.
-              key={`p-${c.id}-${region.latitudeDelta < 0.08 ? "n" : "0"}`}
+              key={`p-${c.id}`}
               coordinate={{ latitude: c.lat, longitude: c.lon }}
               onPress={() => setSelected(c.occurrence)}
-              tracksViewChanges={false}
-              anchor={{ x: 0.5, y: 1 }}
+              // Track view changes for individual points so the name label
+              // appears/disappears as zoom changes. Point count at the zoom
+              // levels where points are shown is small, so the perf hit is
+              // minimal compared to leaving the bitmap stale.
+              tracksViewChanges={true}
+              anchor={{ x: 0.5, y: 0.5 }}
             >
               <MarkerPin
                 code={c.occurrence.STATUS_C}
                 selected={selected?.id === c.id}
                 name={c.occurrence.NAME1}
-                showName={region.latitudeDelta < 0.08}
+                showName={region.latitudeDelta < 0.5}
               />
             </Marker>
           ) : (
