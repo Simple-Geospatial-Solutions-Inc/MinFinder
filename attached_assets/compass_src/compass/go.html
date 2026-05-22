@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, height=device-height initial-scale=1, user-scalable=yes" />
+  <meta name="MobileOptimized" content="width" />
+  <meta name="HandheldFriendly" content="true" />
+  <link rel="icon" href="../images/favicon.ico" type="image/x-icon">
+  <link rel="shortcut icon" href="../images/favicon.ico" type="image/x-icon">
+  <meta name="robots" content="noindex">
+  <title>SGS Point Finder</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+    }
+
+    body {
+      margin: 30px;
+      background: #0f0f0f;
+      color: #ffffff;
+      text-shadow: 0 0 rgba(134, 254, 25, 0.5);
+      font-family: "Open Sans", Arial, sans-serif;
+      text-align: center;
+    }
+
+    a,
+    a:link,
+    a:visited,
+    a:hover {
+      text-decoration: none;
+      color: #42B8E3;
+    }
+
+    #marker,
+    #distance,
+    #bearing {
+      font-weight: bold;
+      font-size: 1.25em;
+    }
+
+    .compass {
+      position: relative;
+      width: 260px;
+      height: 260px;
+      margin: 20px auto;
+      background: #222;
+      padding: 20px;
+      border-radius: 40px;
+      border: 5px solid #444;
+      overflow: hidden;
+    }
+
+    .compass .disc {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 200;
+      background-image: url("https://sgss.ca/compass/img/cmpbg.svg");
+      width: 260px;
+      height: 260px;
+      background-size: 100%;
+    }
+
+    .compass .arrow {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 1000;
+      background-image: url("https://sgss.ca/compass/img/cmparrow.svg");
+      width: 260px;
+      height: 260px;
+      background-size: 100%;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 7px 15px;
+      margin-bottom: 0;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      line-height: 1.42857143;
+      text-align: center;
+      border: none;
+      text-transform: uppercase;
+      font-family: 'Montserrat', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    .btn-default {
+      color: #0f0f0f;
+      background-color: #42B8E3;
+    }
+
+    .btn-default:hover {
+      color: #fff;
+      background-color: #FA791B;
+      border-color: #FA791B;
+    }
+
+    .btn-default.focus,
+    .btn-default:focus {
+      color: #fff;
+      background-color: #FA791B;
+      border-color: #FA791B;
+    }
+
+  </style>
+</head>
+
+<body>
+  <h1>SGS Point Finder</h1>
+  <div id="start"><button onmousedown="event.preventDefault()" onclick="this.blur()" class="btn btn-default">Start compass</button></div>
+  <div id="north"><button onmousedown="event.preventDefault()" onclick="this.blur()" class="btn btn-default">Set North</button></div>
+  <div class="compass">
+    <div class="arrow" id="compassArrowImg"></div>
+    <div class="disc" id="compassDiscImg"></div>
+  </div>
+  <div class="orientation-data">
+    <div><strong><span id="marker"></span></strong> - <a href="../mascot.html">Return to Map</a>
+      <br />Distance:
+      <span id="distance"> </span> -- Bearing: <span id="bearing"> </span></div>
+    <br />
+    <div>Compass Direction:
+      <span id="direction"> </span></div>
+    <div>Latitude:
+      <span id="latitude"> </span></div>
+    <div>Longitude:
+      <span id="longitude"> </span></div>
+    <div>Accuracy:
+      <span id="accuracy"> </span></div>
+    <div>
+      <br /><a href="../index.html" target="_blank">Simple Geospatial Solutions</a></div>
+  </div>
+  <script>
+    var urlParams = new URLSearchParams(window.location.search);
+    var marker = urlParams.get("mrk");
+    var dest_lat = parseFloat(urlParams.get("lat"));
+    var dest_long = parseFloat(urlParams.get("lon"));
+    var geoOptions = {
+      timeout: 27000,
+      enableHighAccuracy: true,
+      maximumAge: 30000
+    };
+    var initialOffset = null;
+    var brg, dir, dirZero = 0;
+    var getDirZero = false;
+    var noCompass = false;
+    var compassArrow = document.getElementById("compassArrowImg");
+    var compassDisc = document.getElementById("compassDiscImg");
+    const startBtn = document.querySelector("#start");
+    const northBtn = document.querySelector("#north");
+    var userAgent = window.navigator.userAgent;
+    const isIOS =
+      userAgent.match(/(iPod|iPhone|iPad)/) &&
+      userAgent.match(/AppleWebKit/);
+
+    function init() {
+      startBtn.addEventListener("click", startCompass);
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(showPosition, geoError("Not available"), geoOptions);
+      } else {
+        geoError("Not supported");
+      }
+      if (isIOS) {
+        document.getElementById("north").innerHTML = "";
+      } else {
+        document.getElementById("start").innerHTML = "";
+        northBtn.addEventListener("click", setNorth);
+        window.addEventListener("deviceorientationabsolute", handler, true);
+      }
+    }
+
+    function startCompass() {
+      if (isIOS) {
+        DeviceOrientationEvent.requestPermission()
+          .then((response) => {
+            if (response === "granted") {
+              window.addEventListener("deviceorientation", handler, true);
+              document.getElementById("start").innerHTML = "";
+            } else {
+              alert("has to be allowed!");
+            }
+          })
+          .catch(() => alert("not supported"));
+      }
+    }
+
+    function setNorth() {
+      getDirZero = true;
+    }
+
+    function lpad(num, size) {
+      var s = num.toString();
+      while (s.length < size) {
+        s = "0" + s;
+      }
+      return s;
+    }
+
+    function deg_to_dms(deg, places, islat, islong) {
+      var d = Math.floor(Math.abs(deg)),
+        minfloat = (Math.abs(deg) - d) * 60,
+        m = Math.floor(minfloat),
+        secfloat = (minfloat - m) * 60,
+        padnum,
+        prefix;
+      if (secfloat.toFixed(places) == 60) {
+        m += 1;
+        secfloat = 0;
+      }
+      if (m == 60) {
+        d += 1;
+        m = 0;
+      }
+      if (places == 0) {
+        padnum = places + 2;
+      } else {
+        padnum = places + 3;
+      }
+      if (deg < 0) {
+        if (islat == 1) {
+          prefix = "S";
+        } else if (islong == 1) {
+          prefix = "W";
+        } else {
+          prefix = "-";
+        }
+      } else if (deg > 0) {
+        if (islat == 1) {
+          prefix = "N";
+        } else if (islong == 1) {
+          prefix = "E";
+        } else {
+          prefix = "";
+        }
+      } else {
+        prefix = "";
+      }
+      return (prefix + d + "°" + lpad(m, 2) + "'" + lpad(secfloat.toFixed(places), padnum) + "\"");
+    }
+
+    function distance(lat1, lon1) {
+      var R = 6372000, // mean earth radius
+        dLat_r = (dest_lat - lat1) * Math.PI / 180,
+        dLon_r = (dest_long - lon1) * Math.PI / 180,
+        lat1_r = lat1 * Math.PI / 180,
+        lat2_r = dest_lat * Math.PI / 180,
+        a = Math.sin(dLat_r / 2) * Math.sin(dLat_r / 2) + Math.sin(dLon_r / 2) * Math.sin(dLon_r / 2) * Math.cos(lat1_r) * Math.cos(lat2_r),
+        c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)),
+        d = R * c,
+        y = Math.sin(dLon_r) * Math.cos(lat2_r),
+        x = Math.cos(lat1_r) * Math.sin(lat2_r) - Math.sin(lat1_r) * Math.cos(lat2_r) * Math.cos(dLon_r),
+        brng = Math.atan2(y, x) * 180 / Math.PI;
+      brng = 360 - ((brng + 360) % 360);
+      return [d, brng];
+    }
+
+    function showPosition(position) {
+      var cur_lat = position.coords.latitude,
+        cur_long = position.coords.longitude,
+        acc = Math.round(position.coords.accuracy),
+        dist_calc = distance(cur_lat, cur_long),
+        dist = Math.round(dist_calc[0]);
+      brg = 360 - dist_calc[1];
+      document.getElementById("marker").innerHTML = marker;
+      document.getElementById("distance").innerHTML = dist + "m";
+      document.getElementById("bearing").innerHTML = brg.toFixed(0).toString() + "°";
+      document.getElementById("latitude").innerHTML = deg_to_dms(cur_lat, 2, 1, 0);
+      document.getElementById("longitude").innerHTML = deg_to_dms(cur_long, 2, 0, 1);
+      document.getElementById("accuracy").innerHTML = acc + "m";
+    }
+
+    function handler(e) {
+      if (noCompass) {
+
+      } else {
+        if (e.alpha == null) {
+          document.getElementById("north").innerHTML = "Compass not supported.";
+          noCompass = true;
+        }
+        if (getDirZero) {
+          dirZero = Math.abs(e.alpha - 360);
+          getDirZero = false;
+        } else {
+          dir = e.webkitCompassHeading || Math.abs(e.alpha - 360);
+          dir = dir - dirZero;
+          if (dir < 360) {
+            dir += 360;
+          }
+          if (dir > 360) {
+            dir -= 360;
+          }
+          rot = brg - dir;
+          compassArrow.style.webkitTransform = "rotate(" + rot + "deg)";
+          compassDisc.style.webkitTransform = "rotate(-" + dir + "deg)";
+          compassArrow.style.MozTransform = "rotate(" + rot + "deg)";
+          compassDisc.style.MozTransform = "rotate(-" + dir + "deg)";
+          compassArrow.style.transform = "rotate(" + rot + "deg)";
+          compassDisc.style.transform = "rotate(-" + dir + "deg)";
+          document.getElementById("direction").innerHTML = dir.toFixed(0).toString() + "°";
+        }
+      }
+    }
+
+    function geoError(msg) {
+      document.getElementById("distance").innerHTML = msg;
+      document.getElementById("bearing").innerHTML = msg;
+      document.getElementById("latitude").innerHTML = msg;
+      document.getElementById("longitude").innerHTML = msg;
+      document.getElementById("accuracy").innerHTML = msg;
+    }
+
+    init();
+
+  </script>
+</body>
+
+</html>

@@ -36,6 +36,13 @@ export default function CompassScreen() {
 
   const subPos = useRef<Location.LocationSubscription | null>(null);
   const subHeading = useRef<Location.LocationSubscription | null>(null);
+  // Circular exponential moving average state for heading smoothing.
+  // Storing sin/cos separately avoids the 359°→1° wrap-around jump.
+  const smoothRef = useRef<{ sin: number; cos: number; init: boolean }>({
+    sin: 0,
+    cos: 1,
+    init: false,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -80,8 +87,30 @@ export default function CompassScreen() {
       );
       try {
         subHeading.current = await Location.watchHeadingAsync((h) => {
-          const value = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
-          if (!cancelled) setHeading(value);
+          if (cancelled) return;
+          const raw = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+          if (raw == null || Number.isNaN(raw)) return;
+          // Circular EMA: smooth sin/cos components so we never jump across 0°/360°.
+          const rad = (raw * Math.PI) / 180;
+          const s = Math.sin(rad);
+          const c = Math.cos(rad);
+          const alpha = 0.18; // 0 = no update, 1 = no smoothing. Lower = calmer needle.
+          const st = smoothRef.current;
+          if (!st.init) {
+            st.sin = s;
+            st.cos = c;
+            st.init = true;
+          } else {
+            st.sin = st.sin * (1 - alpha) + s * alpha;
+            st.cos = st.cos * (1 - alpha) + c * alpha;
+          }
+          let smoothed = (Math.atan2(st.sin, st.cos) * 180) / Math.PI;
+          if (smoothed < 0) smoothed += 360;
+          setHeading((prev) => {
+            // Suppress sub-degree jitter — only re-render on a meaningful change.
+            const diff = Math.abs(((smoothed - prev + 540) % 360) - 180);
+            return diff < 0.5 ? prev : smoothed;
+          });
         });
       } catch (err) {
         console.warn("heading error", err);
@@ -171,14 +200,7 @@ export default function CompassScreen() {
       ]}
     >
       <View style={styles.dialWrap}>
-        <CompassDial
-          size={300}
-          heading={heading}
-          bearing={bearing}
-          color="#7BB8E0"
-          accent="#4DA3D9"
-          background="#1A2436"
-        />
+        <CompassDial size={300} heading={heading} bearing={bearing} />
       </View>
 
       <View style={styles.headerInfo}>

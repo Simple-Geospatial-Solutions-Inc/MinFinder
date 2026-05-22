@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<svg viewBox="-130 -130  260 260" xmlns="http://www.w3.org/2000/svg" version="1.0" overflow="visible">
+    <g transform="matrix(1 0 0 -1 0 0)" stroke-width="1.0">
+        <circle fill="#444444" cx="0" cy="0" r="30" />
+        <g color="#ffffff" stroke="currentColor" fill="none" stroke-width="1.0">
+            <path fill="#42B8E3" d="M -18.1196112679053 -43.74461126790529 L 0 51.25 L 0 -30 L -18.1196112679053 -43.74461126790529"/>
+            <path fill="#42B8E3" d="M 18.11961126790526 -43.74461126790529 L 0 51.25 L 0 -30 L 18.11961126790526 -43.74461126790529"/>
+            <circle fill="#444444" cx="0" cy="0" r="2.5"/>
+        </g>
+    </g>
+</svg>
