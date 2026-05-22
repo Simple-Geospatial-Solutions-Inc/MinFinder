@@ -3,13 +3,9 @@ import { Platform } from "react-native";
 
 import { lonLatToTile } from "./geo";
 
-// Esri World Topographic basemap via ArcGIS Location Platform.
-// Requires an API key (free developer tier, ~2M tiles/month).
-// Falls back to CARTO Voyager when no key is configured.
-const ARCGIS_KEY = process.env.EXPO_PUBLIC_ARCGIS_API_KEY;
-export const TILE_TEMPLATE_REMOTE = ARCGIS_KEY
-  ? `https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}?token=${ARCGIS_KEY}`
-  : "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";
+// CARTO Voyager basemap — free for app use, just requires attribution.
+export const TILE_TEMPLATE_REMOTE =
+  "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";
 
 export const TILE_CACHE_DIR =
   Platform.OS === "web"
