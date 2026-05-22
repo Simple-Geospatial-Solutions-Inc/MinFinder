@@ -1,3 +1,4 @@
+import { Feather } from "@expo/vector-icons";
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -62,6 +63,11 @@ export default function RootLayout() {
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
+    // Explicitly bundle the Feather icon font — Expo Go on Android (SDK 53/54)
+    // often fails to auto-load @expo/vector-icons fonts, leaving icons as
+    // empty/tofu boxes. Including it here forces the splash screen to wait
+    // until the icon font is actually registered.
+    ...Feather.font,
   });
 
   useEffect(() => {
