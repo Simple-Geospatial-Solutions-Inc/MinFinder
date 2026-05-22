@@ -42,32 +42,38 @@ export function MarkerPin({
 
 const styles = StyleSheet.create({
   wrap: {
+    // Explicit width keeps the captured marker bitmap from being clipped on
+    // Android (which sizes the snapshot to the View's measured bounds).
+    width: 170,
     alignItems: "center",
+    // Vertical padding leaves room for the shadow + name label.
+    paddingTop: 4,
+    paddingBottom: 4,
   },
   dot: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowRadius: 3,
+    elevation: 4,
   },
   label: {
     color: "#fff",
     fontFamily: "Inter_700Bold",
-    fontSize: 16,
-    letterSpacing: 0.4,
+    fontSize: 10,
+    letterSpacing: 0.3,
   },
   nameWrap: {
-    marginTop: 4,
+    marginTop: 3,
     backgroundColor: "rgba(14,36,68,0.92)",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
     maxWidth: 160,
   },
   nameText: {

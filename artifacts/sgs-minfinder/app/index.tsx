@@ -108,6 +108,10 @@ export default function MapScreen() {
     return clusterOccurrences(allFilteredRows, region.latitudeDelta);
   }, [allFilteredRows, region.latitudeDelta]);
 
+  // Show name labels only when zoomed in past a regional level. Computed
+  // once per region change so every marker key uses the same flag.
+  const showLabels = region.latitudeDelta < 0.5;
+
   // Only render clusters whose centre is within an enlarged viewport.
   const visibleClusters = useMemo(() => {
     const pad = 0.25;
@@ -244,21 +248,23 @@ export default function MapScreen() {
         {visibleClusters.map((c) =>
           c.type === "point" ? (
             <Marker
-              key={`p-${c.id}`}
+              // Include the label-visibility flag in the key so the marker
+              // unmounts/remounts when zoom crosses the threshold, capturing
+              // a fresh static bitmap. With tracksViewChanges=false the pin
+              // then stays rock-steady while panning/zooming.
+              key={`p-${c.id}-${showLabels ? "n" : "0"}-${
+                selected?.id === c.id ? "s" : "u"
+              }`}
               coordinate={{ latitude: c.lat, longitude: c.lon }}
               onPress={() => setSelected(c.occurrence)}
-              // Track view changes for individual points so the name label
-              // appears/disappears as zoom changes. Point count at the zoom
-              // levels where points are shown is small, so the perf hit is
-              // minimal compared to leaving the bitmap stale.
-              tracksViewChanges={true}
+              tracksViewChanges={false}
               anchor={{ x: 0.5, y: 0.5 }}
             >
               <MarkerPin
                 code={c.occurrence.STATUS_C}
                 selected={selected?.id === c.id}
                 name={c.occurrence.NAME1}
-                showName={region.latitudeDelta < 0.5}
+                showName={showLabels}
               />
             </Marker>
           ) : (
