@@ -14,8 +14,9 @@ export function MarkerPin({
   showName?: boolean;
 }) {
   const info = getStatusInfo(code);
+  const wide = !!(showName && name);
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, wide && styles.wrapWide]}>
       <View
         style={[
           styles.dot,
@@ -46,6 +47,12 @@ const styles = StyleSheet.create({
     // A little padding so the drop-shadow isn't clipped by Android's bitmap
     // capture (which sizes the snapshot to the measured bounds).
     padding: 4,
+  },
+  wrapWide: {
+    // When a name label is shown, reserve enough width up-front so Android
+    // captures the full label without truncation. Without this, the bitmap
+    // measures only the 28px dot and crops the label that appears later.
+    width: 200,
   },
   dot: {
     width: 28,
