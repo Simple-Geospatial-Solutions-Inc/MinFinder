@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Feather } from "@/components/Icon";
 import { reloadAppAsync } from "expo";
 import React, { useState } from "react";
 import {

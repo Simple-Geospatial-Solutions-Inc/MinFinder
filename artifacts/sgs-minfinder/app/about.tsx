@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Feather } from "@/components/Icon";
 import * as WebBrowser from "expo-web-browser";
 import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";

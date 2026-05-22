@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Feather, type FeatherIconName } from "@/components/Icon";
 import { router } from "expo-router";
 import * as Location from "expo-location";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -504,7 +504,7 @@ function TopIcon({
   onPress,
   accent,
 }: {
-  icon: React.ComponentProps<typeof Feather>["name"];
+  icon: FeatherIconName;
   label: string;
   onPress: () => void;
   accent?: boolean;

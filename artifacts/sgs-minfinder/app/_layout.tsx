@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Feather } from "@/components/Icon";
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -63,13 +63,6 @@ export default function RootLayout() {
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
-    // Pre-register the Feather icon font BEFORE any <Feather /> mounts.
-    // Expo Go on Android (SDK 53/54) does not reliably re-render the Icon
-    // component after its internal lazy Font.loadAsync resolves, so the
-    // glyphs render as missing-character tofu boxes. Loading the font here
-    // — and blocking the UI on it — guarantees the font family is registered
-    // by the time the first icon renders.
-    ...Feather.font,
   });
 
   useEffect(() => {
