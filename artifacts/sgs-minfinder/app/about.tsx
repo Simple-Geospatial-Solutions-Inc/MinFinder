@@ -61,10 +61,15 @@ export default function AboutScreen() {
 
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.cardText, { color: colors.foreground }]}>
-          Basemap: Esri World Topographic Map · Powered by Esri
+          Basemap tiles: Esri World Topographic Map
         </Text>
         <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11 }]}>
           Sources: Esri, HERE, Garmin, FAO, NOAA, USGS, © OpenStreetMap contributors, and the GIS User Community
+        </Text>
+        <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11, marginTop: 6 }]}>
+          Map engine: Google Maps (the Esri tiles are drawn on top of the
+          Google Maps view, which is why the Google logo appears in the
+          corner). Heatmap rendering by Google Maps.
         </Text>
         <Pressable
           onPress={() => WebBrowser.openBrowserAsync("https://www.esri.com/en-us/legal/terms/data-attributions")}
