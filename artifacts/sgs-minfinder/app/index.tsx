@@ -15,11 +15,12 @@ import {
 } from "react-native";
 import MapView, {
   Heatmap,
-  Marker,
   PROVIDER_DEFAULT,
   Region,
   UrlTile,
 } from "react-native-maps";
+
+import { TrackedMarker } from "@/components/TrackedMarker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ClusterPin } from "@/components/ClusterPin";
@@ -288,7 +289,7 @@ export default function MapScreen() {
 
         {!heatmap && visibleClusters.map((c) =>
           c.type === "point" ? (
-            <Marker
+            <TrackedMarker
               // Include the label-visibility flag in the key so the marker
               // unmounts/remounts when zoom crosses the threshold, capturing
               // a fresh static bitmap. With tracksViewChanges=false the pin
@@ -307,9 +308,9 @@ export default function MapScreen() {
                 name={c.occurrence.NAME1}
                 showName={showLabels}
               />
-            </Marker>
+            </TrackedMarker>
           ) : (
-            <Marker
+            <TrackedMarker
               key={c.id}
               coordinate={{ latitude: c.lat, longitude: c.lon }}
               onPress={() => onClusterPress(c)}
@@ -321,7 +322,7 @@ export default function MapScreen() {
                 dominantStatus={c.dominantStatus}
                 mixed={c.mixed}
               />
-            </Marker>
+            </TrackedMarker>
           ),
         )}
       </MapView>

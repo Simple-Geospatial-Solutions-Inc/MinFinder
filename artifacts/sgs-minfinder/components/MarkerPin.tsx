@@ -42,13 +42,10 @@ export function MarkerPin({
 
 const styles = StyleSheet.create({
   wrap: {
-    // Explicit width keeps the captured marker bitmap from being clipped on
-    // Android (which sizes the snapshot to the View's measured bounds).
-    width: 170,
     alignItems: "center",
-    // Vertical padding leaves room for the shadow + name label.
-    paddingTop: 4,
-    paddingBottom: 4,
+    // A little padding so the drop-shadow isn't clipped by Android's bitmap
+    // capture (which sizes the snapshot to the measured bounds).
+    padding: 4,
   },
   dot: {
     width: 28,
