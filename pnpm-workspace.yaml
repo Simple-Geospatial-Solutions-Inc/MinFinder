@@ -39,7 +39,14 @@ minimumReleaseAgeExclude:
   - expo
   - expo-*
   - '@expo/*'
-  - react-native-maps
+  - babel-preset-expo
+  - metro
+  - metro-*
+  - '@react-native/*'
+  - react-native
+  - react-native-*
+  - react
+  - react-dom
 
 packages:
   - artifacts/*
