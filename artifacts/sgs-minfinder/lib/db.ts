@@ -32,26 +32,45 @@ export interface Occurrence {
 }
 
 const DB_NAME = "minfile.db";
+// Bump this when the bundled DB file changes so the on-device copy is replaced.
+const DB_VERSION = "2";
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 async function copyAssetToDocumentsAsync(): Promise<void> {
   if (Platform.OS === "web") return;
   const sqliteDir = `${FileSystem.documentDirectory}SQLite`;
   const dest = `${sqliteDir}/${DB_NAME}`;
+  const versionMarker = `${sqliteDir}/${DB_NAME}.v${DB_VERSION}`;
+
   const dirInfo = await FileSystem.getInfoAsync(sqliteDir);
   if (!dirInfo.exists) {
     await FileSystem.makeDirectoryAsync(sqliteDir, { intermediates: true });
   }
+
+  const markerInfo = await FileSystem.getInfoAsync(versionMarker);
+  if (markerInfo.exists) return;
+
+  // Stale or missing copy — remove and re-copy from the bundled asset.
   const dbInfo = await FileSystem.getInfoAsync(dest);
-  if (dbInfo.exists) return;
+  if (dbInfo.exists) {
+    await FileSystem.deleteAsync(dest, { idempotent: true });
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const asset = Asset.fromModule(require("../assets/db/minfile.db"));
   await asset.downloadAsync();
-  if (!asset.localUri) {
-    throw new Error("Failed to download bundled minfile.db asset");
+  // In Expo Go (dev), `asset.uri` is a Metro HTTP URL; in production it's a
+  // bundled file path. `downloadAsync` handles both and reliably writes the
+  // raw bytes to disk (avoids the binary-corruption issues that can occur
+  // when `copyAsync` reads from Metro's dev-server cache).
+  const src = asset.uri ?? asset.localUri;
+  if (!src) {
+    throw new Error("Failed to resolve bundled minfile.db asset URI");
   }
-  await FileSystem.copyAsync({ from: asset.localUri, to: dest });
+  await FileSystem.downloadAsync(src, dest);
+
+  // Write version marker only after a successful copy.
+  await FileSystem.writeAsStringAsync(versionMarker, DB_VERSION);
 }
 
 export async function getDb(): Promise<SQLite.SQLiteDatabase> {
