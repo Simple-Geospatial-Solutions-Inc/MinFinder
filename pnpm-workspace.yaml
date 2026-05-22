@@ -33,6 +33,13 @@ minimumReleaseAgeExclude:
   # this setting guards against does not apply to our own packages.
   - '@replit/*'
   - stripe-replit-sync
+  # Expo (650 Industries) — trusted org, needed for SDK upgrades where the
+  # latest SDK was just released and Expo Go on the App Store has already
+  # rotated off older SDKs.
+  - expo
+  - expo-*
+  - '@expo/*'
+  - react-native-maps
 
 packages:
   - artifacts/*
