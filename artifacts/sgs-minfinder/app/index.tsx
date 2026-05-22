@@ -16,11 +16,13 @@ import {
 import MapView, { Marker, PROVIDER_DEFAULT, Region, UrlTile } from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ClusterPin } from "@/components/ClusterPin";
 import { DetailsSheet } from "@/components/DetailsSheet";
 import { MarkerPin } from "@/components/MarkerPin";
 import { STATUS_MAP, STATUS_ORDER, getStatusInfo } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
-import { countAll, queryOccurrences, type Occurrence } from "@/lib/db";
+import { clusterOccurrences, type ClusterItem } from "@/lib/cluster";
+import { queryOccurrences, type Occurrence } from "@/lib/db";
 import { TILE_CACHE_DIR, TILE_TEMPLATE_REMOTE } from "@/lib/tileCache";
 
 const BC_REGION: Region = {
@@ -29,16 +31,6 @@ const BC_REGION: Region = {
   latitudeDelta: 12,
   longitudeDelta: 14,
 };
-
-// Choose how many markers to show based on latitudeDelta (rough zoom proxy).
-function markerLimitForZoom(latDelta: number): number {
-  if (latDelta > 8) return 250;
-  if (latDelta > 4) return 600;
-  if (latDelta > 2) return 1200;
-  if (latDelta > 1) return 2000;
-  if (latDelta > 0.4) return 3000;
-  return 5000;
-}
 
 export default function MapScreen() {
   const colors = useColors();
@@ -49,28 +41,28 @@ export default function MapScreen() {
   const [userLoc, setUserLoc] = useState<Location.LocationObject | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [loadingDb, setLoadingDb] = useState(true);
-  const [totalCount, setTotalCount] = useState(0);
 
   const [statuses, setStatuses] = useState<string[]>([...STATUS_ORDER]);
   const [search, setSearch] = useState("");
   const [searchActive, setSearchActive] = useState(false);
 
-  const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
+  // All occurrences with coords, loaded once.
+  const [allRows, setAllRows] = useState<Occurrence[]>([]);
   const [selected, setSelected] = useState<Occurrence | null>(null);
   const [searchResults, setSearchResults] = useState<Occurrence[] | null>(null);
 
-  // Load DB count and request location on mount
+  // Load full dataset once on mount + request location
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const n = await countAll();
+        const rows = await queryOccurrences({ limit: 100_000 });
         if (!cancelled) {
-          setTotalCount(n);
+          setAllRows(rows);
           setLoadingDb(false);
         }
       } catch (err) {
-        console.warn("countAll error", err);
+        console.warn("load DB error", err);
         if (!cancelled) setLoadingDb(false);
       }
 
@@ -102,40 +94,41 @@ export default function MapScreen() {
     };
   }, []);
 
-  // Query occurrences whenever region/statuses change
-  const lastQueryRef = useRef<number>(0);
-  useEffect(() => {
-    const id = ++lastQueryRef.current;
-    const pad = 0.1;
-    const bbox = {
-      minLat: region.latitude - region.latitudeDelta / 2 - pad,
-      maxLat: region.latitude + region.latitudeDelta / 2 + pad,
-      minLon: region.longitude - region.longitudeDelta / 2 - pad,
-      maxLon: region.longitude + region.longitudeDelta / 2 + pad,
-    };
-    const limit = markerLimitForZoom(region.latitudeDelta);
-    (async () => {
-      try {
-        const rows = await queryOccurrences({
-          bbox,
-          statuses: statuses.length === STATUS_ORDER.length ? undefined : statuses,
-          limit,
-        });
-        if (id === lastQueryRef.current) {
-          setOccurrences(rows);
-        }
-      } catch (err) {
-        console.warn("queryOccurrences error", err);
-      }
-    })();
-  }, [region, statuses]);
+  // In-memory filter by status. Search hits the DB (whole-dataset).
+  const statusSet = useMemo(() => new Set(statuses), [statuses]);
+  const allFilteredRows = useMemo(() => {
+    if (statuses.length === STATUS_ORDER.length) return allRows;
+    return allRows.filter((r) => statusSet.has(r.STATUS_C ?? ""));
+  }, [allRows, statuses.length, statusSet]);
 
-  // Search across the whole dataset (debounced)
+  // Cluster the entire (status-filtered) dataset for the current zoom.
+  // No bbox cull — clusters that fall offscreen are cheap; total ≤ ~900 cells.
+  const clusters = useMemo<ClusterItem[]>(() => {
+    if (allFilteredRows.length === 0) return [];
+    return clusterOccurrences(allFilteredRows, region.latitudeDelta);
+  }, [allFilteredRows, region.latitudeDelta]);
+
+  // Only render clusters whose centre is within an enlarged viewport.
+  const visibleClusters = useMemo(() => {
+    const pad = 0.25;
+    const minLat = region.latitude - region.latitudeDelta / 2 - region.latitudeDelta * pad;
+    const maxLat = region.latitude + region.latitudeDelta / 2 + region.latitudeDelta * pad;
+    const minLon = region.longitude - region.longitudeDelta / 2 - region.longitudeDelta * pad;
+    const maxLon = region.longitude + region.longitudeDelta / 2 + region.longitudeDelta * pad;
+    return clusters.filter(
+      (c) =>
+        c.lat >= minLat && c.lat <= maxLat && c.lon >= minLon && c.lon <= maxLon,
+    );
+  }, [clusters, region]);
+
+  // Search across the whole dataset (debounced, DB-backed for substring match).
+  const searchSeq = useRef(0);
   useEffect(() => {
     if (!search.trim()) {
       setSearchResults(null);
       return;
     }
+    const seq = ++searchSeq.current;
     const handle = setTimeout(async () => {
       try {
         const rows = await queryOccurrences({
@@ -143,7 +136,9 @@ export default function MapScreen() {
           statuses: statuses.length === STATUS_ORDER.length ? undefined : statuses,
           limit: 50,
         });
-        setSearchResults(rows);
+        if (seq === searchSeq.current) {
+          setSearchResults(rows);
+        }
       } catch (err) {
         console.warn("search error", err);
       }
@@ -194,7 +189,7 @@ export default function MapScreen() {
         : {
             urlTemplate: TILE_TEMPLATE_REMOTE,
             tileCachePath: TILE_CACHE_DIR,
-            tileCacheMaxAge: 60 * 60 * 24 * 365, // 1 year
+            tileCacheMaxAge: 60 * 60 * 24 * 365,
           },
     [],
   );
@@ -215,6 +210,21 @@ export default function MapScreen() {
     setTimeout(() => setSelected(row), 350);
   }, []);
 
+  const onClusterPress = useCallback((c: ClusterItem) => {
+    if (c.type !== "cluster") return;
+    const latPad = Math.max((c.bbox.maxLat - c.bbox.minLat) * 1.3, 0.005);
+    const lonPad = Math.max((c.bbox.maxLon - c.bbox.minLon) * 1.3, 0.005);
+    mapRef.current?.animateToRegion(
+      {
+        latitude: c.lat,
+        longitude: c.lon,
+        latitudeDelta: latPad,
+        longitudeDelta: lonPad,
+      },
+      450,
+    );
+  }, []);
+
   return (
     <View style={[styles.root, { backgroundColor: colors.navyDeep }]}>
       <MapView
@@ -229,25 +239,37 @@ export default function MapScreen() {
         toolbarEnabled={false}
         mapType="none"
       >
-        <UrlTile
-          {...tileCacheConfig}
-          maximumZ={19}
-          flipY={false}
-          zIndex={-1}
-        />
+        <UrlTile {...tileCacheConfig} maximumZ={19} flipY={false} zIndex={-1} />
 
-        {occurrences.map((o) =>
-          o.LATITUDE != null && o.LONGITUDE != null ? (
+        {visibleClusters.map((c) =>
+          c.type === "point" ? (
             <Marker
-              key={o.id}
-              coordinate={{ latitude: o.LATITUDE, longitude: o.LONGITUDE }}
-              onPress={() => setSelected(o)}
+              key={`p-${c.id}`}
+              coordinate={{ latitude: c.lat, longitude: c.lon }}
+              onPress={() => setSelected(c.occurrence)}
               tracksViewChanges={false}
               anchor={{ x: 0.5, y: 1 }}
             >
-              <MarkerPin code={o.STATUS_C} selected={selected?.id === o.id} />
+              <MarkerPin
+                code={c.occurrence.STATUS_C}
+                selected={selected?.id === c.id}
+              />
             </Marker>
-          ) : null,
+          ) : (
+            <Marker
+              key={c.id}
+              coordinate={{ latitude: c.lat, longitude: c.lon }}
+              onPress={() => onClusterPress(c)}
+              tracksViewChanges={false}
+              anchor={{ x: 0.5, y: 0.5 }}
+            >
+              <ClusterPin
+                count={c.count}
+                dominantStatus={c.dominantStatus}
+                mixed={c.mixed}
+              />
+            </Marker>
+          ),
         )}
       </MapView>
 
@@ -255,10 +277,7 @@ export default function MapScreen() {
       <View
         style={[
           styles.topBar,
-          {
-            paddingTop: insets.top + 8,
-            backgroundColor: "rgba(14,36,68,0.92)",
-          },
+          { paddingTop: insets.top + 8, backgroundColor: "rgba(14,36,68,0.92)" },
         ]}
       >
         <View style={styles.titleRow}>
@@ -267,7 +286,7 @@ export default function MapScreen() {
             <Text style={styles.brandSub}>
               {loadingDb
                 ? "Loading…"
-                : `${totalCount.toLocaleString()} BC MINFILE occurrences`}
+                : `${allFilteredRows.length.toLocaleString()} of ${allRows.length.toLocaleString()} BC MINFILE occurrences`}
             </Text>
           </View>
           <View style={styles.topActions}>
@@ -285,10 +304,7 @@ export default function MapScreen() {
         </View>
 
         <View
-          style={[
-            styles.searchBar,
-            { backgroundColor: "rgba(244,241,234,0.12)" },
-          ]}
+          style={[styles.searchBar, { backgroundColor: "rgba(244,241,234,0.12)" }]}
         >
           <Feather name="search" size={16} color="#F4F1EA" />
           <TextInput
@@ -318,7 +334,6 @@ export default function MapScreen() {
           )}
         </View>
 
-        {/* Status filter chips */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -347,10 +362,7 @@ export default function MapScreen() {
                   ]}
                 />
                 <Text
-                  style={[
-                    styles.chipText,
-                    { color: active ? "#fff" : "#F4F1EA" },
-                  ]}
+                  style={[styles.chipText, { color: active ? "#fff" : "#F4F1EA" }]}
                 >
                   {info.label}
                 </Text>
@@ -360,7 +372,6 @@ export default function MapScreen() {
         </ScrollView>
       </View>
 
-      {/* Search results dropdown */}
       {searchActive && searchResults && searchResults.length > 0 && (
         <View
           style={[
@@ -410,16 +421,12 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* FAB: recenter */}
       <View style={[styles.fabStack, { bottom: insets.bottom + 24 }]}>
         <Pressable
           onPress={recenter}
           style={({ pressed }) => [
             styles.fab,
-            {
-              backgroundColor: colors.gold,
-              opacity: pressed ? 0.85 : 1,
-            },
+            { backgroundColor: colors.gold, opacity: pressed ? 0.85 : 1 },
           ]}
         >
           <Feather name="navigation" size={20} color={colors.navyDeep} />
@@ -497,10 +504,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 1,
   },
-  topActions: {
-    flexDirection: "row",
-    gap: 6,
-  },
+  topActions: { flexDirection: "row", gap: 6 },
   topIcon: {
     width: 36,
     height: 36,
@@ -524,11 +528,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     padding: 0,
   },
-  chipsRow: {
-    flexDirection: "row",
-    gap: 6,
-    paddingRight: 8,
-  },
+  chipsRow: { flexDirection: "row", gap: 6, paddingRight: 8 },
   chip: {
     flexDirection: "row",
     alignItems: "center",
@@ -539,10 +539,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipDot: { width: 8, height: 8, borderRadius: 4 },
-  chipText: {
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-  },
+  chipText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
   searchResults: {
     position: "absolute",
     left: 16,
@@ -568,11 +565,7 @@ const styles = StyleSheet.create({
   resultDot: { width: 10, height: 10, borderRadius: 5 },
   resultTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   resultSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 1 },
-  fabStack: {
-    position: "absolute",
-    right: 16,
-    gap: 12,
-  },
+  fabStack: { position: "absolute", right: 16, gap: 12 },
   fab: {
     width: 52,
     height: 52,
@@ -592,11 +585,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 12,
   },
-  dbOverlayText: {
-    color: "#F4F1EA",
-    fontFamily: "Inter_500Medium",
-    fontSize: 14,
-  },
+  dbOverlayText: { color: "#F4F1EA", fontFamily: "Inter_500Medium", fontSize: 14 },
   permissionBanner: {
     position: "absolute",
     left: 16,
