@@ -56,10 +56,10 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
-    "expo-asset": "^56.0.12",
-    "expo-file-system": "^56.0.7",
-    "expo-sensors": "^56.0.4",
-    "expo-sqlite": "^56.0.3",
-    "react-native-maps": "1.18.0"
+    "expo-asset": "^12.0.13",
+    "expo-file-system": "^19.0.22",
+    "expo-sensors": "^15.0.8",
+    "expo-sqlite": "^16.0.10",
+    "react-native-maps": "1.20.1"
   }
 }

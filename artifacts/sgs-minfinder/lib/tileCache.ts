@@ -3,9 +3,10 @@ import { Platform } from "react-native";
 
 import { lonLatToTile } from "./geo";
 
-// CARTO Voyager basemap — free for app use, just requires attribution.
+// Esri World Topographic basemap — free public tile service, no API key needed.
+// Uses {y} (XYZ) ordering, which react-native-maps UrlTile substitutes natively.
 export const TILE_TEMPLATE_REMOTE =
-  "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}";
 
 export const TILE_CACHE_DIR =
   Platform.OS === "web"
