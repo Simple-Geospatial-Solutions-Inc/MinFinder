@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "SGS MinFinder"
+version = "1.0.0"
+id = "artifacts/sgs-minfinder"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 24525
+
+[services.development]
+run = "pnpm --filter @workspace/sgs-minfinder run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/sgs-minfinder", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/sgs-minfinder", "run", "serve" ]
+
+[services.env]
+PORT = "24525"
+BASE_PATH = "/"

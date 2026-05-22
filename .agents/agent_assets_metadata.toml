@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "crDe5aJsTdOdheyfV1cJT"
+uri = "file://artifacts/sgs-minfinder/assets/images/icon.png"
+type = "image"
+title = "minfinder app icon"
