@@ -3,8 +3,10 @@ import { Platform } from "react-native";
 
 import { lonLatToTile } from "./geo";
 
+// CARTO Voyager basemap — free for app use, just requires attribution.
+// (OSM's tile.openstreetmap.org explicitly forbids app/heavy use.)
 export const TILE_TEMPLATE_REMOTE =
-  "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+  "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";
 
 export const TILE_CACHE_DIR =
   Platform.OS === "web"

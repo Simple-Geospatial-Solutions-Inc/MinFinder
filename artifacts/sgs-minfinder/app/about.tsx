@@ -61,8 +61,17 @@ export default function AboutScreen() {
 
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.cardText, { color: colors.foreground }]}>
-          Basemap tiles: © OpenStreetMap contributors
+          Basemap tiles: © CARTO · © OpenStreetMap contributors
         </Text>
+        <Pressable
+          onPress={() => WebBrowser.openBrowserAsync("https://carto.com/attribution/")}
+          style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
+        >
+          <Feather name="external-link" size={14} color={colors.primary} />
+          <Text style={[styles.linkText, { color: colors.primary }]}>
+            carto.com/attribution
+          </Text>
+        </Pressable>
         <Pressable
           onPress={() => WebBrowser.openBrowserAsync("https://www.openstreetmap.org/copyright")}
           style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
