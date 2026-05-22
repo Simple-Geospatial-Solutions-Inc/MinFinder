@@ -61,24 +61,18 @@ export default function AboutScreen() {
 
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.cardText, { color: colors.foreground }]}>
-          Basemap tiles: © CARTO · © OpenStreetMap contributors
+          Basemap: Esri World Topographic Map · Powered by Esri
+        </Text>
+        <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11 }]}>
+          Sources: Esri, HERE, Garmin, FAO, NOAA, USGS, © OpenStreetMap contributors, and the GIS User Community
         </Text>
         <Pressable
-          onPress={() => WebBrowser.openBrowserAsync("https://carto.com/attribution/")}
+          onPress={() => WebBrowser.openBrowserAsync("https://www.esri.com/en-us/legal/terms/data-attributions")}
           style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
         >
           <Feather name="external-link" size={14} color={colors.primary} />
           <Text style={[styles.linkText, { color: colors.primary }]}>
-            carto.com/attribution
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => WebBrowser.openBrowserAsync("https://www.openstreetmap.org/copyright")}
-          style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
-        >
-          <Feather name="external-link" size={14} color={colors.primary} />
-          <Text style={[styles.linkText, { color: colors.primary }]}>
-            openstreetmap.org/copyright
+            Esri data attributions
           </Text>
         </Pressable>
       </View>
