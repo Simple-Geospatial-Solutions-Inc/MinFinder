@@ -300,9 +300,9 @@ export default function MapScreen() {
               coordinate={{ latitude: c.lat, longitude: c.lon }}
               onPress={() => setSelected(c.occurrence)}
               tracksViewChanges={false}
-              // Anchor at the dot's centre within the captured bitmap.
-              // Bitmap is wrap{40h or 68h} with dot at y = padding(4)+r(14) = 18.
-              anchor={{ x: 0.5, y: showLabels ? 18 / 68 : 18 / 40 }}
+              // Anchor at the SVG dot's centre. SVG is 40×40 (dot at y=20)
+              // when narrow, 200×68 (dot at y=18) when the label is shown.
+              anchor={{ x: 0.5, y: showLabels ? 18 / 68 : 20 / 40 }}
             >
               <MarkerPin
                 code={c.occurrence.STATUS_C}

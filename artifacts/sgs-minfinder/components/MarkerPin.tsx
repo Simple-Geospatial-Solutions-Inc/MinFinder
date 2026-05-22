@@ -1,6 +1,18 @@
-import { StyleSheet, Text, View } from "react-native";
+import Svg, { Circle, Rect, Text as SvgText } from "react-native-svg";
 
 import { getStatusInfo } from "@/constants/status";
+
+// Single-element SVG marker — Android's native bitmap snapshot captures the
+// exact <Svg width/height>, so there are no measurement, padding, or label-
+// truncation pitfalls like there are with nested <View> markers.
+export const PIN_W_NARROW = 40;
+export const PIN_H_NARROW = 40;
+export const PIN_W_WIDE = 200;
+export const PIN_H_WIDE = 68;
+export const PIN_DOT_CX_NARROW = PIN_W_NARROW / 2; // 20
+export const PIN_DOT_CY_NARROW = 20;
+export const PIN_DOT_CX_WIDE = PIN_W_WIDE / 2; // 100
+export const PIN_DOT_CY_WIDE = 18;
 
 export function MarkerPin({
   code,
@@ -15,79 +27,61 @@ export function MarkerPin({
 }) {
   const info = getStatusInfo(code);
   const wide = !!(showName && name);
+  const W = wide ? PIN_W_WIDE : PIN_W_NARROW;
+  const H = wide ? PIN_H_WIDE : PIN_H_NARROW;
+  const cx = wide ? PIN_DOT_CX_WIDE : PIN_DOT_CX_NARROW;
+  const cy = wide ? PIN_DOT_CY_WIDE : PIN_DOT_CY_NARROW;
+  const r = 14;
+  const ringR = selected ? r + 3 : r + 1.5;
+  const ringColor = selected ? "#FCBA19" : "rgba(255,255,255,0.95)";
+
+  // Trim very long names so the 200-wide bitmap never overflows.
+  const displayName =
+    wide && name && name.length > 24 ? name.slice(0, 23) + "…" : name || "";
+
   return (
-    <View style={[styles.wrap, wide && styles.wrapWide]}>
-      <View
-        style={[
-          styles.dot,
-          {
-            backgroundColor: info.color,
-            borderColor: selected ? "#FCBA19" : "rgba(255,255,255,0.95)",
-            borderWidth: selected ? 4 : 3,
-            transform: [{ scale: selected ? 1.15 : 1 }],
-          },
-        ]}
+    <Svg width={W} height={H}>
+      {/* Soft halo so the pin reads on busy basemaps */}
+      <Circle cx={cx} cy={cy} r={ringR + 3} fill="rgba(0,0,0,0.18)" />
+      {/* White/gold outer ring */}
+      <Circle cx={cx} cy={cy} r={ringR} fill={ringColor} />
+      {/* Coloured status dot */}
+      <Circle cx={cx} cy={cy} r={r} fill={info.color} />
+      {/* Short status code centred in the dot */}
+      <SvgText
+        x={cx}
+        y={cy + 4}
+        fontSize={11}
+        fontWeight="bold"
+        fill="#fff"
+        textAnchor="middle"
       >
-        <Text style={styles.label}>{info.short}</Text>
-      </View>
-      {showName && name ? (
-        <View style={styles.nameWrap}>
-          <Text style={styles.nameText} numberOfLines={1}>
-            {name}
-          </Text>
-        </View>
-      ) : null}
-    </View>
+        {info.short}
+      </SvgText>
+
+      {wide && (
+        <>
+          <Rect
+            x={cx - 90}
+            y={H - 22}
+            width={180}
+            height={18}
+            rx={4}
+            ry={4}
+            fill="rgba(14,36,68,0.92)"
+          />
+          <SvgText
+            x={cx}
+            y={H - 9}
+            fontSize={11}
+            fontWeight="600"
+            fill="#F4F1EA"
+            textAnchor="middle"
+          >
+            {displayName}
+          </SvgText>
+        </>
+      )}
+    </Svg>
   );
 }
-
-const styles = StyleSheet.create({
-  wrap: {
-    alignItems: "center",
-    // Fixed bitmap dimensions so Android captures the full custom view
-    // (dot + drop shadow) before the snapshot is taken. Without explicit
-    // size the snapshot can be clipped or mis-anchored.
-    width: 40,
-    height: 40,
-    paddingTop: 4,
-  },
-  wrapWide: {
-    // When a name label is shown, reserve enough width AND height up-front
-    // so the bitmap captures the full label. Keep top padding the same so
-    // the dot stays at a known offset (used by the anchor below).
-    width: 200,
-    height: 68,
-  },
-  dot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 3,
-    elevation: 4,
-  },
-  label: {
-    color: "#fff",
-    fontFamily: "Inter_700Bold",
-    fontSize: 10,
-    letterSpacing: 0.3,
-  },
-  nameWrap: {
-    marginTop: 3,
-    backgroundColor: "rgba(14,36,68,0.92)",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    maxWidth: 160,
-  },
-  nameText: {
-    color: "#F4F1EA",
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 11,
-    letterSpacing: 0.2,
-  },
-});
