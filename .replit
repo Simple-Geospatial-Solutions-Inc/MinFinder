@@ -30,7 +30,6 @@ externalPort = 8081
 [[ports]]
 localPort = 24525
 externalPort = 3000
-exposeLocalhost = true
 
 [userenv]
 
