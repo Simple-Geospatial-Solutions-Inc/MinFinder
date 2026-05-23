@@ -1,15 +1,23 @@
-import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { StyleSheet, View } from "react-native";
 import { Marker } from "react-native-maps";
 
 /**
- * Custom user-location marker. We render this in addition to
- * `showsUserLocation` because Android's native blue dot is unreliable when
- * the basemap is `mapType="none"` with a custom UrlTile overlay — it
- * frequently fails to draw on top of the tiles. This SVG/View marker
- * always renders.
+ * Custom user-location marker. We render this instead of relying on
+ * `showsUserLocation` because Android's native blue dot does not reliably
+ * paint above a custom UrlTile overlay when `mapType="none"`.
  *
- * Visual: solid blue dot with a soft white halo and a slow pulsing ring.
+ * Rendering notes
+ * ---------------
+ * react-native-maps captures a custom marker's children to a bitmap once,
+ * then re-uses that bitmap during pan/zoom. We use the same pattern as
+ * `TrackedMarker`: keep `tracksViewChanges` true for ~300 ms after mount or
+ * whenever the dot's screen position changes so the bitmap is captured
+ * after layout, then disable tracking to keep the marker cheap.
+ *
+ * The marker is intentionally static (no looping animation) because
+ * animations inside a bitmapped marker child don't actually animate — the
+ * snapshot is frozen. A static dot is what every major map app uses.
  */
 export function UserLocationDot({
   latitude,
@@ -20,46 +28,27 @@ export function UserLocationDot({
   longitude: number;
   heading?: number | null;
 }) {
-  const pulse = useRef(new Animated.Value(0)).current;
+  const [tracks, setTracks] = useState(true);
 
+  // Re-enable tracking briefly whenever the position changes so the bitmap
+  // is recaptured after the marker has been re-laid out at its new spot.
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 1800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: 0,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse]);
-
-  const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 2.4] });
-  const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] });
+    setTracks(true);
+    const t = setTimeout(() => setTracks(false), 300);
+    return () => clearTimeout(t);
+  }, [latitude, longitude]);
 
   return (
     <Marker
       coordinate={{ latitude, longitude }}
       anchor={{ x: 0.5, y: 0.5 }}
-      tracksViewChanges={false}
+      tracksViewChanges={tracks}
       flat
-      rotation={typeof heading === "number" ? heading : 0}
+      rotation={typeof heading === "number" && heading >= 0 ? heading : 0}
       zIndex={9999}
+      stopPropagation
     >
-      <View style={styles.wrap}>
-        <Animated.View
-          style={[
-            styles.ring,
-            { transform: [{ scale: ringScale }], opacity: ringOpacity },
-          ]}
-        />
+      <View style={styles.wrap} pointerEvents="none">
         <View style={styles.halo} />
         <View style={styles.dot} />
       </View>
@@ -69,21 +58,13 @@ export function UserLocationDot({
 
 const DOT = 16;
 const HALO = 26;
-const RING = 34;
 
 const styles = StyleSheet.create({
   wrap: {
-    width: RING,
-    height: RING,
+    width: HALO,
+    height: HALO,
     alignItems: "center",
     justifyContent: "center",
-  },
-  ring: {
-    position: "absolute",
-    width: RING,
-    height: RING,
-    borderRadius: RING / 2,
-    backgroundColor: "#1E88E5",
   },
   halo: {
     position: "absolute",
