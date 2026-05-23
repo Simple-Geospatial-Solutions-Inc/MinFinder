@@ -11,8 +11,16 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { CalibrationModal } from "@/components/CalibrationModal";
 import { CompassDial } from "@/components/CompassDial";
 import { useColors } from "@/hooks/useColors";
+import {
+  applyOffset,
+  clearOffset,
+  loadOffset,
+  offsetForReference,
+  saveOffset,
+} from "@/lib/calibration";
 import { getOccurrenceById, type Occurrence } from "@/lib/db";
 import {
   bearingDegrees,
@@ -33,6 +41,21 @@ export default function CompassScreen() {
   const [heading, setHeading] = useState<number>(0);
   const [headingSource, setHeadingSource] = useState<"true" | "magnetic" | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
+
+  // Calibration offset (degrees). Loaded once on mount, persisted on change.
+  const [offset, setOffset] = useState<number>(0);
+  // Local magnetic declination derived from the latest sensor reading
+  // (trueHeading - magneticHeading). null until we get a reading with both.
+  const [declination, setDeclination] = useState<number | null>(null);
+  const [showCalibration, setShowCalibration] = useState(false);
+  // True once we have at least one valid sensor reading. Used to disable
+  // the Set button so users can't store a calibration offset against the
+  // default 0° before the magnetometer has actually reported anything.
+  const [headingReady, setHeadingReady] = useState(false);
+
+  // Refs the modal reads at the moment "Set" is pressed.
+  const rawHeadingRef = useRef<number>(0);
+  const declinationRef = useRef<number | null>(null);
 
   const subPos = useRef<Location.LocationSubscription | null>(null);
   const subHeading = useRef<Location.LocationSubscription | null>(null);
@@ -88,13 +111,37 @@ export default function CompassScreen() {
       try {
         subHeading.current = await Location.watchHeadingAsync((h) => {
           if (cancelled) return;
-          const useTrue = h.trueHeading >= 0;
-          const raw = useTrue ? h.trueHeading : h.magHeading;
+          // expo-location uses -1 (and sometimes other negatives) as the
+          // "unknown" sentinel for both `trueHeading` and `magHeading`.
+          // Treat anything outside [0, 360) as invalid for both fields.
+          const trueValid =
+            typeof h.trueHeading === "number" &&
+            h.trueHeading >= 0 &&
+            h.trueHeading < 360;
+          const magValid =
+            typeof h.magHeading === "number" &&
+            h.magHeading >= 0 &&
+            h.magHeading < 360;
+          const useTrue = trueValid;
+          const raw = useTrue ? h.trueHeading : magValid ? h.magHeading : null;
           if (raw == null || Number.isNaN(raw)) return;
+
+          // Derive local magnetic declination only when BOTH readings are
+          // valid. The result is in (-180, 180] east-positive degrees.
+          if (trueValid && magValid) {
+            let d = h.trueHeading - h.magHeading;
+            if (d > 180) d -= 360;
+            if (d <= -180) d += 360;
+            declinationRef.current = d;
+            setDeclination((prev) => (prev === d ? prev : d));
+          }
+
           setHeadingSource((prev) => {
             const next = useTrue ? "true" : "magnetic";
             return prev === next ? prev : next;
           });
+          rawHeadingRef.current = raw;
+          if (!headingReady) setHeadingReady(true);
           // Circular EMA: smooth sin/cos components so we never jump across 0°/360°.
           const rad = (raw * Math.PI) / 180;
           const s = Math.sin(rad);
@@ -121,7 +168,16 @@ export default function CompassScreen() {
         console.warn("heading error", err);
       }
     })();
+
+    // Load persisted calibration offset.
+    loadOffset().then((o) => {
+      if (!cancelled) setOffset(o);
+    });
+
     return () => {
+      // Flip the closure flag first so any in-flight async callbacks bail
+      // out before calling setState on an unmounted component.
+      cancelled = true;
       subPos.current?.remove();
       subHeading.current?.remove();
     };
@@ -151,6 +207,10 @@ export default function CompassScreen() {
       : 0;
 
   const accuracy = coords?.accuracy ?? null;
+  // The displayed heading is the smoothed sensor heading plus the user's
+  // calibration offset (modulo 360). When offset === 0 this is a no-op.
+  const displayedHeading = applyOffset(heading, offset);
+  const calibrated = offset !== 0;
 
   if (loadError) {
     return (
@@ -198,7 +258,36 @@ export default function CompassScreen() {
       ]}
     >
       <View style={styles.dialWrap}>
-        <CompassDial size={300} heading={heading} bearing={bearing} />
+        <CompassDial size={300} heading={displayedHeading} bearing={bearing} />
+        <Pressable
+          onPress={() => setShowCalibration(true)}
+          accessibilityLabel="Calibrate compass"
+          hitSlop={10}
+          style={({ pressed }) => [
+            styles.calibrateBtn,
+            {
+              backgroundColor: calibrated
+                ? "rgba(252,186,25,0.22)"
+                : "rgba(244,241,234,0.08)",
+              borderColor: calibrated ? "#FCBA19" : "rgba(244,241,234,0.18)",
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Feather
+            name="navigation"
+            size={14}
+            color={calibrated ? "#FCBA19" : "#F4F1EA"}
+          />
+          <Text
+            style={[
+              styles.calibrateBtnText,
+              { color: calibrated ? "#FCBA19" : "#F4F1EA" },
+            ]}
+          >
+            {calibrated ? "Calibrated" : "Calibrate"}
+          </Text>
+        </Pressable>
       </View>
 
       <Text style={styles.targetMinfilno}>
@@ -218,13 +307,13 @@ export default function CompassScreen() {
       <View style={styles.detailsBlock}>
         <DetailRow
           label="Compass Direction"
-          value={`${Math.round(heading)}° ${
+          value={`${Math.round(displayedHeading)}° ${
             headingSource === "true"
               ? "True"
               : headingSource === "magnetic"
                 ? "Magnetic"
                 : ""
-          }`.trim()}
+          }${calibrated ? " · calibrated" : ""}`.trim()}
         />
         <DetailRow
           label="Latitude"
@@ -249,6 +338,27 @@ export default function CompassScreen() {
           }
         />
       </View>
+
+      <CalibrationModal
+        visible={showCalibration}
+        rawHeading={rawHeadingRef.current}
+        declination={declinationRef.current ?? declination}
+        currentOffset={offset}
+        headingReady={headingReady}
+        onSet={(ref) => {
+          if (!headingReady) return;
+          const newOffset = offsetForReference(rawHeadingRef.current, ref);
+          setOffset(newOffset);
+          saveOffset(newOffset);
+          setShowCalibration(false);
+        }}
+        onClear={() => {
+          setOffset(0);
+          clearOffset();
+          setShowCalibration(false);
+        }}
+        onClose={() => setShowCalibration(false)}
+      />
 
       <View style={styles.hintBox}>
         <Feather name="info" size={14} color="rgba(244,241,234,0.65)" />
@@ -308,7 +418,22 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   errorBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
-  dialWrap: { marginTop: 8 },
+  dialWrap: { marginTop: 8, alignItems: "center" },
+  calibrateBtn: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  calibrateBtnText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
   targetMinfilno: {
     marginTop: 16,
     color: "#F4F1EA",
