@@ -75,13 +75,15 @@ export function SubscriptionProvider({
         Purchases.setLogLevel(LOG_LEVEL.WARN);
         await Purchases.configure({ apiKey: API_KEY });
 
-        const [info, offerings] = await Promise.all([
+        const [info, offerings, appUserId] = await Promise.all([
           Purchases.getCustomerInfo(),
           Purchases.getOfferings(),
+          Purchases.getAppUserID(),
         ]);
         if (cancelled) return;
         setCustomerInfo(info);
         setOffering(offerings.current ?? null);
+        console.log("[RevenueCat] App User ID:", appUserId);
       } catch (err) {
         if (!cancelled) console.warn("[RevenueCat] init failed:", err);
       } finally {
