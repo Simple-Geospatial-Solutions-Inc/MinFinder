@@ -1,13 +1,50 @@
 import { Feather } from "@/components/Icon";
-import React from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useMemo } from "react";
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import { useColors } from "@/hooks/useColors";
+import { useSubscription } from "@/lib/revenuecat";
+
+type PurchasesPackage = import("react-native-purchases").PurchasesPackage;
+
+const PACKAGE_PRIORITY: Record<string, number> = {
+  $rc_lifetime: 0,
+  $rc_annual: 1,
+  $rc_monthly: 2,
+};
+
+function packageLabel(pkg: PurchasesPackage): string {
+  switch (pkg.identifier) {
+    case "$rc_lifetime":
+      return "Lifetime";
+    case "$rc_annual":
+      return "Yearly";
+    case "$rc_monthly":
+      return "Monthly";
+    default:
+      return pkg.product.title || pkg.identifier;
+  }
+}
+
+function packageSubtitle(pkg: PurchasesPackage): string {
+  if (pkg.identifier === "$rc_lifetime") return "One-time payment";
+  if (pkg.identifier === "$rc_annual") return "Billed yearly";
+  if (pkg.identifier === "$rc_monthly") return "Billed monthly";
+  return "";
+}
 
 /**
- * Placeholder paywall sheet shown when a free user taps a premium feature.
- * Replace `onUpgrade` body with the RevenueCat purchase flow when ready —
- * the rest of the app does not need to change.
+ * Paywall shown when a free user taps a premium feature. Pulls live packages
+ * from the current RevenueCat offering and routes purchase / restore through
+ * the SubscriptionProvider; entitlement state propagates automatically.
  */
 export function PaywallSheet({
   visible,
@@ -20,6 +57,26 @@ export function PaywallSheet({
   onClose: () => void;
 }) {
   const colors = useColors();
+  const { offering, purchase, restore, isLoading, isReady } = useSubscription();
+
+  const packages = useMemo<PurchasesPackage[]>(() => {
+    if (!offering) return [];
+    return [...offering.availablePackages].sort(
+      (a, b) =>
+        (PACKAGE_PRIORITY[a.identifier] ?? 99) -
+        (PACKAGE_PRIORITY[b.identifier] ?? 99),
+    );
+  }, [offering]);
+
+  const handlePurchase = async (pkg: PurchasesPackage) => {
+    const ok = await purchase(pkg);
+    if (ok) onClose();
+  };
+
+  const handleRestore = async () => {
+    const ok = await restore();
+    if (ok) onClose();
+  };
 
   return (
     <Modal
@@ -43,9 +100,13 @@ export function PaywallSheet({
             <Pressable
               onPress={onClose}
               hitSlop={10}
+              disabled={isLoading}
               style={({ pressed }) => [
                 styles.closeBtn,
-                { backgroundColor: colors.muted, opacity: pressed ? 0.7 : 1 },
+                {
+                  backgroundColor: colors.muted,
+                  opacity: pressed || isLoading ? 0.7 : 1,
+                },
               ]}
             >
               <Feather name="x" size={16} color={colors.foreground} />
@@ -60,26 +121,81 @@ export function PaywallSheet({
             details, and more.
           </Text>
 
-          <Pressable
-            onPress={() => {
-              // TODO: trigger RevenueCat purchase flow here.
-              onClose();
-            }}
-            style={({ pressed }) => [
-              styles.primaryBtn,
-              { backgroundColor: colors.gold, opacity: pressed ? 0.85 : 1 },
-            ]}
-          >
-            <Text style={[styles.primaryBtnText, { color: colors.navyDeep }]}>
-              Upgrade to Pro
+          {!isReady ? (
+            <View style={styles.loaderRow}>
+              <ActivityIndicator color={colors.gold} />
+            </View>
+          ) : packages.length === 0 ? (
+            <Text
+              style={[
+                styles.emptyText,
+                { color: colors.mutedForeground, borderColor: colors.border },
+              ]}
+            >
+              No subscription options available right now. Please try again
+              later.
             </Text>
-          </Pressable>
+          ) : (
+            <ScrollView
+              style={styles.packageList}
+              contentContainerStyle={{ gap: 8 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {packages.map((pkg) => (
+                <Pressable
+                  key={pkg.identifier}
+                  onPress={() => handlePurchase(pkg)}
+                  disabled={isLoading}
+                  style={({ pressed }) => [
+                    styles.packageRow,
+                    {
+                      borderColor: colors.gold,
+                      backgroundColor: pressed
+                        ? colors.gold + "1A"
+                        : "transparent",
+                      opacity: isLoading ? 0.6 : 1,
+                    },
+                  ]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={[styles.pkgTitle, { color: colors.foreground }]}
+                    >
+                      {packageLabel(pkg)}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.pkgSubtitle,
+                        { color: colors.mutedForeground },
+                      ]}
+                    >
+                      {packageSubtitle(pkg)}
+                    </Text>
+                  </View>
+                  <Text style={[styles.pkgPrice, { color: colors.gold }]}>
+                    {pkg.product.priceString}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
 
-          <Pressable onPress={onClose} hitSlop={6} style={styles.secondaryBtn}>
+          {isLoading && (
+            <View style={styles.loaderRow}>
+              <ActivityIndicator color={colors.gold} />
+            </View>
+          )}
+
+          <Pressable
+            onPress={handleRestore}
+            hitSlop={6}
+            disabled={isLoading}
+            style={styles.secondaryBtn}
+          >
             <Text
               style={[styles.secondaryBtnText, { color: colors.mutedForeground }]}
             >
-              Maybe later
+              Restore purchases
             </Text>
           </Pressable>
         </View>
@@ -125,13 +241,28 @@ const styles = StyleSheet.create({
   },
   title: { fontFamily: "Inter_700Bold", fontSize: 18 },
   body: { fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 18 },
-  primaryBtn: {
-    paddingVertical: 12,
-    borderRadius: 12,
+  packageList: { maxHeight: 240 },
+  packageRow: {
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 4,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 8,
   },
-  primaryBtnText: { fontFamily: "Inter_700Bold", fontSize: 14 },
+  pkgTitle: { fontFamily: "Inter_700Bold", fontSize: 15 },
+  pkgSubtitle: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  pkgPrice: { fontFamily: "Inter_700Bold", fontSize: 15 },
+  emptyText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    textAlign: "center",
+  },
+  loaderRow: { alignItems: "center", paddingVertical: 6 },
   secondaryBtn: { paddingVertical: 8, alignItems: "center" },
   secondaryBtnText: { fontFamily: "Inter_500Medium", fontSize: 13 },
 });

@@ -61,6 +61,7 @@
     "expo-sqlite": "^16.0.10",
     "lucide-react-native": "^1.16.0",
     "metro-runtime": "^0.84.4",
-    "react-native-maps": "1.20.1"
+    "react-native-maps": "1.20.1",
+    "react-native-purchases": "^10.1.2"
   }
 }
