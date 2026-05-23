@@ -311,15 +311,15 @@ export default function CompassScreen() {
           }${calibrated ? " · calibrated" : ""}`.trim()}
         />
         <DetailRow
-          label="Latitude"
+          label="Your Latitude"
           value={
-            target.LATITUDE != null ? formatDMS(target.LATITUDE, true) : "—"
+            coords ? formatDMS(coords.latitude, true) : "Locating…"
           }
         />
         <DetailRow
-          label="Longitude"
+          label="Your Longitude"
           value={
-            target.LONGITUDE != null ? formatDMS(target.LONGITUDE, false) : "—"
+            coords ? formatDMS(coords.longitude, false) : "Locating…"
           }
         />
         <DetailRow
