@@ -11,6 +11,7 @@ import {
   Navigation,
   Plus,
   Search,
+  Settings,
   Trash2,
   X,
   type LucideIcon,
@@ -28,6 +29,7 @@ const ICONS = {
   navigation: Navigation,
   plus: Plus,
   search: Search,
+  settings: Settings,
   "trash-2": Trash2,
   x: X,
 } satisfies Record<string, LucideIcon>;

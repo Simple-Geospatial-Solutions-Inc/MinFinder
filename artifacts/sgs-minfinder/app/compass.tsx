@@ -261,32 +261,27 @@ export default function CompassScreen() {
         <CompassDial size={300} heading={displayedHeading} bearing={bearing} />
         <Pressable
           onPress={() => setShowCalibration(true)}
-          accessibilityLabel="Calibrate compass"
-          hitSlop={10}
+          accessibilityLabel={
+            calibrated ? "Compass calibrated. Tap to recalibrate." : "Calibrate compass"
+          }
+          hitSlop={12}
           style={({ pressed }) => [
-            styles.calibrateBtn,
+            styles.cogBtn,
             {
               backgroundColor: calibrated
-                ? "rgba(252,186,25,0.22)"
-                : "rgba(244,241,234,0.08)",
-              borderColor: calibrated ? "#FCBA19" : "rgba(244,241,234,0.18)",
-              opacity: pressed ? 0.7 : 1,
+                ? "rgba(252,186,25,0.18)"
+                : "rgba(20,30,48,0.85)",
+              borderColor: calibrated ? "#FCBA19" : "rgba(244,241,234,0.22)",
+              opacity: pressed ? 0.6 : 1,
             },
           ]}
         >
           <Feather
-            name="navigation"
-            size={14}
+            name="settings"
+            size={18}
             color={calibrated ? "#FCBA19" : "#F4F1EA"}
           />
-          <Text
-            style={[
-              styles.calibrateBtnText,
-              { color: calibrated ? "#FCBA19" : "#F4F1EA" },
-            ]}
-          >
-            {calibrated ? "Calibrated" : "Calibrate"}
-          </Text>
+          {calibrated && <View style={styles.cogDot} />}
         </Pressable>
       </View>
 
@@ -418,21 +413,33 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   errorBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
-  dialWrap: { marginTop: 8, alignItems: "center" },
-  calibrateBtn: {
-    marginTop: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
+  dialWrap: { marginTop: 8, alignItems: "center", position: "relative" },
+  // Floating cog overlay in the top-right of the dial body.
+  cogBtn: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
-  calibrateBtnText: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 12,
-    letterSpacing: 0.3,
+  // Small gold "calibrated" indicator dot in the cog's corner.
+  cogDot: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#FCBA19",
   },
   targetMinfilno: {
     marginTop: 16,
