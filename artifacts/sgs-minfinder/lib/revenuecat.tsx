@@ -8,7 +8,7 @@ import React, {
 } from "react";
 import { Platform } from "react-native";
 
-const ENTITLEMENT_ID = "pro";
+const ENTITLEMENT_ID = "default";
 const API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? "";
 
 type Purchases = typeof import("react-native-purchases").default;
