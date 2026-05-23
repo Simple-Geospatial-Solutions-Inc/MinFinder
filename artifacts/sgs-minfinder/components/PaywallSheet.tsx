@@ -172,7 +172,7 @@ export function PaywallSheet({
                       {packageSubtitle(pkg)}
                     </Text>
                   </View>
-                  <Text style={[styles.pkgPrice, { color: colors.gold }]}>
+                  <Text style={[styles.pkgPrice, { color: colors.foreground }]}>
                     {pkg.product.priceString}
                   </Text>
                 </Pressable>
