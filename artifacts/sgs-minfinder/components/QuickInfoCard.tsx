@@ -1,11 +1,22 @@
 import { Feather } from "@/components/Icon";
+import { PaywallSheet } from "@/components/PaywallSheet";
 import { router } from "expo-router";
-import React from "react";
+import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { StatusBadge } from "@/components/StatusBadge";
 import { useColors } from "@/hooks/useColors";
+import { useEntitlement } from "@/hooks/useEntitlement";
 import type { Occurrence } from "@/lib/db";
+
+/** Small lock pip rendered in the corner of a gated action button. */
+function LockBadge() {
+  return (
+    <View style={styles.lockBadge}>
+      <Feather name="lock" size={9} color="#1A2436" />
+    </View>
+  );
+}
 
 /**
  * Compact two-line preview shown when a single marker is tapped. Shows the
@@ -25,7 +36,17 @@ export function QuickInfoCard({
   bottomOffset: number;
 }) {
   const colors = useColors();
+  const { isPaid } = useEntitlement();
+  const [paywallFor, setPaywallFor] = useState<string | null>(null);
   if (!occurrence) return null;
+
+  const navigateAction = () => {
+    onClose();
+    router.push({
+      pathname: "/compass",
+      params: { id: String(occurrence.id) },
+    });
+  };
 
   return (
     <View
@@ -59,14 +80,10 @@ export function QuickInfoCard({
 
         <View style={styles.actions}>
           <Pressable
-            onPress={() => {
-              onClose();
-              router.push({
-                pathname: "/compass",
-                params: { id: String(occurrence.id) },
-              });
-            }}
-            accessibilityLabel="Navigate"
+            onPress={() =>
+              isPaid ? navigateAction() : setPaywallFor("Navigate")
+            }
+            accessibilityLabel={isPaid ? "Navigate" : "Navigate (premium)"}
             hitSlop={6}
             style={({ pressed }) => [
               styles.iconBtn,
@@ -77,11 +94,14 @@ export function QuickInfoCard({
             ]}
           >
             <Feather name="navigation" size={18} color={colors.primaryForeground} />
+            {!isPaid && <LockBadge />}
           </Pressable>
 
           <Pressable
-            onPress={onExpand}
-            accessibilityLabel="Show full details"
+            onPress={() => (isPaid ? onExpand() : setPaywallFor("Full details"))}
+            accessibilityLabel={
+              isPaid ? "Show full details" : "Show full details (premium)"
+            }
             hitSlop={6}
             style={({ pressed }) => [
               styles.iconBtn,
@@ -92,6 +112,7 @@ export function QuickInfoCard({
             ]}
           >
             <Feather name="plus" size={20} color={colors.navyDeep} />
+            {!isPaid && <LockBadge />}
           </Pressable>
 
           <Pressable
@@ -110,6 +131,12 @@ export function QuickInfoCard({
           </Pressable>
         </View>
       </View>
+
+      <PaywallSheet
+        visible={paywallFor != null}
+        feature={paywallFor ?? ""}
+        onClose={() => setPaywallFor(null)}
+      />
     </View>
   );
 }
@@ -166,5 +193,18 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
+  },
+  lockBadge: {
+    position: "absolute",
+    top: -3,
+    right: -3,
+    width: 15,
+    height: 15,
+    borderRadius: 8,
+    backgroundColor: "#FCBA19",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "#0B1B33",
   },
 });
