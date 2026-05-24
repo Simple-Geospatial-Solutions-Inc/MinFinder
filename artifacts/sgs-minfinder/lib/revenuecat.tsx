@@ -35,6 +35,7 @@ type SubscriptionState = {
   isLoading: boolean;
   customerInfo: CustomerInfo | null;
   offering: PurchasesOffering | null;
+  appUserId: string | null;
   purchase: (pkg: PurchasesPackage) => Promise<boolean>;
   restore: () => Promise<boolean>;
   refresh: () => Promise<void>;
@@ -54,6 +55,7 @@ export function SubscriptionProvider({
 }) {
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
   const [offering, setOffering] = useState<PurchasesOffering | null>(null);
+  const [appUserId, setAppUserId] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -83,6 +85,7 @@ export function SubscriptionProvider({
         if (cancelled) return;
         setCustomerInfo(info);
         setOffering(offerings.current ?? null);
+        setAppUserId(appUserId);
         console.log("[RevenueCat] App User ID:", appUserId);
       } catch (err) {
         if (!cancelled) console.warn("[RevenueCat] init failed:", err);
@@ -173,11 +176,12 @@ export function SubscriptionProvider({
       isLoading,
       customerInfo,
       offering,
+      appUserId,
       purchase,
       restore,
       refresh,
     }),
-    [customerInfo, isReady, isLoading, offering, purchase, restore, refresh],
+    [customerInfo, isReady, isLoading, offering, appUserId, purchase, restore, refresh],
   );
 
   return (

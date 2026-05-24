@@ -1,5 +1,6 @@
 import { Feather } from "@/components/Icon";
-import React, { useMemo } from "react";
+import * as Clipboard from "expo-clipboard";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -57,7 +58,9 @@ export function PaywallSheet({
   onClose: () => void;
 }) {
   const colors = useColors();
-  const { offering, purchase, restore, isLoading, isReady } = useSubscription();
+  const { offering, purchase, restore, isLoading, isReady, appUserId, refresh } =
+    useSubscription();
+  const [copied, setCopied] = useState(false);
 
   const packages = useMemo<PurchasesPackage[]>(() => {
     if (!offering) return [];
@@ -198,6 +201,46 @@ export function PaywallSheet({
               Restore purchases
             </Text>
           </Pressable>
+
+          {__DEV__ && appUserId && (
+            <View style={[styles.debugBox, { borderColor: colors.border }]}>
+              <Text style={[styles.debugLabel, { color: colors.mutedForeground }]}>
+                Dev · App User ID (for RC test purchase)
+              </Text>
+              <Pressable
+                onPress={async () => {
+                  await Clipboard.setStringAsync(appUserId);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                }}
+                style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+              >
+                <Text
+                  selectable
+                  style={[styles.debugId, { color: colors.foreground }]}
+                >
+                  {appUserId}
+                </Text>
+                <Text style={[styles.debugHint, { color: colors.gold }]}>
+                  {copied ? "Copied!" : "Tap to copy"}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={refresh}
+                hitSlop={6}
+                style={({ pressed }) => [
+                  styles.debugRefresh,
+                  { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+                ]}
+              >
+                <Text
+                  style={[styles.debugHint, { color: colors.mutedForeground }]}
+                >
+                  Refresh customer info
+                </Text>
+              </Pressable>
+            </View>
+          )}
         </View>
       </View>
     </Modal>
@@ -265,4 +308,20 @@ const styles = StyleSheet.create({
   loaderRow: { alignItems: "center", paddingVertical: 6 },
   secondaryBtn: { paddingVertical: 8, alignItems: "center" },
   secondaryBtnText: { fontFamily: "Inter_500Medium", fontSize: 13 },
+  debugBox: {
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderRadius: 10,
+    padding: 10,
+    gap: 6,
+    marginTop: 4,
+  },
+  debugLabel: { fontFamily: "Inter_500Medium", fontSize: 11 },
+  debugId: { fontFamily: "Inter_400Regular", fontSize: 11 },
+  debugHint: { fontFamily: "Inter_500Medium", fontSize: 11, marginTop: 4 },
+  debugRefresh: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 6,
+    alignItems: "center",
+  },
 });
