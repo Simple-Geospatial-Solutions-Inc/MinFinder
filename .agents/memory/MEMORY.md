@@ -1,0 +1,1 @@
+- [react-native-maps native view detection](react-native-maps-native-view-detection.md) — gate optional native overlays (Heatmap) on UIManager.hasViewManagerConfig, not expo-constants env (unreliable in Expo Go SDK 54).

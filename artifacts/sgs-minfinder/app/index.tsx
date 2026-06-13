@@ -1,5 +1,4 @@
 import { Feather, type FeatherIconName } from "@/components/Icon";
-import Constants, { ExecutionEnvironment } from "expo-constants";
 import { router } from "expo-router";
 import * as Location from "expo-location";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -12,6 +11,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  UIManager,
   View,
 } from "react-native";
 import MapView, {
@@ -42,14 +42,23 @@ const BC_REGION: Region = {
   longitudeDelta: 14,
 };
 
-// react-native-maps' <Heatmap> renders a native view (AIRMapHeatMap) that is
+// react-native-maps' <Heatmap> renders a native view (AIRMapHeatmap) that is
 // only compiled into custom dev/standalone builds — it does not exist in the
-// Expo Go client or on web. Rendering it there throws "view config not found
-// for component AIRMapHeatMap". Detect the runtime once and fall back to
-// cluster pins for the zoomed-out density view when the native view is absent.
-const NATIVE_HEATMAP_SUPPORTED =
-  Platform.OS !== "web" &&
-  Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;
+// Expo Go client or on web. Rendering it there throws "View config not found
+// for component AIRMapHeatmap". Ask the native layer directly whether that
+// view manager is registered (the same check react-native-maps uses
+// internally); when it is absent we fall back to cluster pins for the
+// zoomed-out density view. This is environment-agnostic — it works whether the
+// app runs in Expo Go, web, a dev build, or a production build.
+function detectNativeHeatmap(): boolean {
+  if (Platform.OS === "web") return false;
+  try {
+    return UIManager.hasViewManagerConfig?.("AIRMapHeatmap") ?? false;
+  } catch {
+    return false;
+  }
+}
+const NATIVE_HEATMAP_SUPPORTED = detectNativeHeatmap();
 
 export default function MapScreen() {
   const colors = useColors();
