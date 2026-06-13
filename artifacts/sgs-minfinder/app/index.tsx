@@ -1,4 +1,5 @@
 import { Feather, type FeatherIconName } from "@/components/Icon";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import { router } from "expo-router";
 import * as Location from "expo-location";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -40,6 +41,15 @@ const BC_REGION: Region = {
   latitudeDelta: 12,
   longitudeDelta: 14,
 };
+
+// react-native-maps' <Heatmap> renders a native view (AIRMapHeatMap) that is
+// only compiled into custom dev/standalone builds — it does not exist in the
+// Expo Go client or on web. Rendering it there throws "view config not found
+// for component AIRMapHeatMap". Detect the runtime once and fall back to
+// cluster pins for the zoomed-out density view when the native view is absent.
+const NATIVE_HEATMAP_SUPPORTED =
+  Platform.OS !== "web" &&
+  Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;
 
 export default function MapScreen() {
   const colors = useColors();
@@ -142,16 +152,22 @@ export default function MapScreen() {
   const HEAT_TO_PIN_DELTA = 0.5;
   const heatmap = region.latitudeDelta >= HEAT_TO_PIN_DELTA;
 
+  // Only use the native heatmap when the runtime actually provides it.
+  // Otherwise (Expo Go, web) the zoomed-out view falls back to cluster pins.
+  const showNativeHeatmap = heatmap && NATIVE_HEATMAP_SUPPORTED;
+
   // Cluster the entire (status-filtered) dataset for the current zoom.
   // No bbox cull — clusters that fall offscreen are cheap; total ≤ ~900 cells.
+  // When the native heatmap is unavailable we also cluster at the zoomed-out
+  // level so there is still a density view to render.
   const clusters = useMemo<ClusterItem[]>(() => {
-    if (heatmap || allFilteredRows.length === 0) return [];
+    if (showNativeHeatmap || allFilteredRows.length === 0) return [];
     return clusterOccurrences(allFilteredRows, region.latitudeDelta);
-  }, [allFilteredRows, region.latitudeDelta, heatmap]);
+  }, [allFilteredRows, region.latitudeDelta, showNativeHeatmap]);
 
   // Heatmap point list — native Google Maps heatmap handles 16k+ easily.
   const heatPoints = useMemo(() => {
-    if (!heatmap) return [];
+    if (!showNativeHeatmap) return [];
     const pts: { latitude: number; longitude: number; weight?: number }[] = [];
     for (const r of allFilteredRows) {
       if (r.LATITUDE != null && r.LONGITUDE != null) {
@@ -159,7 +175,7 @@ export default function MapScreen() {
       }
     }
     return pts;
-  }, [allFilteredRows, heatmap]);
+  }, [allFilteredRows, showNativeHeatmap]);
 
   // Show name labels only when zoomed in past a regional level. Computed
   // once per region change so every marker key uses the same flag.
@@ -303,7 +319,7 @@ export default function MapScreen() {
       >
         <UrlTile {...tileCacheConfig} maximumZ={19} flipY={false} zIndex={-1} />
 
-        {heatmap && heatPoints.length > 0 && (
+        {showNativeHeatmap && heatPoints.length > 0 && (
           <Heatmap
             points={heatPoints}
             radius={40}
@@ -324,7 +340,7 @@ export default function MapScreen() {
           />
         )}
 
-        {!heatmap && visibleClusters.map((c) =>
+        {!showNativeHeatmap && visibleClusters.map((c) =>
           c.type === "point" ? (
             <TrackedMarker
               // Include the label-visibility flag in the key so the marker
