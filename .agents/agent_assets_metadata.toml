@@ -6,3 +6,15 @@ id = "crDe5aJsTdOdheyfV1cJT"
 uri = "file://artifacts/sgs-minfinder/assets/images/icon.png"
 type = "image"
 title = "minfinder app icon"
+
+[[generated]]
+id = "v128xxiA3RuHtNBCCR8s2"
+uri = "file://artifacts/mockup-sandbox/public/images/topo-regional.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "tHxullTxrebZ2JZiDV8Ot"
+uri = "file://artifacts/mockup-sandbox/public/images/topo-closeup.png"
+type = "image"
+title = "generated_image"
