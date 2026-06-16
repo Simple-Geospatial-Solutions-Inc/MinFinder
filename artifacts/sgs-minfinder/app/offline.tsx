@@ -304,12 +304,21 @@ export default function OfflineScreen() {
               style={StyleSheet.absoluteFill}
               initialRegion={region}
               onRegionChangeComplete={setRegion}
-              mapType="none"
+              // mapType="none" is Android/Google-Maps only; on iOS (Apple Maps)
+              // it is not a valid MKMapType, so use "standard" there.
+              mapType={Platform.OS === "android" ? "none" : "standard"}
             >
               <UrlTile
                 urlTemplate={TILE_TEMPLATE_REMOTE}
-                tileCachePath={Platform.OS === "web" ? undefined : TILE_CACHE_DIR}
-                tileCacheMaxAge={60 * 60 * 24 * 365}
+                // The native offline tile cache is Android-only — on iOS the
+                // cached-overlay path crashes when zooming. iOS uses plain
+                // remote tiles.
+                tileCachePath={
+                  Platform.OS === "android" ? TILE_CACHE_DIR : undefined
+                }
+                tileCacheMaxAge={
+                  Platform.OS === "android" ? 60 * 60 * 24 * 365 : undefined
+                }
                 maximumZ={19}
                 zIndex={-1}
               />

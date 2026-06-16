@@ -222,15 +222,20 @@ export default function MapScreen() {
     );
   }, []);
 
+  // The native offline tile cache (tileCachePath) is only safe on Android.
+  // On iOS, pointing UrlTile at a file:// cache path switches MapKit to the
+  // AIRMapUrlTileCachedOverlay code path, which crashes when zooming out (the
+  // tile fan-out stresses that custom file-IO overlay). iOS therefore uses the
+  // plain remote tiles only.
   const tileCacheConfig = useMemo(
     () =>
-      Platform.OS === "web"
-        ? { urlTemplate: TILE_TEMPLATE_REMOTE }
-        : {
+      Platform.OS === "android"
+        ? {
             urlTemplate: TILE_TEMPLATE_REMOTE,
             tileCachePath: TILE_CACHE_DIR,
             tileCacheMaxAge: 60 * 60 * 24 * 365,
-          },
+          }
+        : { urlTemplate: TILE_TEMPLATE_REMOTE },
     [],
   );
 
@@ -275,14 +280,17 @@ export default function MapScreen() {
         initialRegion={BC_REGION}
         onRegionChangeComplete={setRegion}
         // We render our own <UserLocationDot/> below because the native
-        // blue dot does not paint reliably above a custom UrlTile overlay
-        // on Android (mapType="none"). Disabling the native dot also
-        // prevents a double-render on platforms where it does work.
+        // blue dot does not paint reliably above a custom UrlTile overlay.
+        // Disabling the native dot also prevents a double-render on platforms
+        // where it does work.
         showsUserLocation={false}
         showsMyLocationButton={false}
         showsCompass={false}
         toolbarEnabled={false}
-        mapType="none"
+        // mapType="none" is Android/Google-Maps only. On iOS (Apple Maps) it
+        // is not a valid MKMapType, so we use "standard" there — the opaque
+        // Esri topo tiles drawn by <UrlTile> cover the base map anyway.
+        mapType={Platform.OS === "android" ? "none" : "standard"}
       >
         <UrlTile {...tileCacheConfig} maximumZ={19} flipY={false} zIndex={-1} />
 
