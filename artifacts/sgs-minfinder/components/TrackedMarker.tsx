@@ -1,32 +1,63 @@
-import React, { useEffect, useState } from "react";
-import { Platform } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Platform, View } from "react-native";
 import { Marker, MapMarkerProps } from "react-native-maps";
 
 /**
- * react-native-maps can capture a custom marker's view to a bitmap when
- * `tracksViewChanges` is true, then re-use that bitmap during pan/zoom.
+ * react-native-maps renders a custom marker's React view to a bitmap when
+ * `tracksViewChanges` is true, then re-uses that static bitmap while panning
+ * and zooming (re-snapshotting every frame is what kills performance).
  *
- * On Android that snapshot is needed: if `tracksViewChanges` starts false the
- * first capture often happens before the React Native subview has laid out,
- * producing an invisible pin. So on Android we keep tracking on for ~250 ms
- * after mount, then disable it to keep the marker static.
- *
- * On iOS this is actively harmful. Toggling `tracksViewChanges` drives the
+ * iOS: keep tracking OFF entirely. Toggling `tracksViewChanges` drives the
  * legacy bitmap-snapshot path, and under the New Architecture (which Expo Go
- * always forces on) running that snapshot for a whole batch of markers at once
- * — exactly what happens when clusters re-render on zoom — hard-crashes the
- * app. Our pins have fixed dimensions (see MarkerPin / ClusterPin), so they
- * render correctly without any snapshot. We therefore keep tracking OFF on iOS.
+ * always forces on) snapshotting a batch of markers at once — e.g. when
+ * clusters re-render on zoom — hard-crashes the app. Our pins have fixed
+ * dimensions, so they render correctly as native subviews without a snapshot.
+ *
+ * Android: a snapshot IS required or the pin paints blank. The catch is timing:
+ * if the single capture happens before the pin has finished laying out, Android
+ * captures a partial, top-left-clipped bitmap and (because we now reuse markers
+ * instead of recreating them every zoom) keeps that broken bitmap forever. So
+ * we drive the capture off the child's `onLayout`: keep tracking on, and only
+ * switch it off a few frames AFTER layout fires, guaranteeing the full-size pin
+ * is captured. The child is wrapped in a `collapsable={false}` view so Android
+ * doesn't optimise the snapshot target away.
  */
 export function TrackedMarker(
   props: MapMarkerProps & { children: React.ReactNode },
 ) {
-  const trackOnMount = Platform.OS === "android";
-  const [tracks, setTracks] = useState(trackOnMount);
-  useEffect(() => {
-    if (!trackOnMount) return;
-    const t = setTimeout(() => setTracks(false), 250);
-    return () => clearTimeout(t);
-  }, [trackOnMount]);
-  return <Marker {...props} tracksViewChanges={tracks} />;
+  if (Platform.OS !== "android") {
+    return <Marker {...props} tracksViewChanges={false} />;
+  }
+  return <AndroidTrackedMarker {...props} />;
+}
+
+function AndroidTrackedMarker({
+  children,
+  ...rest
+}: MapMarkerProps & { children: React.ReactNode }) {
+  const [tracks, setTracks] = useState(true);
+  const offTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const captureThenSettle = useCallback(() => {
+    setTracks(true);
+    if (offTimer.current) clearTimeout(offTimer.current);
+    // Keep capturing a few frames past layout so the full-size bitmap lands,
+    // then freeze the marker so it stops re-snapshotting.
+    offTimer.current = setTimeout(() => setTracks(false), 350);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (offTimer.current) clearTimeout(offTimer.current);
+    },
+    [],
+  );
+
+  return (
+    <Marker {...rest} tracksViewChanges={tracks}>
+      <View collapsable={false} onLayout={captureThenSettle}>
+        {children}
+      </View>
+    </Marker>
+  );
 }
