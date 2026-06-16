@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import { Marker } from "react-native-maps";
 
 /**
@@ -28,15 +28,19 @@ export function UserLocationDot({
   longitude: number;
   heading?: number | null;
 }) {
-  const [tracks, setTracks] = useState(true);
+  // Android needs a brief bitmap snapshot after the marker lays out (and again
+  // after it moves) or the custom dot paints blank. On iOS that snapshot path
+  // is the same one that crashes the map on zoom (see TrackedMarker), and the
+  // dot has fixed dimensions, so we never snapshot it there.
+  const trackOnAndroid = Platform.OS === "android";
+  const [tracks, setTracks] = useState(trackOnAndroid);
 
-  // Re-enable tracking briefly whenever the position changes so the bitmap
-  // is recaptured after the marker has been re-laid out at its new spot.
   useEffect(() => {
+    if (!trackOnAndroid) return;
     setTracks(true);
     const t = setTimeout(() => setTracks(false), 300);
     return () => clearTimeout(t);
-  }, [latitude, longitude]);
+  }, [latitude, longitude, trackOnAndroid]);
 
   return (
     <Marker
