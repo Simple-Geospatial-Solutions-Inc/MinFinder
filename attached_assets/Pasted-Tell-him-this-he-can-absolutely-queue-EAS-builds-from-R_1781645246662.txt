@@ -1,0 +1,23 @@
+Tell him this — he can absolutely queue EAS builds from Replit; he's probably just hitting an interactive login wall and concluding it's impossible.
+
+The key insight: eas build doesn't build anything on the local machine. It uploads the project and queues a build on Expo's cloud servers. So a headless container (like Replit) having no native iOS/Android toolchain is irrelevant — it never needs one. The only thing the container needs is the EAS CLI, authenticated, with the project linked.
+
+Why his agent thinks it can't: in a headless environment, a bare eas build tries to open an interactive login (browser/prompt) and stalls or fails. The agent sees that and assumes building is blocked. It's not — it just needs non-interactive auth.
+
+The fix (this is exactly how our app does it):
+
+Authenticate with an EXPO_TOKEN, not interactive login. Generate an access token in the Expo dashboard (Account → Settings → Access Tokens), store it as a secret named EXPO_TOKEN. The EAS CLI picks it up automatically — no eas login, no browser.
+
+Run non-interactively:
+
+eas build --platform ios --profile preview --non-interactive --no-wait
+
+--non-interactive stops it from prompting.
+--no-wait queues the build and returns immediately with a build URL instead of blocking the agent while Expo's servers churn for 10–20 min.
+For Apple credentials, don't rely on Apple ID + 2FA (the phone-call codes get rejected constantly). Use an App Store Connect API key via env vars (EXPO_ASC_API_KEY_PATH, EXPO_ASC_KEY_ID, EXPO_ASC_ISSUER_ID) and wire the same key into eas.json under submit.production.ios. The key needs the Admin role so EAS can generate signing certs/provisioning profiles unattended.
+
+A couple of gotchas worth passing along:
+
+EAS build servers do not inherit Replit secrets. Any env var the app needs at build time (e.g. an Android Google Maps key, or EXPO_PUBLIC_* values) must be set as an EAS env var with eas env:create — not just as a Replit secret.
+Trim the upload with a .easignore (excludes dev-only dirs). Note: when .easignore exists, EAS uses it instead of .gitignore, so repeat the gitignore rules in it.
+Bottom line for him: EAS builds are remote cloud builds. Set EXPO_TOKEN, add --non-interactive --no-wait, use an ASC API key for Apple, and it queues fine from a headless environment.
