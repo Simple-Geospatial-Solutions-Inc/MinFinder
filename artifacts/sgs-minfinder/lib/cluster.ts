@@ -22,24 +22,38 @@ export interface ClusterGroup {
 
 export type ClusterItem = ClusterPoint | ClusterGroup;
 
-// Grid cell size in degrees as a function of latitudeDelta (proxy for zoom).
-// Smaller delta == more zoomed in == finer grid.
-function cellSizeForDelta(latitudeDelta: number): number {
-  // Aim for ~12 cells across the visible area. Fewer, bigger clusters means
-  // far fewer native Marker views — the main cost on Android at low zoom.
-  const target = latitudeDelta / 12;
-  return Math.max(target, 0.0008);
+// ~cells across the visible area. Fewer, bigger clusters == far fewer native
+// Marker views, which is the dominant render cost on every zoom.
+const CELLS_ACROSS = 7;
+
+// Quantise the zoom (latitudeDelta) into discrete integer buckets. This is the
+// key to a smooth map: because the grid cell size is derived from the *bucket*
+// rather than the raw delta, the grid — and therefore every marker's key —
+// stays byte-for-byte identical across pans and small zoom changes. That lets
+// react-native-maps reuse the existing native pin views instead of unmounting
+// and recreating hundreds of them on every gesture (the churn that made the map
+// lag on Android and hard-crash on iOS). The grid only changes when you cross a
+// bucket boundary. Half-steps (log base sqrt(2)) keep clustering granularity
+// smooth without making the grid continuous again.
+export function zoomBucketForDelta(latitudeDelta: number): number {
+  const d = Math.min(Math.max(latitudeDelta, 0.0006), 180);
+  return Math.round(Math.log2(d) * 2);
+}
+
+function cellSizeForBucket(bucket: number): number {
+  const repDelta = Math.pow(2, bucket / 2);
+  return Math.max(repDelta / CELLS_ACROSS, 0.0008);
 }
 
 export function clusterOccurrences(
   rows: Occurrence[],
-  latitudeDelta: number,
+  zoomBucket: number,
 ): ClusterItem[] {
   // Always cluster — at deep zoom the cell floor (~80m) means most cells
   // contain a single point and render as a solo pin. This keeps the total
   // marker count bounded at every zoom level (the 16k-pin worst case would
   // otherwise lock up Android when zooming in over a dense area).
-  const cell = cellSizeForDelta(latitudeDelta);
+  const cell = cellSizeForBucket(zoomBucket);
   // bucket key = `${gx}|${gy}` with running aggregates
   const buckets = new Map<
     string,

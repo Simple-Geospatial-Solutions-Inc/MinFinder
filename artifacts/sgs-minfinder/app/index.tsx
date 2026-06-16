@@ -29,7 +29,11 @@ import { QuickInfoCard } from "@/components/QuickInfoCard";
 import { UserLocationDot } from "@/components/UserLocationDot";
 import { STATUS_MAP, STATUS_ORDER, getStatusInfo } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
-import { clusterOccurrences, type ClusterItem } from "@/lib/cluster";
+import {
+  clusterOccurrences,
+  zoomBucketForDelta,
+  type ClusterItem,
+} from "@/lib/cluster";
 import { queryOccurrences, type Occurrence } from "@/lib/db";
 import { TILE_CACHE_DIR, TILE_TEMPLATE_REMOTE } from "@/lib/tileCache";
 
@@ -143,14 +147,20 @@ export default function MapScreen() {
   // react-native-maps' native <Heatmap> (AIRMapHeatmap): it is a Google-Maps
   // only view that does not exist on Apple Maps (PROVIDER_DEFAULT on iOS) nor
   // in the Expo Go client, and mounting it there hard-crashes the app.
+  // Quantise the zoom so the cluster grid only recomputes when crossing a zoom
+  // bucket — not on every pan or pinch. Within a bucket the marker keys are
+  // identical, so react-native-maps reuses the existing pin views instead of
+  // tearing down and recreating hundreds of them (the churn that caused the
+  // Android lag and the iOS crash).
+  const zoomBucket = zoomBucketForDelta(region.latitudeDelta);
   const clusters = useMemo<ClusterItem[]>(() => {
     if (allFilteredRows.length === 0) return [];
-    return clusterOccurrences(allFilteredRows, region.latitudeDelta);
-  }, [allFilteredRows, region.latitudeDelta]);
+    return clusterOccurrences(allFilteredRows, zoomBucket);
+  }, [allFilteredRows, zoomBucket]);
 
   // Only render clusters whose centre is within an enlarged viewport.
   const visibleClusters = useMemo(() => {
-    const pad = 0.25;
+    const pad = 0.15;
     const minLat = region.latitude - region.latitudeDelta / 2 - region.latitudeDelta * pad;
     const maxLat = region.latitude + region.latitudeDelta / 2 + region.latitudeDelta * pad;
     const minLon = region.longitude - region.longitudeDelta / 2 - region.longitudeDelta * pad;

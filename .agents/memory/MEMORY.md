@@ -1,2 +1,3 @@
 - [react-native-maps native view detection](react-native-maps-native-view-detection.md) — optional native overlays (Heatmap) can't be reliably runtime-detected in Expo Go (New Arch); just don't use them, fall back to cluster pins.
 - [react-native-maps iOS pitfalls](react-native-maps-ios-pitfalls.md) — Android-first map config crashes iPhone; gate UrlTile tileCachePath + mapType="none" to Android only (UrlTile cache crashes on zoom-out on iOS).
+- [react-native-maps marker perf](react-native-maps-marker-perf.md) — many custom markers re-clustering on zoom = Android lag + iOS crash; quantize zoom into buckets so marker keys stay stable and native views are reused.
