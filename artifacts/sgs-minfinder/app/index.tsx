@@ -11,11 +11,9 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  UIManager,
   View,
 } from "react-native";
 import MapView, {
-  Heatmap,
   PROVIDER_DEFAULT,
   Region,
   UrlTile,
@@ -41,24 +39,6 @@ const BC_REGION: Region = {
   latitudeDelta: 12,
   longitudeDelta: 14,
 };
-
-// react-native-maps' <Heatmap> renders a native view (AIRMapHeatmap) that is
-// only compiled into custom dev/standalone builds — it does not exist in the
-// Expo Go client or on web. Rendering it there throws "View config not found
-// for component AIRMapHeatmap". Ask the native layer directly whether that
-// view manager is registered (the same check react-native-maps uses
-// internally); when it is absent we fall back to cluster pins for the
-// zoomed-out density view. This is environment-agnostic — it works whether the
-// app runs in Expo Go, web, a dev build, or a production build.
-function detectNativeHeatmap(): boolean {
-  if (Platform.OS === "web") return false;
-  try {
-    return UIManager.hasViewManagerConfig?.("AIRMapHeatmap") ?? false;
-  } catch {
-    return false;
-  }
-}
-const NATIVE_HEATMAP_SUPPORTED = detectNativeHeatmap();
 
 export default function MapScreen() {
   const colors = useColors();
@@ -156,39 +136,17 @@ export default function MapScreen() {
     return allRows.filter((r) => statusSet.has(r.STATUS_C ?? ""));
   }, [allRows, statuses.length, statusSet]);
 
-  // Heatmap while zoomed out, pin clusters once the user reaches a
-  // regional/local zoom level.
-  const HEAT_TO_PIN_DELTA = 0.5;
-  const heatmap = region.latitudeDelta >= HEAT_TO_PIN_DELTA;
-
-  // Only use the native heatmap when the runtime actually provides it.
-  // Otherwise (Expo Go, web) the zoomed-out view falls back to cluster pins.
-  const showNativeHeatmap = heatmap && NATIVE_HEATMAP_SUPPORTED;
-
-  // Cluster the entire (status-filtered) dataset for the current zoom.
-  // No bbox cull — clusters that fall offscreen are cheap; total ≤ ~900 cells.
-  // When the native heatmap is unavailable we also cluster at the zoomed-out
-  // level so there is still a density view to render.
+  // Cluster the entire (status-filtered) dataset for the current zoom. The
+  // grid cell size scales with the zoom level, so zoomed out we get a handful
+  // of big density clusters and zoomed in we get individual pins — a single
+  // representation that works at every zoom level. We deliberately do NOT use
+  // react-native-maps' native <Heatmap> (AIRMapHeatmap): it is a Google-Maps
+  // only view that does not exist on Apple Maps (PROVIDER_DEFAULT on iOS) nor
+  // in the Expo Go client, and mounting it there hard-crashes the app.
   const clusters = useMemo<ClusterItem[]>(() => {
-    if (showNativeHeatmap || allFilteredRows.length === 0) return [];
+    if (allFilteredRows.length === 0) return [];
     return clusterOccurrences(allFilteredRows, region.latitudeDelta);
-  }, [allFilteredRows, region.latitudeDelta, showNativeHeatmap]);
-
-  // Heatmap point list — native Google Maps heatmap handles 16k+ easily.
-  const heatPoints = useMemo(() => {
-    if (!showNativeHeatmap) return [];
-    const pts: { latitude: number; longitude: number; weight?: number }[] = [];
-    for (const r of allFilteredRows) {
-      if (r.LATITUDE != null && r.LONGITUDE != null) {
-        pts.push({ latitude: r.LATITUDE, longitude: r.LONGITUDE });
-      }
-    }
-    return pts;
-  }, [allFilteredRows, showNativeHeatmap]);
-
-  // Show name labels only when zoomed in past a regional level. Computed
-  // once per region change so every marker key uses the same flag.
-  const showLabels = region.latitudeDelta < 0.5;
+  }, [allFilteredRows, region.latitudeDelta]);
 
   // Only render clusters whose centre is within an enlarged viewport.
   const visibleClusters = useMemo(() => {
@@ -328,19 +286,6 @@ export default function MapScreen() {
       >
         <UrlTile {...tileCacheConfig} maximumZ={19} flipY={false} zIndex={-1} />
 
-        {showNativeHeatmap && heatPoints.length > 0 && (
-          <Heatmap
-            points={heatPoints}
-            radius={40}
-            opacity={0.85}
-            gradient={{
-              colors: ["#16365C", "#1E88E5", "#43A047", "#FDD835", "#FB8C00", "#E53935"],
-              startPoints: [0.05, 0.2, 0.4, 0.6, 0.8, 1.0],
-              colorMapSize: 256,
-            }}
-          />
-        )}
-
         {userLoc && (
           <UserLocationDot
             latitude={userLoc.coords.latitude}
@@ -349,13 +294,13 @@ export default function MapScreen() {
           />
         )}
 
-        {!showNativeHeatmap && visibleClusters.map((c) =>
+        {visibleClusters.map((c) =>
           c.type === "point" ? (
             <TrackedMarker
-              // Include the label-visibility flag in the key so the marker
-              // unmounts/remounts when zoom crosses the threshold, capturing
-              // a fresh static bitmap. With tracksViewChanges=false the pin
-              // then stays rock-steady while panning/zooming.
+              // Include the selected-state flag in the key so the marker
+              // unmounts/remounts when its selection changes, capturing a fresh
+              // static bitmap. With tracksViewChanges=false the pin then stays
+              // rock-steady while panning/zooming.
               key={`p-${c.id}-${quickInfo?.id === c.id || selected?.id === c.id ? "s" : "u"}`}
               coordinate={{ latitude: c.lat, longitude: c.lon }}
               onPress={() => setQuickInfo(c.occurrence)}

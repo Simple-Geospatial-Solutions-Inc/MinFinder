@@ -1,40 +1,36 @@
 ---
-name: react-native-maps native view availability detection
-description: How to detect whether an optional react-native-maps native view (e.g. Heatmap) is available at runtime, for Expo Go fallbacks.
+name: react-native-maps optional native views (Heatmap) in Expo Go
+description: Why optional react-native-maps native views like Heatmap can't be safely runtime-detected in Expo Go under the New Architecture, and what to do instead.
 ---
 
-# Detecting optional react-native-maps native views (Heatmap etc.)
+# Optional react-native-maps native views (Heatmap etc.) in Expo Go
 
 Some react-native-maps components render dedicated native views that exist only
 in custom dev/standalone builds, NOT in the Expo Go client or on web. Example:
-`<Heatmap>` renders `AIRMapHeatmap`; mounting it where the view manager isn't
-registered throws `Invariant Violation: View config not found for component
-AIRMapHeatmap`.
+`<Heatmap>` renders `AIRMapHeatmap` (a Google-Maps-only view). Mounting it where
+the view manager isn't registered crashes the app.
 
 ## Rule
-Gate the optional component on a runtime native-capability check, not on the
-environment:
+Do NOT try to runtime-gate these optional native overlays in Expo Go. There is
+no reliable detection. Just don't use them — provide a non-native equivalent
+(e.g. zoom-scaled cluster pins for a density view) that works everywhere.
 
-```ts
-import { Platform, UIManager } from "react-native";
-function detectNativeHeatmap() {
-  if (Platform.OS === "web") return false;
-  try { return UIManager.hasViewManagerConfig?.("AIRMapHeatmap") ?? false; }
-  catch { return false; }
-}
-```
+**Why:** Two detection approaches were tried and BOTH failed on a real iOS
+Expo Go device:
+- `expo-constants`: `executionEnvironment` returned `"bare"` on web and did NOT
+  report `storeClient` on iOS Expo Go; `appOwnership` is deprecated/unreliable.
+- `UIManager.hasViewManagerConfig("AIRMapHeatmap")`: this is a legacy
+  (old-architecture / Paper) API. Expo Go FORCES the New Architecture (Fabric)
+  on regardless of `newArchEnabled: false` in app.json, and under Fabric this
+  check does not reflect real component availability — it let the heatmap mount
+  anyway, producing a NATIVE hard crash (app closes, no JS redbox in Metro
+  logs) when the heatmap mounted (e.g. zooming out past the heatmap zoom
+  threshold).
 
-This is the same mechanism react-native-maps uses internally
-(`UIManager.hasViewManagerConfig`), so it tracks the real registry.
-
-**Why:** `expo-constants` environment signals are unreliable for this on
-Expo SDK 54 (New Architecture). Observed: `Constants.executionEnvironment`
-returned `"bare"` on web and did NOT report `storeClient` on the iOS Expo Go
-device, so `executionEnvironment !== StoreClient` and `appOwnership === "expo"`
-gates both let the crash through. The native registry check is environment-
-agnostic (Expo Go, web, dev build, prod build).
-
-**How to apply:** Whenever using an optional native map overlay that may be
-absent in Expo Go, compute the capability once at module load and only mount
-the component when true; provide a non-native fallback (e.g. cluster pins for
-a zoomed-out density view) otherwise.
+**How to apply:** If you see a map app that hard-crashes on zoom/pan in Expo Go
+with no JS error in logs, suspect an optional native overlay (Heatmap) mounting.
+The fix that actually worked: remove the native heatmap entirely and render
+cluster pins at every zoom level (clustering scales by latitudeDelta — big
+density clusters when zoomed out, individual pins when zoomed in). Also note
+that with `PROVIDER_DEFAULT` the iOS map is Apple Maps, where the Google-only
+Heatmap never works anyway.

@@ -69,7 +69,7 @@ export default function AboutScreen() {
         <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11, marginTop: 6 }]}>
           Map engine: Google Maps (the Esri tiles are drawn on top of the
           Google Maps view, which is why the Google logo appears in the
-          corner). Heatmap rendering by Google Maps.
+          corner).
         </Text>
         <Pressable
           onPress={() => WebBrowser.openBrowserAsync("https://www.esri.com/en-us/legal/terms/data-attributions")}
