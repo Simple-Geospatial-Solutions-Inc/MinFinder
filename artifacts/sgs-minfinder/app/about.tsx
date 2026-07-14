@@ -82,6 +82,28 @@ export default function AboutScreen() {
         </Pressable>
       </View>
 
+      <Text style={[styles.h2, { color: colors.foreground }]}>Legal</Text>
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Pressable
+          onPress={() => WebBrowser.openBrowserAsync("https://sgss.ca/mobile-apps/minfinder/privacy")}
+          style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
+        >
+          <Feather name="external-link" size={14} color={colors.primary} />
+          <Text style={[styles.linkText, { color: colors.primary }]}>
+            Privacy Policy
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => WebBrowser.openBrowserAsync("https://sgss.ca/mobile-apps/minfinder/terms")}
+          style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
+        >
+          <Feather name="external-link" size={14} color={colors.primary} />
+          <Text style={[styles.linkText, { color: colors.primary }]}>
+            Terms of Use (EULA)
+          </Text>
+        </Pressable>
+      </View>
+
       <Text style={[styles.footer, { color: colors.mutedForeground }]}>
         Use as a reference only. Always verify mine status, access, and
         safety information before visiting a site.

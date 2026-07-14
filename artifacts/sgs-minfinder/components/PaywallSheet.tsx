@@ -1,5 +1,6 @@
 import { Feather } from "@/components/Icon";
 import * as Clipboard from "expo-clipboard";
+import * as WebBrowser from "expo-web-browser";
 import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -202,6 +203,43 @@ export function PaywallSheet({
             </Text>
           </Pressable>
 
+          <Text style={[styles.disclosure, { color: colors.mutedForeground }]}>
+            Monthly and yearly plans are auto-renewing subscriptions that renew
+            unless cancelled at least 24 hours before the end of the current
+            period, billed through your app store account. Lifetime is a
+            one-time purchase. Manage or cancel anytime in your account settings.
+          </Text>
+
+          <View style={styles.legalRow}>
+            <Pressable
+              onPress={() =>
+                WebBrowser.openBrowserAsync(
+                  "https://sgss.ca/mobile-apps/minfinder/privacy",
+                )
+              }
+              hitSlop={6}
+            >
+              <Text style={[styles.legalLink, { color: colors.mutedForeground }]}>
+                Privacy Policy
+              </Text>
+            </Pressable>
+            <Text style={[styles.legalDot, { color: colors.mutedForeground }]}>
+              ·
+            </Text>
+            <Pressable
+              onPress={() =>
+                WebBrowser.openBrowserAsync(
+                  "https://sgss.ca/mobile-apps/minfinder/terms",
+                )
+              }
+              hitSlop={6}
+            >
+              <Text style={[styles.legalLink, { color: colors.mutedForeground }]}>
+                Terms of Use (EULA)
+              </Text>
+            </Pressable>
+          </View>
+
           {__DEV__ && appUserId && (
             <View style={[styles.debugBox, { borderColor: colors.border }]}>
               <Text style={[styles.debugLabel, { color: colors.mutedForeground }]}>
@@ -308,6 +346,25 @@ const styles = StyleSheet.create({
   loaderRow: { alignItems: "center", paddingVertical: 6 },
   secondaryBtn: { paddingVertical: 8, alignItems: "center" },
   secondaryBtnText: { fontFamily: "Inter_500Medium", fontSize: 13 },
+  disclosure: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: "center",
+  },
+  legalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 2,
+  },
+  legalLink: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 11,
+    textDecorationLine: "underline",
+  },
+  legalDot: { fontFamily: "Inter_400Regular", fontSize: 11 },
   debugBox: {
     borderWidth: 1,
     borderStyle: "dashed",
