@@ -2,25 +2,29 @@
   "expo": {
     "name": "SGS MinFinder",
     "slug": "sgs-minfinder",
+    "owner": "simple-geospatial-solutions",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "sgs-minfinder",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#0E2444"
     },
     "ios": {
+      "bundleIdentifier": "com.sgss.minfinder",
       "supportsTablet": true,
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "SGS MinFinder uses your location to center the map and to indicate the direction and distance to selected MINFILE occurrences.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "SGS MinFinder uses your location to center the map and to indicate the direction and distance to selected MINFILE occurrences."
       }
     },
     "android": {
+      "package": "com.sgss.minfinder",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
@@ -30,6 +34,7 @@
       "favicon": "./assets/images/icon.png"
     },
     "plugins": [
+      "expo-dev-client",
       [
         "expo-router",
         {
@@ -49,6 +54,11 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "10e37699-3c1a-495f-b49b-cc856866e691"
+      }
     }
   }
 }

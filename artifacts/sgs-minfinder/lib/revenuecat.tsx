@@ -63,6 +63,18 @@ export function SubscriptionProvider({
     let cancelled = false;
     const Purchases = getPurchases();
     if (!Purchases || !API_KEY) {
+      if (Purchases && !API_KEY) {
+        // The native module is present but the key is empty. This happens when
+        // EXPO_PUBLIC_REVENUECAT_API_KEY was not defined in the environment that
+        // built/bundled the JS (e.g. an EAS build with no `env` block in
+        // eas.json) — the value is inlined at build time, so it silently
+        // becomes "". Without this warning the paywall just shows no products.
+        console.warn(
+          "[RevenueCat] EXPO_PUBLIC_REVENUECAT_API_KEY is empty — RevenueCat " +
+            "is not configured and no offerings will load. Set it in the build " +
+            "environment (eas.json `env`) and rebuild.",
+        );
+      }
       setIsReady(true);
       return () => {
         cancelled = true;

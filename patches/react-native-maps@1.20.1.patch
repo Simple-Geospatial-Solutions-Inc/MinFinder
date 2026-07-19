@@ -1,0 +1,21 @@
+diff --git a/ios/AirMaps/AIRMap.m b/ios/AirMaps/AIRMap.m
+index 07a4638a5047ad7beb4859ae6341fb318d6ed522..c25cb603ccc9051903301fb4bafc7858e1b88c22 100644
+--- a/ios/AirMaps/AIRMap.m
++++ b/ios/AirMaps/AIRMap.m
+@@ -135,7 +135,15 @@ const NSInteger AIRMapMaxZoomLevel = 20;
+             [self insertReactSubview:(UIView *)childSubviews[i] atIndex:atIndex];
+         }
+     }
+-    [_reactSubviews insertObject:(UIView *)subview atIndex:(NSUInteger) atIndex];
++    // Guard against a nil subview and an out-of-range index. Under the New
++    // Architecture's legacy view-manager interop, rapid marker add/remove (e.g.
++    // cluster markers re-rendering on zoom) can hand this method a nil subview,
++    // and -[__NSArrayM insertObject:atIndex:] throws on nil -> SIGABRT.
++    // See react-native-maps PR #5230 / issues #5217, #5345.
++    if (subview != nil) {
++        NSUInteger safeIndex = MIN((NSUInteger)atIndex, _reactSubviews.count);
++        [_reactSubviews insertObject:(UIView *)subview atIndex:safeIndex];
++    }
+ }
+ #pragma clang diagnostic pop
+ 
