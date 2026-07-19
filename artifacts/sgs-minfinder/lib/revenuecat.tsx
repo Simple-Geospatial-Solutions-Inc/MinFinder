@@ -41,6 +41,12 @@ type SubscriptionState = {
   purchase: (pkg: PurchasesPackage) => Promise<boolean>;
   restore: () => Promise<boolean>;
   refresh: () => Promise<void>;
+  /**
+   * DEV ONLY. Switches to a brand-new random RevenueCat user so the current
+   * entitlement/purchase is cleared, letting you re-run the purchase flow
+   * without touching the dashboard or reinstalling. No-op outside __DEV__.
+   */
+  resetTestUser: () => Promise<void>;
 };
 
 const SubscriptionContext = createContext<SubscriptionState | null>(null);
@@ -199,6 +205,36 @@ export function SubscriptionProvider({
     [],
   );
 
+  const resetTestUser = useCallback(async () => {
+    if (!__DEV__) return;
+    const Purchases = getPurchases();
+    if (!Purchases) return;
+    setIsLoading(true);
+    try {
+      // Switching to a fresh random user gives us a clean slate with no
+      // entitlements. logOut() can't be used here because the current user is
+      // anonymous (RevenueCat throws for anonymous log-out).
+      const newId = `dev-reset-${Date.now()}-${Math.floor(
+        Math.random() * 1_000_000,
+      )}`;
+      const { customerInfo: info } = await Purchases.logIn(newId);
+      setCustomerInfo(info);
+      setAppUserId(await Purchases.getAppUserID());
+      const offerings = await Purchases.getOfferings();
+      setOffering(offerings.current ?? null);
+      console.log(
+        "[RevenueCat] reset to fresh test user:",
+        newId,
+        "→ isPaid:",
+        entitlementActive(info),
+      );
+    } catch (err) {
+      console.warn("[RevenueCat] resetTestUser failed:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   const restore = useCallback(async (): Promise<boolean> => {
     const Purchases = getPurchases();
     if (!Purchases) return false;
@@ -226,8 +262,19 @@ export function SubscriptionProvider({
       purchase,
       restore,
       refresh,
+      resetTestUser,
     }),
-    [customerInfo, isReady, isLoading, offering, appUserId, purchase, restore, refresh],
+    [
+      customerInfo,
+      isReady,
+      isLoading,
+      offering,
+      appUserId,
+      purchase,
+      restore,
+      refresh,
+      resetTestUser,
+    ],
   );
 
   return (

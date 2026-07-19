@@ -59,8 +59,16 @@ export function PaywallSheet({
   onClose: () => void;
 }) {
   const colors = useColors();
-  const { offering, purchase, restore, isLoading, isReady, appUserId, refresh } =
-    useSubscription();
+  const {
+    offering,
+    purchase,
+    restore,
+    isLoading,
+    isReady,
+    appUserId,
+    refresh,
+    resetTestUser,
+  } = useSubscription();
   const [copied, setCopied] = useState(false);
 
   const packages = useMemo<PurchasesPackage[]>(() => {
@@ -275,6 +283,22 @@ export function PaywallSheet({
                   style={[styles.debugHint, { color: colors.mutedForeground }]}
                 >
                   Refresh customer info
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={resetTestUser}
+                disabled={isLoading}
+                hitSlop={6}
+                style={({ pressed }) => [
+                  styles.debugRefresh,
+                  {
+                    borderColor: colors.border,
+                    opacity: pressed || isLoading ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.debugHint, { color: colors.gold }]}>
+                  Start fresh test user (reset purchases)
                 </Text>
               </Pressable>
             </View>
