@@ -7,7 +7,6 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "corepack": true,
       "ios": {
         "simulator": false
       },
@@ -18,7 +17,6 @@
     },
     "preview": {
       "distribution": "internal",
-      "corepack": true,
       "env": {
         "EXPO_PUBLIC_REVENUECAT_API_KEY": "test_PuMbDncUOVWUvvRhYcMUppJqAiQ",
         "GOOGLE_MAPS_ANDROID_API_KEY": "REPLACE_WITH_GOOGLE_MAPS_ANDROID_API_KEY"
@@ -26,7 +24,6 @@
     },
     "production": {
       "autoIncrement": true,
-      "corepack": true,
       "env": {
         "EXPO_PUBLIC_REVENUECAT_API_KEY": "REPLACE_WITH_PRODUCTION_REVENUECAT_API_KEY",
         "GOOGLE_MAPS_ANDROID_API_KEY": "REPLACE_WITH_GOOGLE_MAPS_ANDROID_API_KEY"

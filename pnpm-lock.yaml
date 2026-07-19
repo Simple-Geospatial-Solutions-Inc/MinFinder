@@ -151,7 +151,9 @@ overrides:
   rollup>@rollup/rollup-win32-x64-msvc: '-'
 
 patchedDependencies:
-  react-native-maps@1.20.1: 1beaf50d84828943a726a18991d49ccc82a949c8c56ff413b6d9a49cfe3db47b
+  react-native-maps@1.20.1:
+    hash: 1beaf50d84828943a726a18991d49ccc82a949c8c56ff413b6d9a49cfe3db47b
+    path: patches/react-native-maps@1.20.1.patch
 
 importers:
 
