@@ -8,7 +8,9 @@ import React, {
 } from "react";
 import { Platform } from "react-native";
 
-const ENTITLEMENT_ID = "default";
+// Must exactly match the entitlement identifier configured in RevenueCat
+// (Dashboard → Entitlements). It is the key under info.entitlements.active.
+const ENTITLEMENT_ID = "SGS MinFinder Pro";
 const API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? "";
 
 type Purchases = typeof import("react-native-purchases").default;
@@ -99,6 +101,27 @@ export function SubscriptionProvider({
         setOffering(offerings.current ?? null);
         setAppUserId(appUserId);
         console.log("[RevenueCat] App User ID:", appUserId);
+        if (__DEV__) {
+          const cur = offerings.current;
+          console.log(
+            "[RevenueCat] current offering:",
+            cur?.identifier ?? "(none)",
+            "packages:",
+            cur?.availablePackages.map(
+              (p) =>
+                `${p.identifier}=${p.product.identifier}@${p.product.priceString}`,
+            ) ?? [],
+          );
+          console.log(
+            "[RevenueCat] entitlements attached to products →",
+            "all:",
+            Object.keys(info.entitlements.all),
+            "active:",
+            Object.keys(info.entitlements.active),
+            "| app unlocks on entitlement:",
+            ENTITLEMENT_ID,
+          );
+        }
       } catch (err) {
         if (!cancelled) console.warn("[RevenueCat] init failed:", err);
       } finally {
@@ -151,6 +174,17 @@ export function SubscriptionProvider({
       try {
         const { customerInfo: info } = await Purchases.purchasePackage(pkg);
         setCustomerInfo(info);
+        if (__DEV__) {
+          console.log(
+            "[RevenueCat] purchase completed. active entitlements:",
+            Object.keys(info.entitlements.active),
+            "→ isPaid:",
+            entitlementActive(info),
+            entitlementActive(info)
+              ? ""
+              : `(purchase succeeded but "${ENTITLEMENT_ID}" is not active — attach the ${ENTITLEMENT_ID} entitlement to this product in RevenueCat, or fix the entitlement id)`,
+          );
+        }
         return entitlementActive(info);
       } catch (err: unknown) {
         const e = err as { userCancelled?: boolean; message?: string };
