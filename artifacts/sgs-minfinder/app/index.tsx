@@ -301,6 +301,10 @@ export default function MapScreen() {
         // is not a valid MKMapType, so we use "standard" there — the opaque
         // Esri topo tiles drawn by <UrlTile> cover the base map anyway.
         mapType={Platform.OS === "android" ? "none" : "standard"}
+        // Force the Apple base map to light mode so that when it briefly shows
+        // through during fast zooms (before the Esri tiles finish loading), it
+        // matches the light Esri topo basemap instead of flashing dark.
+        userInterfaceStyle="light"
       >
         <UrlTile {...tileCacheConfig} maximumZ={19} flipY={false} zIndex={-1} />
 

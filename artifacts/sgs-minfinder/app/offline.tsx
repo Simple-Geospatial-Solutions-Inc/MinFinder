@@ -307,6 +307,9 @@ export default function OfflineScreen() {
               // mapType="none" is Android/Google-Maps only; on iOS (Apple Maps)
               // it is not a valid MKMapType, so use "standard" there.
               mapType={Platform.OS === "android" ? "none" : "standard"}
+              // Force the Apple base map light so it matches the Esri topo tiles
+              // when it briefly shows through during fast zooms.
+              userInterfaceStyle="light"
             >
               <UrlTile
                 urlTemplate={TILE_TEMPLATE_REMOTE}
