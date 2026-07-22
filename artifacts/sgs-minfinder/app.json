@@ -8,14 +8,8 @@
     "icon": "./assets/images/icon.png",
     "scheme": "sgs-minfinder",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0E2444"
-    },
     "ios": {
-      "bundleIdentifier": "com.sgss.minfinder",
+      "bundleIdentifier": "ca.sgss.minfinder",
       "supportsTablet": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -24,7 +18,7 @@
       }
     },
     "android": {
-      "package": "com.sgss.minfinder",
+      "package": "ca.sgss.minfinder",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
@@ -50,7 +44,16 @@
         }
       ],
       "expo-sqlite",
-      "expo-asset"
+      "expo-asset",
+      "@maplibre/maplibre-react-native",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0E2444"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

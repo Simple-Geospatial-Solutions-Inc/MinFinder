@@ -6,8 +6,8 @@ App Store + Google Play. Internal handoff: listing copy, screenshots, and outsta
 |---|---|
 | **Project** | SGS MinFinder (BC MINFILE offline reference app) |
 | **Prepared by** | SGS |
-| **Date** | 2026-06-18 |
-| **Build status** | Feature-complete. Listing copy final. Submission blocked on §2 items. |
+| **Date** | 2026-07-20 |
+| **Build status** | Feature-complete. Listing, IAPs, privacy done. Production build uploading via EAS. Remaining: age rating + copyright, then attach build & IAPs to one submission. |
 
 ## App identity (set in `app.json`)
 
@@ -16,8 +16,8 @@ App Store + Google Play. Internal handoff: listing copy, screenshots, and outsta
 | App name | SGS MinFinder |
 | Slug | sgs-minfinder |
 | Version | 1.0.0 |
-| iOS bundle identifier | `com.sgss.minfinder` |
-| Android package | `com.sgss.minfinder` |
+| iOS bundle identifier | `ca.sgss.minfinder` |
+| Android package | `ca.sgss.minfinder` |
 | **App Store Connect SKU** | `sgs-minfinder` (private, internal, permanent) |
 
 ## 1. Summary
@@ -28,24 +28,27 @@ The app itself is done. What remains is store-account setup: privacy/data declar
 
 ## 2. Remaining before submission
 
-Grouped by where the work happens. None of these are code changes except finalizing the PREMIUM copy paragraph.
+Status current as of 2026-07-20. Code changes already made: bundle id set to `ca.sgss.minfinder` (iOS + Android), production RevenueCat `appl_` key wired into `eas.json` production profile.
 
-### Both stores
-- [ ] **Support URL** — a real support page or mailto link.
-- [ ] **Privacy policy URL** — required (app uses location + RevenueCat purchase/identifier data). Must be live before submitting.
-- [ ] **Copyright string** for Apple, e.g. © 2026 SGS / legal entity.
-- [ ] **Finalize the PREMIUM paragraph** in the description to match the actual RevenueCat offering (lifetime / yearly / monthly).
+### Both stores — done
+- [x] **Support URL**, **Marketing URL**, **Privacy policy URL** (live), **descriptions**, **keywords**, **promotional text**, **screenshots**.
+- [x] **PREMIUM paragraph** — reads generically ("a one-time or subscription purchase"), matches the lifetime / yearly / monthly offering.
 
 ### Apple App Store Connect
-- [ ] **App Privacy questionnaire** — declare Location (app usage, not tracking) and Purchases (RevenueCat user id + purchase data); map to "linked to user".
-- [ ] **Age rating questionnaire** — expect 4+.
-- [ ] **Create IAP products** and submit them with the first build (paywall references get rejected otherwise).
+- [x] **App Privacy questionnaire** — Purchases (Purchase History) + Identifiers (User ID, Device ID): purpose **App Functionality**, **Not Linked**, **Not used for tracking**. Location = **Data Not Collected** (used on-device only, never transmitted). Everything else not collected. No ATT prompt.
+- [x] **IAP products created** (Lifetime, Yearly, Monthly) — in "Prepare for Submission" with review screenshot (1290×2796).
+- [x] **RevenueCat production key** in `eas.json`; App Store app configured as `ca.sgss.minfinder`, products attached to Offering with `SGS MinFinder Pro` entitlement.
+- [ ] **Age rating questionnaire** — all "None" → 4+.
+- [ ] **Copyright string** (App Information), e.g. © 2026 Simple Geospatial Solutions.
+- [ ] **Upload production build** (EAS) and attach to version 1.0.0.
+- [ ] **Submit build + all three IAPs together** — new ASC flow: open each product → **Add for Review** → add the app version into the submission → **Submit for Review**. (First subscription + first non-consumable must ride with the build.)
 
-### Google Play Console
-- [ ] **Data safety form** — Location + purchase data (mirror the Apple answers).
+### Google Play Console (later — not blocking the iOS submission)
+- [ ] **Data safety form** — Purchases + User ID, not for tracking. Mirror the Apple answers.
 - [ ] **Feature graphic** 1024x500 + 512x512 icon.
 - [ ] **Content rating questionnaire** (IARC).
 - [ ] **Create IAP / subscriptions** in Play Console matching RevenueCat.
+- [ ] **Set real `GOOGLE_MAPS_ANDROID_API_KEY`** in `eas.json` (still a placeholder; Android-only, no effect on iOS).
 
 ### Copy hygiene — verify before submitting
 - [ ] No competitor names.
@@ -124,4 +127,4 @@ Same six screens for each store, in display order. App Store set is in iPhone fr
 
 - **Data:** BC Ministry of Energy, Mines and Low Carbon Innovation (MINFILE). Basemap: Esri World Topographic Map. Attribution is in the description.
 - **Accuracy:** build ships 16,259 records; advertise "16,000+". Do **not** use "100,000+".
-- **RevenueCat** entitlement id used in code is `default`.
+- **RevenueCat** entitlement id used in code is `SGS MinFinder Pro` (see `lib/revenuecat.tsx`). The app unlocks Pro when this entitlement is active, so every product must map to it in the RevenueCat dashboard.

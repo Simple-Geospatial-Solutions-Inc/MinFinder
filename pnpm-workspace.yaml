@@ -21,8 +21,8 @@ catalog:
   drizzle-orm: ^0.45.2
   framer-motion: ^12.23.24
   lucide-react: ^0.545.0
-  react: 19.1.0
-  react-dom: 19.1.0
+  react: 19.2.3
+  react-dom: 19.2.3
   tailwind-merge: ^3.3.1
   tailwindcss: ^4.1.14
   tsx: ^4.21.0
@@ -54,6 +54,15 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
+  # Pin Expo to SDK 56 so a --no-frozen-lockfile re-resolve (e.g. on EAS) can't
+  # drift to expo@57 (SDK 57 = `latest`), whose @expo/fingerprint@^0.20.6 trips
+  # the minimumReleaseAge gate. Only sgs-minfinder uses expo in this workspace.
+  expo: 56.0.16
+  '@expo/fingerprint': 0.19.8
+  # Pin RN to the SDK-56 version so a --no-frozen re-resolve can't drift to
+  # 0.86 (which removed Libraries/Renderer/shims/ReactNative that SDK-56's
+  # react-native-gesture-handler@2.31.2 still imports).
+  react-native: 0.85.3
   '@esbuild-kit/esm-loader': npm:tsx@^4.21.0
   '@expo/ngrok-bin>@expo/ngrok-bin-darwin-arm64': '-'
   '@expo/ngrok-bin>@expo/ngrok-bin-darwin-x64': '-'
@@ -135,6 +144,3 @@ overrides:
   rollup>@rollup/rollup-win32-ia32-msvc: '-'
   rollup>@rollup/rollup-win32-x64-gnu: '-'
   rollup>@rollup/rollup-win32-x64-msvc: '-'
-
-patchedDependencies:
-  react-native-maps@1.20.1: patches/react-native-maps@1.20.1.patch

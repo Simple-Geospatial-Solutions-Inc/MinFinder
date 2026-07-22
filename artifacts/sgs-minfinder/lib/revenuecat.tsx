@@ -11,7 +11,13 @@ import { Platform } from "react-native";
 // Must exactly match the entitlement identifier configured in RevenueCat
 // (Dashboard → Entitlements). It is the key under info.entitlements.active.
 const ENTITLEMENT_ID = "SGS MinFinder Pro";
-const API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? "";
+// RevenueCat uses platform-specific public SDK keys: Apple keys start with
+// `appl_`, Google keys with `goog_`. iOS keeps the original env var so the
+// existing build config is untouched; Android reads its own `goog_` key.
+const API_KEY =
+  (Platform.OS === "android"
+    ? process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY
+    : process.env.EXPO_PUBLIC_REVENUECAT_API_KEY) ?? "";
 
 type Purchases = typeof import("react-native-purchases").default;
 type CustomerInfo = import("react-native-purchases").CustomerInfo;

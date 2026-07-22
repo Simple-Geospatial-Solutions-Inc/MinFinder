@@ -11,15 +11,15 @@ if (!config.resolver.platforms.includes("web")) {
   config.resolver.platforms = ["web", ...config.resolver.platforms];
 }
 
-// Stub react-native-maps on web so the mobile-only library doesn't crash
-// the web preview bundle.
+// Stub the native-only map library on web so it doesn't crash the web preview
+// bundle (the *.web.tsx screens render placeholders and never import it).
 const path = require("path");
 const originalResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  if (platform === "web" && moduleName === "react-native-maps") {
+  if (platform === "web" && moduleName === "@maplibre/maplibre-react-native") {
     return {
       type: "sourceFile",
-      filePath: path.resolve(__dirname, "lib/react-native-maps.web.js"),
+      filePath: path.resolve(__dirname, "lib/maplibre.web.js"),
     };
   }
   if (originalResolveRequest) {

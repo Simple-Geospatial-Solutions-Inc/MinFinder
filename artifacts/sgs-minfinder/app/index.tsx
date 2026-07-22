@@ -13,29 +13,32 @@ import {
   TextInput,
   View,
 } from "react-native";
-import MapView, {
-  PROVIDER_DEFAULT,
-  Region,
-  UrlTile,
-} from "react-native-maps";
+import {
+  Camera,
+  GeoJSONSource,
+  Layer,
+  Map as MapLibreMap,
+  UserLocation,
+  type CameraRef,
+  type CircleLayerStyle,
+  type GeoJSONSourceRef,
+  type SymbolLayerStyle,
+} from "@maplibre/maplibre-react-native";
 
-import { TrackedMarker } from "@/components/TrackedMarker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ClusterPin } from "@/components/ClusterPin";
 import { DetailsSheet } from "@/components/DetailsSheet";
-import { MarkerPin } from "@/components/MarkerPin";
 import { QuickInfoCard } from "@/components/QuickInfoCard";
-import { UserLocationDot } from "@/components/UserLocationDot";
 import { STATUS_MAP, STATUS_ORDER, getStatusInfo } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
-import {
-  clusterOccurrences,
-  zoomBucketForDelta,
-  type ClusterItem,
-} from "@/lib/cluster";
 import { queryOccurrences, type Occurrence } from "@/lib/db";
-import { TILE_CACHE_DIR, TILE_TEMPLATE_REMOTE } from "@/lib/tileCache";
+import { ESRI_STYLE_JSON, LABEL_FONT } from "@/lib/mapStyle";
+import {
+  deltaToZoom,
+  occurrencesToFeatureCollection,
+  regionToBounds,
+  type Region,
+} from "@/lib/mapGeo";
 
 const BC_REGION: Region = {
   latitude: 54.5,
@@ -44,12 +47,82 @@ const BC_REGION: Region = {
   longitudeDelta: 14,
 };
 
+// --- MapLibre layer styling. Markers are a data-driven clustered symbol layer
+// (GPU-rendered from a GeoJSON source), not per-marker views — which is why the
+// New-Arch marker drop/revert bugs of react-native-maps cannot occur here.
+// Expressions are typed loosely (the style-spec union is deep); the layer
+// `style` objects are cast to their MapLibre style types.
+
+// Occurrence STATUS_C → dot color / 2-char code (mirrors constants/status.ts).
+const STATUS_COLOR_EXPR: unknown = [
+  "match",
+  ["get", "STATUS_C"],
+  "PROD", STATUS_MAP.PROD.color,
+  "PAPR", STATUS_MAP.PAPR.color,
+  "DEPR", STATUS_MAP.DEPR.color,
+  "PROS", STATUS_MAP.PROS.color,
+  "SHOW", STATUS_MAP.SHOW.color,
+  "ANOM", STATUS_MAP.ANOM.color,
+  "#5F6B7A",
+];
+const STATUS_CODE_EXPR: unknown = [
+  "match",
+  ["get", "STATUS_C"],
+  "PROD", "PR", "PAPR", "PP", "DEPR", "DP",
+  "PROS", "PS", "SHOW", "SH", "ANOM", "AN",
+  "??",
+];
+
+const CLUSTER_FILTER = ["has", "point_count"] as unknown;
+const POINT_FILTER = ["!", ["has", "point_count"]] as unknown;
+
+const pointCircleStyle = {
+  circleColor: STATUS_COLOR_EXPR,
+  circleRadius: 8,
+  circleStrokeColor: "#ffffff",
+  circleStrokeWidth: 2,
+} as unknown as CircleLayerStyle;
+
+const pointTextStyle = {
+  textField: STATUS_CODE_EXPR,
+  textFont: LABEL_FONT,
+  textSize: 10,
+  textColor: "#ffffff",
+  textAllowOverlap: true,
+  textIgnorePlacement: true,
+} as unknown as SymbolLayerStyle;
+
+const clusterCircleStyle = {
+  circleColor: "#16365C",
+  circleOpacity: 0.95,
+  circleStrokeColor: "#ffffff",
+  circleStrokeWidth: 2,
+  circleRadius: ["step", ["get", "point_count"], 16, 25, 20, 100, 26, 500, 32],
+} as unknown as CircleLayerStyle;
+
+const clusterTextStyle = {
+  textField: ["get", "point_count_abbreviated"],
+  textFont: LABEL_FONT,
+  textSize: 12,
+  textColor: "#ffffff",
+  textAllowOverlap: true,
+  textIgnorePlacement: true,
+} as unknown as SymbolLayerStyle;
+
+// A gold ring around the selected pin (transparent fill so it sits on top).
+const selectedRingStyle = {
+  circleColor: "rgba(0,0,0,0)",
+  circleRadius: 11,
+  circleStrokeColor: "#FCBA19",
+  circleStrokeWidth: 4,
+} as unknown as CircleLayerStyle;
+
 export default function MapScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
 
-  const mapRef = useRef<MapView | null>(null);
-  const [region, setRegion] = useState<Region>(BC_REGION);
+  const cameraRef = useRef<CameraRef | null>(null);
+  const shapeRef = useRef<GeoJSONSourceRef | null>(null);
   const [userLoc, setUserLoc] = useState<Location.LocationObject | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [loadingDb, setLoadingDb] = useState(true);
@@ -95,14 +168,11 @@ export default function MapScreen() {
         });
         if (cancelled) return;
         setUserLoc(loc);
-        const next: Region = {
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-          latitudeDelta: 0.5,
-          longitudeDelta: 0.5,
-        };
-        setRegion(next);
-        mapRef.current?.animateToRegion(next, 600);
+        cameraRef.current?.flyTo({
+          center: [loc.coords.longitude, loc.coords.latitude],
+          zoom: deltaToZoom(0.5),
+          duration: 600,
+        });
       } catch (err) {
         console.warn("location error", err);
       }
@@ -140,36 +210,54 @@ export default function MapScreen() {
     return allRows.filter((r) => statusSet.has(r.STATUS_C ?? ""));
   }, [allRows, statuses.length, statusSet]);
 
-  // Cluster the entire (status-filtered) dataset for the current zoom. The
-  // grid cell size scales with the zoom level, so zoomed out we get a handful
-  // of big density clusters and zoomed in we get individual pins — a single
-  // representation that works at every zoom level. We deliberately do NOT use
-  // react-native-maps' native <Heatmap> (AIRMapHeatmap): it is a Google-Maps
-  // only view that does not exist on Apple Maps (PROVIDER_DEFAULT on iOS) nor
-  // in the Expo Go client, and mounting it there hard-crashes the app.
-  // Quantise the zoom so the cluster grid only recomputes when crossing a zoom
-  // bucket — not on every pan or pinch. Within a bucket the marker keys are
-  // identical, so react-native-maps reuses the existing pin views instead of
-  // tearing down and recreating hundreds of them (the churn that caused the
-  // Android lag and the iOS crash).
-  const zoomBucket = zoomBucketForDelta(region.latitudeDelta);
-  const clusters = useMemo<ClusterItem[]>(() => {
-    if (allFilteredRows.length === 0) return [];
-    return clusterOccurrences(allFilteredRows, zoomBucket);
-  }, [allFilteredRows, zoomBucket]);
+  // GeoJSON fed to the clustered MapLibre source. MapLibre clusters natively on
+  // the GPU (no manual grid, no marker pool, no viewport cull) — the layer
+  // re-renders from this data whenever the status filter changes.
+  const featureCollection = useMemo(
+    () => occurrencesToFeatureCollection(allFilteredRows),
+    [allFilteredRows],
+  );
+  const occById = useMemo(() => {
+    const m = new Map<number, Occurrence>();
+    for (const r of allRows) m.set(r.id, r);
+    return m;
+  }, [allRows]);
 
-  // Only render clusters whose centre is within an enlarged viewport.
-  const visibleClusters = useMemo(() => {
-    const pad = 0.15;
-    const minLat = region.latitude - region.latitudeDelta / 2 - region.latitudeDelta * pad;
-    const maxLat = region.latitude + region.latitudeDelta / 2 + region.latitudeDelta * pad;
-    const minLon = region.longitude - region.longitudeDelta / 2 - region.longitudeDelta * pad;
-    const maxLon = region.longitude + region.longitudeDelta / 2 + region.longitudeDelta * pad;
-    return clusters.filter(
-      (c) =>
-        c.lat >= minLat && c.lat <= maxLat && c.lon >= minLon && c.lon <= maxLon,
-    );
-  }, [clusters, region]);
+  // The pin currently previewed (quickInfo) or opened (selected) gets a ring.
+  const selectedId = quickInfo?.id ?? selected?.id ?? null;
+
+  // Tap on the source: a cluster zooms to its expansion level; a point opens the
+  // quick-info card.
+  const onFeaturePress = useCallback(
+    async (e: { nativeEvent?: { features?: GeoJSON.Feature[] } }) => {
+      const f = e.nativeEvent?.features?.[0];
+      if (!f || f.geometry?.type !== "Point") return;
+      const props = (f.properties ?? {}) as {
+        id?: number;
+        cluster_id?: number;
+        point_count?: number;
+      };
+      const [lng, lat] = f.geometry.coordinates as [number, number];
+      if (props.point_count) {
+        let zoom = deltaToZoom(0.5);
+        try {
+          if (props.cluster_id != null) {
+            const z = await shapeRef.current?.getClusterExpansionZoom(
+              props.cluster_id,
+            );
+            if (typeof z === "number") zoom = z + 0.25;
+          }
+        } catch {
+          // fall back to a fixed zoom-in
+        }
+        cameraRef.current?.flyTo({ center: [lng, lat], zoom, duration: 400 });
+      } else if (props.id != null) {
+        const occ = occById.get(props.id);
+        if (occ) setQuickInfo(occ);
+      }
+    },
+    [occById],
+  );
 
   // Search across the whole dataset (debounced, DB-backed for substring match).
   const searchSeq = useRef(0);
@@ -196,58 +284,35 @@ export default function MapScreen() {
     return () => clearTimeout(handle);
   }, [search, statuses]);
 
+  const flyToUser = useCallback((loc: Location.LocationObject) => {
+    cameraRef.current?.flyTo({
+      center: [loc.coords.longitude, loc.coords.latitude],
+      zoom: deltaToZoom(0.5),
+      duration: 500,
+    });
+  }, []);
+
   const recenter = useCallback(async () => {
     if (userLoc) {
-      const next: Region = {
-        latitude: userLoc.coords.latitude,
-        longitude: userLoc.coords.longitude,
-        latitudeDelta: 0.5,
-        longitudeDelta: 0.5,
-      };
-      mapRef.current?.animateToRegion(next, 500);
+      flyToUser(userLoc);
     } else {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === "granted") {
         const loc = await Location.getCurrentPositionAsync({});
         setUserLoc(loc);
         setPermissionDenied(false);
-        mapRef.current?.animateToRegion(
-          {
-            latitude: loc.coords.latitude,
-            longitude: loc.coords.longitude,
-            latitudeDelta: 0.5,
-            longitudeDelta: 0.5,
-          },
-          500,
-        );
+        flyToUser(loc);
       } else {
         setPermissionDenied(true);
       }
     }
-  }, [userLoc]);
+  }, [userLoc, flyToUser]);
 
   const toggleStatus = useCallback((code: string) => {
     setStatuses((prev) =>
       prev.includes(code) ? prev.filter((s) => s !== code) : [...prev, code],
     );
   }, []);
-
-  // The native offline tile cache (tileCachePath) is only safe on Android.
-  // On iOS, pointing UrlTile at a file:// cache path switches MapKit to the
-  // AIRMapUrlTileCachedOverlay code path, which crashes when zooming out (the
-  // tile fan-out stresses that custom file-IO overlay). iOS therefore uses the
-  // plain remote tiles only.
-  const tileCacheConfig = useMemo(
-    () =>
-      Platform.OS === "android"
-        ? {
-            urlTemplate: TILE_TEMPLATE_REMOTE,
-            tileCachePath: TILE_CACHE_DIR,
-            tileCacheMaxAge: 60 * 60 * 24 * 365,
-          }
-        : { urlTemplate: TILE_TEMPLATE_REMOTE },
-    [],
-  );
 
   const onPickSearchResult = useCallback((row: Occurrence) => {
     Keyboard.dismiss();
@@ -256,100 +321,73 @@ export default function MapScreen() {
     setSearchResults(null);
     setQuickInfo(null); // search picks go straight to the full sheet
     if (row.LATITUDE == null || row.LONGITUDE == null) return;
-    const next: Region = {
-      latitude: row.LATITUDE,
-      longitude: row.LONGITUDE,
-      latitudeDelta: 0.05,
-      longitudeDelta: 0.05,
-    };
-    mapRef.current?.animateToRegion(next, 600);
+    cameraRef.current?.flyTo({
+      center: [row.LONGITUDE, row.LATITUDE],
+      zoom: deltaToZoom(0.05),
+      duration: 600,
+    });
     setTimeout(() => setSelected(row), 350);
-  }, []);
-
-  const onClusterPress = useCallback((c: ClusterItem) => {
-    if (c.type !== "cluster") return;
-    const latPad = Math.max((c.bbox.maxLat - c.bbox.minLat) * 1.3, 0.005);
-    const lonPad = Math.max((c.bbox.maxLon - c.bbox.minLon) * 1.3, 0.005);
-    mapRef.current?.animateToRegion(
-      {
-        latitude: c.lat,
-        longitude: c.lon,
-        latitudeDelta: latPad,
-        longitudeDelta: lonPad,
-      },
-      450,
-    );
   }, []);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.navyDeep }]}>
-      <MapView
-        ref={mapRef}
-        provider={PROVIDER_DEFAULT}
+      <MapLibreMap
         style={StyleSheet.absoluteFill}
-        initialRegion={BC_REGION}
-        onRegionChangeComplete={setRegion}
-        // We render our own <UserLocationDot/> below because the native
-        // blue dot does not paint reliably above a custom UrlTile overlay.
-        // Disabling the native dot also prevents a double-render on platforms
-        // where it does work.
-        showsUserLocation={false}
-        showsMyLocationButton={false}
-        showsCompass={false}
-        toolbarEnabled={false}
-        // mapType="none" is Android/Google-Maps only. On iOS (Apple Maps) it
-        // is not a valid MKMapType, so we use "standard" there — the opaque
-        // Esri topo tiles drawn by <UrlTile> cover the base map anyway.
-        mapType={Platform.OS === "android" ? "none" : "standard"}
-        // Force the Apple base map to light mode so that when it briefly shows
-        // through during fast zooms (before the Esri tiles finish loading), it
-        // matches the light Esri topo basemap instead of flashing dark.
-        userInterfaceStyle="light"
+        mapStyle={ESRI_STYLE_JSON}
+        attribution={false}
+        touchRotate={false}
+        touchPitch={false}
       >
-        <UrlTile {...tileCacheConfig} maximumZ={19} flipY={false} zIndex={-1} />
+        <Camera
+          ref={cameraRef}
+          initialViewState={{ bounds: regionToBounds(BC_REGION) }}
+        />
 
-        {userLoc && (
-          <UserLocationDot
-            latitude={userLoc.coords.latitude}
-            longitude={userLoc.coords.longitude}
-            heading={userLoc.coords.heading}
+        <GeoJSONSource
+          id="occ"
+          ref={shapeRef}
+          data={featureCollection as unknown as GeoJSON.FeatureCollection}
+          cluster
+          clusterRadius={50}
+          clusterMaxZoom={14}
+          onPress={onFeaturePress}
+        >
+          <Layer
+            id="clusters"
+            type="circle"
+            filter={CLUSTER_FILTER as never}
+            style={clusterCircleStyle}
           />
-        )}
+          <Layer
+            id="cluster-count"
+            type="symbol"
+            filter={CLUSTER_FILTER as never}
+            style={clusterTextStyle}
+          />
+          <Layer
+            id="points"
+            type="circle"
+            filter={POINT_FILTER as never}
+            style={pointCircleStyle}
+          />
+          <Layer
+            id="point-code"
+            type="symbol"
+            filter={POINT_FILTER as never}
+            style={pointTextStyle}
+          />
+          <Layer
+            id="point-selected"
+            type="circle"
+            filter={
+              ["==", ["get", "id"], selectedId ?? -1] as never
+            }
+            style={selectedRingStyle}
+          />
+        </GeoJSONSource>
 
-        {visibleClusters.map((c) =>
-          c.type === "point" ? (
-            <TrackedMarker
-              // Include the selected-state flag in the key so the marker
-              // unmounts/remounts when its selection changes, capturing a fresh
-              // static bitmap. With tracksViewChanges=false the pin then stays
-              // rock-steady while panning/zooming.
-              key={`p-${c.id}-${quickInfo?.id === c.id || selected?.id === c.id ? "s" : "u"}`}
-              coordinate={{ latitude: c.lat, longitude: c.lon }}
-              onPress={() => setQuickInfo(c.occurrence)}
-              anchor={{ x: 0.5, y: 0.5 }}
-            >
-              <MarkerPin
-                code={c.occurrence.STATUS_C}
-                selected={quickInfo?.id === c.id || selected?.id === c.id}
-              />
-            </TrackedMarker>
-          ) : (
-            <TrackedMarker
-              key={c.id}
-              coordinate={{ latitude: c.lat, longitude: c.lon }}
-              onPress={() => onClusterPress(c)}
-              tracksViewChanges={false}
-              anchor={{ x: 0.5, y: 0.5 }}
-            >
-              <ClusterPin
-                count={c.count}
-                dominantStatus={c.dominantStatus}
-                mixed={c.mixed}
-              />
-            </TrackedMarker>
-          ),
-        )}
-      </MapView>
+        {userLoc && <UserLocation animated heading />}
+      </MapLibreMap>
 
       {/* Top bar */}
       <View
@@ -673,7 +711,11 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   dbOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: "rgba(14,36,68,0.85)",
     alignItems: "center",
     justifyContent: "center",
