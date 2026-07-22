@@ -56,13 +56,14 @@
   },
   "dependencies": {
     "@maplibre/maplibre-react-native": "^11.3.6",
+    "babel-preset-expo": "~56.0.17",
     "expo-asset": "^56.0.20",
     "expo-clipboard": "~56.0.4",
     "expo-file-system": "~56.0.8",
     "expo-sensors": "^56.0.6",
     "expo-sqlite": "^56.0.5",
     "lucide-react-native": "^1.16.0",
-    "metro-runtime": "^0.85.0",
+    "metro-runtime": "^0.84.4",
     "react-native-purchases": "^10.4.4"
   }
 }
