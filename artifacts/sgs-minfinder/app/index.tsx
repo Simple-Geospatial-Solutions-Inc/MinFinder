@@ -76,17 +76,19 @@ const STATUS_CODE_EXPR: unknown = [
 const CLUSTER_FILTER = ["has", "point_count"] as unknown;
 const POINT_FILTER = ["!", ["has", "point_count"]] as unknown;
 
+// Sized to match the pre-MapLibre MarkerPin: a 32px dot (radius 16) with a 3px
+// white border and 11px code label.
 const pointCircleStyle = {
   circleColor: STATUS_COLOR_EXPR,
-  circleRadius: 8,
+  circleRadius: 16,
   circleStrokeColor: "#ffffff",
-  circleStrokeWidth: 2,
+  circleStrokeWidth: 3,
 } as unknown as CircleLayerStyle;
 
 const pointTextStyle = {
   textField: STATUS_CODE_EXPR,
   textFont: LABEL_FONT,
-  textSize: 10,
+  textSize: 11,
   textColor: "#ffffff",
   textAllowOverlap: true,
   textIgnorePlacement: true,
@@ -110,9 +112,10 @@ const clusterTextStyle = {
 } as unknown as SymbolLayerStyle;
 
 // A gold ring around the selected pin (transparent fill so it sits on top).
+// Sized to hug the radius-16 dot + its 3px white border.
 const selectedRingStyle = {
   circleColor: "rgba(0,0,0,0)",
-  circleRadius: 11,
+  circleRadius: 18,
   circleStrokeColor: "#FCBA19",
   circleStrokeWidth: 4,
 } as unknown as CircleLayerStyle;
