@@ -12,6 +12,7 @@
   "private": true,
   "devDependencies": {
     "expo": "56.0.16",
+    "expo-router": "~56.2.15",
     "prettier": "^3.8.3",
     "typescript": "~5.9.3"
   }
