@@ -8,8 +8,16 @@ import React, {
 } from "react";
 import { Platform } from "react-native";
 
-const ENTITLEMENT_ID = "default";
-const API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? "";
+// Must exactly match the entitlement identifier configured in RevenueCat
+// (Dashboard → Entitlements). It is the key under info.entitlements.active.
+const ENTITLEMENT_ID = "SGS MinFinder Pro";
+// RevenueCat uses platform-specific public SDK keys: Apple keys start with
+// `appl_`, Google keys with `goog_`. iOS keeps the original env var so the
+// existing build config is untouched; Android reads its own `goog_` key.
+const API_KEY =
+  (Platform.OS === "android"
+    ? process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY
+    : process.env.EXPO_PUBLIC_REVENUECAT_API_KEY) ?? "";
 
 type Purchases = typeof import("react-native-purchases").default;
 type CustomerInfo = import("react-native-purchases").CustomerInfo;
@@ -39,6 +47,12 @@ type SubscriptionState = {
   purchase: (pkg: PurchasesPackage) => Promise<boolean>;
   restore: () => Promise<boolean>;
   refresh: () => Promise<void>;
+  /**
+   * DEV ONLY. Switches to a brand-new random RevenueCat user so the current
+   * entitlement/purchase is cleared, letting you re-run the purchase flow
+   * without touching the dashboard or reinstalling. No-op outside __DEV__.
+   */
+  resetTestUser: () => Promise<void>;
 };
 
 const SubscriptionContext = createContext<SubscriptionState | null>(null);
@@ -63,6 +77,18 @@ export function SubscriptionProvider({
     let cancelled = false;
     const Purchases = getPurchases();
     if (!Purchases || !API_KEY) {
+      if (Purchases && !API_KEY) {
+        // The native module is present but the key is empty. This happens when
+        // EXPO_PUBLIC_REVENUECAT_API_KEY was not defined in the environment that
+        // built/bundled the JS (e.g. an EAS build with no `env` block in
+        // eas.json) — the value is inlined at build time, so it silently
+        // becomes "". Without this warning the paywall just shows no products.
+        console.warn(
+          "[RevenueCat] EXPO_PUBLIC_REVENUECAT_API_KEY is empty — RevenueCat " +
+            "is not configured and no offerings will load. Set it in the build " +
+            "environment (eas.json `env`) and rebuild.",
+        );
+      }
       setIsReady(true);
       return () => {
         cancelled = true;
@@ -87,6 +113,27 @@ export function SubscriptionProvider({
         setOffering(offerings.current ?? null);
         setAppUserId(appUserId);
         console.log("[RevenueCat] App User ID:", appUserId);
+        if (__DEV__) {
+          const cur = offerings.current;
+          console.log(
+            "[RevenueCat] current offering:",
+            cur?.identifier ?? "(none)",
+            "packages:",
+            cur?.availablePackages.map(
+              (p) =>
+                `${p.identifier}=${p.product.identifier}@${p.product.priceString}`,
+            ) ?? [],
+          );
+          console.log(
+            "[RevenueCat] entitlements attached to products →",
+            "all:",
+            Object.keys(info.entitlements.all),
+            "active:",
+            Object.keys(info.entitlements.active),
+            "| app unlocks on entitlement:",
+            ENTITLEMENT_ID,
+          );
+        }
       } catch (err) {
         if (!cancelled) console.warn("[RevenueCat] init failed:", err);
       } finally {
@@ -139,6 +186,17 @@ export function SubscriptionProvider({
       try {
         const { customerInfo: info } = await Purchases.purchasePackage(pkg);
         setCustomerInfo(info);
+        if (__DEV__) {
+          console.log(
+            "[RevenueCat] purchase completed. active entitlements:",
+            Object.keys(info.entitlements.active),
+            "→ isPaid:",
+            entitlementActive(info),
+            entitlementActive(info)
+              ? ""
+              : `(purchase succeeded but "${ENTITLEMENT_ID}" is not active — attach the ${ENTITLEMENT_ID} entitlement to this product in RevenueCat, or fix the entitlement id)`,
+          );
+        }
         return entitlementActive(info);
       } catch (err: unknown) {
         const e = err as { userCancelled?: boolean; message?: string };
@@ -152,6 +210,36 @@ export function SubscriptionProvider({
     },
     [],
   );
+
+  const resetTestUser = useCallback(async () => {
+    if (!__DEV__) return;
+    const Purchases = getPurchases();
+    if (!Purchases) return;
+    setIsLoading(true);
+    try {
+      // Switching to a fresh random user gives us a clean slate with no
+      // entitlements. logOut() can't be used here because the current user is
+      // anonymous (RevenueCat throws for anonymous log-out).
+      const newId = `dev-reset-${Date.now()}-${Math.floor(
+        Math.random() * 1_000_000,
+      )}`;
+      const { customerInfo: info } = await Purchases.logIn(newId);
+      setCustomerInfo(info);
+      setAppUserId(await Purchases.getAppUserID());
+      const offerings = await Purchases.getOfferings();
+      setOffering(offerings.current ?? null);
+      console.log(
+        "[RevenueCat] reset to fresh test user:",
+        newId,
+        "→ isPaid:",
+        entitlementActive(info),
+      );
+    } catch (err) {
+      console.warn("[RevenueCat] resetTestUser failed:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   const restore = useCallback(async (): Promise<boolean> => {
     const Purchases = getPurchases();
@@ -180,8 +268,19 @@ export function SubscriptionProvider({
       purchase,
       restore,
       refresh,
+      resetTestUser,
     }),
-    [customerInfo, isReady, isLoading, offering, appUserId, purchase, restore, refresh],
+    [
+      customerInfo,
+      isReady,
+      isLoading,
+      offering,
+      appUserId,
+      purchase,
+      restore,
+      refresh,
+      resetTestUser,
+    ],
   );
 
   return (

@@ -5,9 +5,11 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { STATUS_MAP, STATUS_ORDER } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
+import { useSubscription } from "@/lib/revenuecat";
 
 export default function AboutScreen() {
   const colors = useColors();
+  const { isPaid, resetTestUser, isLoading } = useSubscription();
   return (
     <ScrollView
       style={{ backgroundColor: colors.background }}
@@ -103,6 +105,41 @@ export default function AboutScreen() {
           </Text>
         </Pressable>
       </View>
+
+      {__DEV__ && (
+        <>
+          <Text style={[styles.h2, { color: colors.foreground }]}>
+            Developer
+          </Text>
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                borderStyle: "dashed",
+              },
+            ]}
+          >
+            <Text style={[styles.cardText, { color: colors.foreground }]}>
+              Subscription: {isPaid ? "Active (Pro)" : "Free"}
+            </Text>
+            <Pressable
+              onPress={resetTestUser}
+              disabled={isLoading}
+              style={({ pressed }) => [
+                styles.linkRow,
+                { opacity: pressed || isLoading ? 0.6 : 1 },
+              ]}
+            >
+              <Feather name="trash-2" size={14} color={colors.gold} />
+              <Text style={[styles.linkText, { color: colors.gold }]}>
+                Start fresh test user (reset purchases)
+              </Text>
+            </Pressable>
+          </View>
+        </>
+      )}
 
       <Text style={[styles.footer, { color: colors.mutedForeground }]}>
         Use as a reference only. Always verify mine status, access, and

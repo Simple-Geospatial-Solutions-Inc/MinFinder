@@ -1,6 +1,6 @@
 import { Feather } from "@/components/Icon";
 import * as Location from "expo-location";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Modal,
@@ -11,20 +11,24 @@ import {
   Text,
   View,
 } from "react-native";
-import MapView, { PROVIDER_DEFAULT, Region, UrlTile } from "react-native-maps";
+import {
+  Camera,
+  Map as MapLibreMap,
+  OfflineManager,
+  type CameraRef,
+  type OfflinePack,
+} from "@maplibre/maplibre-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
+import { ESRI_STYLE_JSON } from "@/lib/mapStyle";
 import {
-  countTilesInRegion,
-  deleteRegion,
-  downloadRegion,
-  listRegions,
-  type OfflineRegion,
-  TILE_CACHE_DIR,
-  TILE_TEMPLATE_REMOTE,
-  clearAllTiles,
-} from "@/lib/tileCache";
+  deltaToZoom,
+  regionToBounds,
+  type Bounds,
+  type Region,
+} from "@/lib/mapGeo";
+import { countTilesInRegion } from "@/lib/tileCache";
 
 const BC_REGION: Region = {
   latitude: 54.5,
@@ -37,64 +41,73 @@ const MIN_ZOOM_DEFAULT = 8;
 const MAX_ZOOM_DEFAULT = 13;
 const TILE_LIMIT = 4000;
 
+// Metadata we stash on each MapLibre offline pack so the list can show a name,
+// zoom range, and tile estimate (MapLibre packs only carry bounds natively).
+interface PackMeta {
+  name?: string;
+  minZoom?: number;
+  maxZoom?: number;
+  estTiles?: number;
+  createdAt?: number;
+}
+
 export default function OfflineScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
 
-  const [regions, setRegions] = useState<OfflineRegion[]>([]);
+  const [packs, setPacks] = useState<OfflinePack[]>([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [region, setRegion] = useState<Region>(BC_REGION);
-  const mapRef = useRef<MapView | null>(null);
+  // Current picker viewport [west, south, east, north]; updated as the map moves.
+  const [viewBounds, setViewBounds] = useState<Bounds>(regionToBounds(BC_REGION));
+  const cameraRef = useRef<CameraRef | null>(null);
+  const activePack = useRef<OfflinePack | null>(null);
 
   const [downloading, setDownloading] = useState<{
-    done: number;
-    total: number;
-    failed: number;
+    percentage: number;
+    tiles: number;
   } | null>(null);
-  const cancelRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    const items = await listRegions();
-    setRegions(items);
+    try {
+      setPacks(await OfflineManager.getPacks());
+    } catch (err) {
+      console.warn("getPacks error", err);
+    }
   }, []);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
+  // Center the picker on the user when the modal opens.
   useEffect(() => {
+    if (!showAdd) return;
     (async () => {
       const { status } = await Location.getForegroundPermissionsAsync();
-      if (status === "granted") {
-        try {
-          const loc = await Location.getCurrentPositionAsync({});
-          mapRef.current?.animateToRegion(
-            {
-              latitude: loc.coords.latitude,
-              longitude: loc.coords.longitude,
-              latitudeDelta: 0.6,
-              longitudeDelta: 0.6,
-            },
-            500,
-          );
-        } catch {}
-      }
+      if (status !== "granted") return;
+      try {
+        const loc = await Location.getCurrentPositionAsync({});
+        cameraRef.current?.flyTo({
+          center: [loc.coords.longitude, loc.coords.latitude],
+          zoom: deltaToZoom(0.6),
+          duration: 500,
+        });
+      } catch {}
     })();
   }, [showAdd]);
 
-  const bbox = {
-    minLat: region.latitude - region.latitudeDelta / 2,
-    maxLat: region.latitude + region.latitudeDelta / 2,
-    minLon: region.longitude - region.longitudeDelta / 2,
-    maxLon: region.longitude + region.longitudeDelta / 2,
-  };
-  const tileCount = countTilesInRegion(
-    bbox.minLat,
-    bbox.maxLat,
-    bbox.minLon,
-    bbox.maxLon,
-    MIN_ZOOM_DEFAULT,
-    MAX_ZOOM_DEFAULT,
+  const [west, south, east, north] = viewBounds;
+  const tileCount = useMemo(
+    () =>
+      countTilesInRegion(
+        south,
+        north,
+        west,
+        east,
+        MIN_ZOOM_DEFAULT,
+        MAX_ZOOM_DEFAULT,
+      ),
+    [west, south, east, north],
   );
 
   const startDownload = useCallback(async () => {
@@ -106,34 +119,64 @@ export default function OfflineScreen() {
       return;
     }
     if (Platform.OS === "web") {
-      Alert.alert("Not supported", "Offline tile download requires the mobile app.");
+      Alert.alert("Not supported", "Offline map download requires the mobile app.");
       return;
     }
-    cancelRef.current = false;
-    setDownloading({ done: 0, total: tileCount, failed: 0 });
+    setDownloading({ percentage: 0, tiles: 0 });
     try {
-      await downloadRegion(
+      const pack = await OfflineManager.createPack(
         {
-          name: `Region ${new Date().toLocaleString()}`,
-          minLat: bbox.minLat,
-          maxLat: bbox.maxLat,
-          minLon: bbox.minLon,
-          maxLon: bbox.maxLon,
+          mapStyle: ESRI_STYLE_JSON,
+          bounds: viewBounds,
           minZoom: MIN_ZOOM_DEFAULT,
           maxZoom: MAX_ZOOM_DEFAULT,
+          metadata: {
+            name: `Region ${new Date().toLocaleString()}`,
+            minZoom: MIN_ZOOM_DEFAULT,
+            maxZoom: MAX_ZOOM_DEFAULT,
+            estTiles: tileCount,
+            createdAt: Date.now(),
+          },
         },
-        (p) => setDownloading(p),
-        () => cancelRef.current,
+        (_pack, status) => {
+          setDownloading({
+            percentage: status.percentage,
+            tiles: status.completedTileCount,
+          });
+          if (status.state === "complete") {
+            activePack.current = null;
+            setDownloading(null);
+            refresh();
+            setShowAdd(false);
+          }
+        },
+        (_pack, error) => {
+          console.warn("offline pack error", error);
+          Alert.alert("Download failed", error.message);
+          activePack.current = null;
+          setDownloading(null);
+        },
       );
-      await refresh();
-      setShowAdd(false);
+      activePack.current = pack;
     } catch (err) {
-      console.warn("download error", err);
+      console.warn("createPack error", err);
       Alert.alert("Download failed", String(err));
-    } finally {
       setDownloading(null);
     }
-  }, [bbox, tileCount, refresh]);
+  }, [viewBounds, tileCount, refresh]);
+
+  const cancelDownload = useCallback(async () => {
+    const pack = activePack.current;
+    activePack.current = null;
+    setDownloading(null);
+    if (pack) {
+      try {
+        await OfflineManager.deletePack(pack.id);
+      } catch (err) {
+        console.warn("cancel/delete pack error", err);
+      }
+    }
+  }, []);
 
   return (
     <View
@@ -177,7 +220,7 @@ export default function OfflineScreen() {
           </Text>
         </Pressable>
 
-        {regions.length === 0 ? (
+        {packs.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Feather name="map" size={32} color={colors.mutedForeground} />
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
@@ -188,69 +231,83 @@ export default function OfflineScreen() {
             </Text>
           </View>
         ) : (
-          regions.map((r) => (
-            <View
-              key={r.id}
-              style={[
-                styles.regionCard,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={[styles.regionTitle, { color: colors.foreground }]}
-                  numberOfLines={1}
-                >
-                  {r.name}
-                </Text>
-                <Text
-                  style={[styles.regionMeta, { color: colors.mutedForeground }]}
-                  numberOfLines={1}
-                >
-                  {r.tileCount.toLocaleString()} tiles · zoom {r.minZoom}–{r.maxZoom}
-                </Text>
-                <Text
-                  style={[styles.regionMeta, { color: colors.mutedForeground }]}
-                  numberOfLines={1}
-                >
-                  {r.minLat.toFixed(2)}° to {r.maxLat.toFixed(2)}° N, {r.minLon.toFixed(2)}° to {r.maxLon.toFixed(2)}° W
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => {
-                  Alert.alert("Remove region?", "Tile cache is shared between regions; tiles remain cached.", [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                      text: "Remove",
-                      style: "destructive",
-                      onPress: async () => {
-                        await deleteRegion(r.id);
-                        refresh();
-                      },
-                    },
-                  ]);
-                }}
-                hitSlop={10}
+          packs.map((p) => {
+            const meta = (p.metadata ?? {}) as PackMeta;
+            const [w, s, e, n] = p.bounds;
+            return (
+              <View
+                key={p.id}
+                style={[
+                  styles.regionCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
               >
-                <Feather name="trash-2" size={18} color={colors.mutedForeground} />
-              </Pressable>
-            </View>
-          ))
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[styles.regionTitle, { color: colors.foreground }]}
+                    numberOfLines={1}
+                  >
+                    {meta.name ?? "Offline region"}
+                  </Text>
+                  <Text
+                    style={[styles.regionMeta, { color: colors.mutedForeground }]}
+                    numberOfLines={1}
+                  >
+                    {(meta.estTiles ?? 0).toLocaleString()} tiles · zoom{" "}
+                    {meta.minZoom ?? MIN_ZOOM_DEFAULT}–{meta.maxZoom ?? MAX_ZOOM_DEFAULT}
+                  </Text>
+                  <Text
+                    style={[styles.regionMeta, { color: colors.mutedForeground }]}
+                    numberOfLines={1}
+                  >
+                    {s.toFixed(2)}° to {n.toFixed(2)}° N, {w.toFixed(2)}° to{" "}
+                    {e.toFixed(2)}° W
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => {
+                    Alert.alert("Remove region?", "This deletes the cached map tiles for this area.", [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Remove",
+                        style: "destructive",
+                        onPress: async () => {
+                          try {
+                            await OfflineManager.deletePack(p.id);
+                          } catch (err) {
+                            console.warn("deletePack error", err);
+                          }
+                          refresh();
+                        },
+                      },
+                    ]);
+                  }}
+                  hitSlop={10}
+                >
+                  <Feather name="trash-2" size={18} color={colors.mutedForeground} />
+                </Pressable>
+              </View>
+            );
+          })
         )}
 
-        {regions.length > 0 && (
+        {packs.length > 0 && (
           <Pressable
             onPress={() => {
               Alert.alert(
-                "Clear all cached tiles?",
-                "This removes every downloaded map tile. MINFILE data is unaffected.",
+                "Clear all offline maps?",
+                "This removes every downloaded map region. MINFILE data is unaffected.",
                 [
                   { text: "Cancel", style: "cancel" },
                   {
                     text: "Clear",
                     style: "destructive",
                     onPress: async () => {
-                      await clearAllTiles();
+                      try {
+                        await OfflineManager.resetDatabase();
+                      } catch (err) {
+                        console.warn("resetDatabase error", err);
+                      }
                       refresh();
                     },
                   },
@@ -266,16 +323,16 @@ export default function OfflineScreen() {
             ]}
           >
             <Text style={[styles.dangerBtnText, { color: colors.destructive }]}>
-              Clear all cached tiles
+              Clear all offline maps
             </Text>
           </Pressable>
         )}
 
         <Text style={[styles.footer, { color: colors.mutedForeground }]}>
-          Cache dir: {TILE_CACHE_DIR}
+          Offline maps are stored on this device by MapLibre.
         </Text>
         <Text style={[styles.footer, { color: colors.mutedForeground }]}>
-          Tiles © OpenStreetMap contributors.
+          Tiles © Esri, USGS, NOAA and the GIS User Community.
         </Text>
       </ScrollView>
 
@@ -298,31 +355,19 @@ export default function OfflineScreen() {
           </View>
 
           <View style={styles.mapWrap}>
-            <MapView
-              ref={mapRef}
-              provider={PROVIDER_DEFAULT}
+            <MapLibreMap
               style={StyleSheet.absoluteFill}
-              initialRegion={region}
-              onRegionChangeComplete={setRegion}
-              // mapType="none" is Android/Google-Maps only; on iOS (Apple Maps)
-              // it is not a valid MKMapType, so use "standard" there.
-              mapType={Platform.OS === "android" ? "none" : "standard"}
+              mapStyle={ESRI_STYLE_JSON}
+              attribution={false}
+              touchRotate={false}
+              touchPitch={false}
+              onRegionDidChange={(e) => setViewBounds(e.nativeEvent.bounds)}
             >
-              <UrlTile
-                urlTemplate={TILE_TEMPLATE_REMOTE}
-                // The native offline tile cache is Android-only — on iOS the
-                // cached-overlay path crashes when zooming. iOS uses plain
-                // remote tiles.
-                tileCachePath={
-                  Platform.OS === "android" ? TILE_CACHE_DIR : undefined
-                }
-                tileCacheMaxAge={
-                  Platform.OS === "android" ? 60 * 60 * 24 * 365 : undefined
-                }
-                maximumZ={19}
-                zIndex={-1}
+              <Camera
+                ref={cameraRef}
+                initialViewState={{ bounds: regionToBounds(BC_REGION) }}
               />
-            </MapView>
+            </MapLibreMap>
             <View pointerEvents="none" style={styles.selectionFrame} />
           </View>
 
@@ -376,19 +421,17 @@ export default function OfflineScreen() {
                   <View
                     style={{
                       height: "100%",
-                      width: `${downloading.total ? Math.min(100, (downloading.done / downloading.total) * 100) : 0}%`,
+                      width: `${Math.min(100, downloading.percentage)}%`,
                       backgroundColor: colors.primary,
                     }}
                   />
                 </View>
                 <Text style={[styles.progressText, { color: colors.foreground }]}>
-                  {downloading.done.toLocaleString()} / {downloading.total.toLocaleString()} tiles
-                  {downloading.failed ? ` · ${downloading.failed} failed` : ""}
+                  {Math.round(downloading.percentage)}% ·{" "}
+                  {downloading.tiles.toLocaleString()} tiles
                 </Text>
                 <Pressable
-                  onPress={() => {
-                    cancelRef.current = true;
-                  }}
+                  onPress={cancelDownload}
                   style={({ pressed }) => [
                     styles.cancelBtn,
                     { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
