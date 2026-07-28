@@ -12,21 +12,21 @@
       },
       "env": {
         "EXPO_PUBLIC_REVENUECAT_API_KEY": "test_PuMbDncUOVWUvvRhYcMUppJqAiQ",
-        "GOOGLE_MAPS_ANDROID_API_KEY": "REPLACE_WITH_GOOGLE_MAPS_ANDROID_API_KEY"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "test_PuMbDncUOVWUvvRhYcMUppJqAiQ"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_REVENUECAT_API_KEY": "test_PuMbDncUOVWUvvRhYcMUppJqAiQ",
-        "GOOGLE_MAPS_ANDROID_API_KEY": "REPLACE_WITH_GOOGLE_MAPS_ANDROID_API_KEY"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "test_PuMbDncUOVWUvvRhYcMUppJqAiQ"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_REVENUECAT_API_KEY": "appl_YMbILuVsonPlIaCGSblEGUhdmTO",
-        "GOOGLE_MAPS_ANDROID_API_KEY": "REPLACE_WITH_GOOGLE_MAPS_ANDROID_API_KEY"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_bDbqyBmOUitCXSDFhZslcjiOfoW"
       }
     }
   },

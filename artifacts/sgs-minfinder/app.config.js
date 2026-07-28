@@ -1,15 +1,5 @@
 const base = require("./app.json");
 
-module.exports = () => {
-  const expo = { ...base.expo };
-  expo.android = {
-    ...(expo.android || {}),
-    config: {
-      ...((expo.android && expo.android.config) || {}),
-      googleMaps: {
-        apiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY,
-      },
-    },
-  };
-  return { expo };
-};
+// The map uses MapLibre (@maplibre/maplibre-react-native), not react-native-maps,
+// so no Google Maps Android API key is needed. Config is fully static in app.json.
+module.exports = () => ({ expo: { ...base.expo } });
