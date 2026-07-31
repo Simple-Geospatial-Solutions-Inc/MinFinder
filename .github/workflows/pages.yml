@@ -1,0 +1,54 @@
+
+# Publishes the MapLibre style used by offline region downloads.
+#
+# MapLibre's offline downloader can only fetch a style over the network — file://
+# and asset:// URLs are rejected, because the downloader is wired to the Network
+# file source. So the app renders lib/esri-style.json inline (works with no
+# connection) and points OfflineManager.createPack at the copy published here.
+#
+# One-time setup: repo Settings -> Pages -> Source = "GitHub Actions".
+name: Publish map style to Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - artifacts/sgs-minfinder/lib/esri-style.json
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a run mid-deploy; a half-published style would crash the app's
+# download path on any client that fetched it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble site
+        run: |
+          set -euo pipefail
+          src=artifacts/sgs-minfinder/lib/esri-style.json
+          # Fail loudly rather than publishing something MapLibre would abort on.
+          jq -e '.version and .sources and (.sources | length > 0)' "$src" > /dev/null
+          mkdir -p _site
+          cp "$src" _site/style.json
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

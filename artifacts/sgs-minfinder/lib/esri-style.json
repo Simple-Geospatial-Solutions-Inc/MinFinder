@@ -1,0 +1,23 @@
+{
+  "version": 8,
+  "glyphs": "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
+  "sources": {
+    "esri-topo": {
+      "type": "raster",
+      "tiles": [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
+      ],
+      "tileSize": 256,
+      "maxzoom": 19,
+      "attribution": "Esri, USGS, NOAA, and the GIS User Community"
+    }
+  },
+  "layers": [
+    {
+      "id": "bg",
+      "type": "background",
+      "paint": { "background-color": "#F4F1EA" }
+    },
+    { "id": "esri-topo-layer", "type": "raster", "source": "esri-topo" }
+  ]
+}

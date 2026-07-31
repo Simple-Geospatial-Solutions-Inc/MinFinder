@@ -1,10 +1,11 @@
+import esriStyle from "./esri-style.json";
 import { lonLatToTile } from "./geo";
 
 // Esri World Topographic basemap — free public tile service, no API key needed.
-// {z}/{y}/{x} (XYZ) ordering. Consumed by the MapLibre raster source in
-// lib/mapStyle.ts (online) and by MapLibre offline packs built from that style.
-export const TILE_TEMPLATE_REMOTE =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}";
+// {z}/{y}/{x} (XYZ) ordering. Read out of the style rather than declared here so
+// there is exactly one copy of the template: MapLibre matches offline-cached
+// tiles by URL, so the rendered style and the published offline style must agree.
+export const TILE_TEMPLATE_REMOTE = esriStyle.sources["esri-topo"].tiles[0];
 
 // Pre-download tile-count estimate for the offline picker. MapLibre's
 // OfflineManager has no cheap pre-count, so we estimate the same way the old
