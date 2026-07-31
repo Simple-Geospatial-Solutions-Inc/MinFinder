@@ -1,8 +1,10 @@
 import { Feather, type FeatherIconName } from "@/components/Icon";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
+import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Keyboard,
   Platform,
@@ -18,26 +20,35 @@ import {
   GeoJSONSource,
   Layer,
   Map as MapLibreMap,
+  OfflineManager,
   UserLocation,
   type CameraRef,
   type CircleLayerStyle,
+  type FillLayerStyle,
   type GeoJSONSourceRef,
+  type LineLayerStyle,
   type SymbolLayerStyle,
 } from "@maplibre/maplibre-react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DetailsSheet } from "@/components/DetailsSheet";
+import { OfflineRegionPill } from "@/components/OfflineRegionPill";
 import { QuickInfoCard } from "@/components/QuickInfoCard";
 import { STATUS_MAP, STATUS_ORDER, getStatusInfo } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
 import { queryOccurrences, type Occurrence } from "@/lib/db";
+import { takePendingFocusRegion, type FocusRegion } from "@/lib/mapFocus";
 import { ESRI_STYLE_JSON, LABEL_FONT } from "@/lib/mapStyle";
 import {
   deltaToZoom,
+  normalizeBounds,
   occurrencesToFeatureCollection,
   regionToBounds,
+  regionsToFeatureCollection,
+  type Bounds,
   type Region,
+  type RegionOutline,
 } from "@/lib/mapGeo";
 
 const BC_REGION: Region = {
@@ -46,6 +57,12 @@ const BC_REGION: Region = {
   latitudeDelta: 12,
   longitudeDelta: 14,
 };
+
+// Height of the floating top bar below the safe-area inset: brand row + search
+// field + status chips. Used to place the search dropdown and the offline-region
+// pill, and to keep `fitBounds` from tucking a region under the bar.
+const TOP_BAR_HEIGHT = 132;
+const REGION_PILL_HEIGHT = 46;
 
 // --- MapLibre layer styling. Markers are a data-driven clustered symbol layer
 // (GPU-rendered from a GeoJSON source), not per-marker views — which is why the
@@ -120,6 +137,49 @@ const selectedRingStyle = {
   circleStrokeWidth: 4,
 } as unknown as CircleLayerStyle;
 
+// --- Downloaded offline-region outlines ------------------------------------
+// Colors are hardcoded rather than themed: the Esri topo basemap is the same
+// light raster in both app themes, so these are matched to the basemap, not to
+// the UI. Gold = the region the user tapped (continuing the app's "this one,
+// right now" signal); navy = other cached regions shown by the coverage toggle.
+//
+// The dark casing under both strokes is not decorative — a bare gold line
+// disappears against sunlit snow, granite and logging slash, which is exactly
+// the terrain these regions cover.
+const REGION_GOLD = "#FCBA19";
+const REGION_NAVY = "#16365C";
+
+const regionCasingStyle = {
+  lineColor: "rgba(14,36,68,0.55)",
+  lineWidth: ["case", ["get", "focused"], 6, 3.5],
+  lineJoin: "round",
+} as unknown as LineLayerStyle;
+
+const regionFillStyle = {
+  fillColor: ["case", ["get", "focused"], REGION_GOLD, REGION_NAVY],
+  fillOpacity: ["case", ["get", "focused"], 0.12, 0.07],
+} as unknown as FillLayerStyle;
+
+// `lineDasharray` is not reliably data-driven in the MapLibre style spec, so the
+// solid (focused) and dashed (other) strokes are separate filtered layers rather
+// than one layer with a "case" expression.
+const regionFocusedLineStyle = {
+  lineColor: REGION_GOLD,
+  lineWidth: 3,
+  lineJoin: "round",
+  lineCap: "round",
+} as unknown as LineLayerStyle;
+
+const regionOtherLineStyle = {
+  lineColor: REGION_NAVY,
+  lineWidth: 1.5,
+  lineDasharray: [2, 2],
+  lineJoin: "round",
+} as unknown as LineLayerStyle;
+
+const FOCUSED_FILTER = ["==", ["get", "focused"], true] as unknown;
+const UNFOCUSED_FILTER = ["!=", ["get", "focused"], true] as unknown;
+
 export default function MapScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -143,6 +203,18 @@ export default function MapScreen() {
   const [quickInfo, setQuickInfo] = useState<Occurrence | null>(null);
   const [selected, setSelected] = useState<Occurrence | null>(null);
   const [searchResults, setSearchResults] = useState<Occurrence[] | null>(null);
+
+  // The downloaded region the user tapped on the Offline screen, plus every
+  // cached region for the coverage toggle.
+  const [focusRegion, setFocusRegion] = useState<FocusRegion | null>(null);
+  const [packRegions, setPackRegions] = useState<RegionOutline[]>([]);
+  const [showCoverage, setShowCoverage] = useState(false);
+  // Mirrored so the focus effect can reconcile against the current focus
+  // without listing it as a dependency (which would resubscribe on every change).
+  const focusIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    focusIdRef.current = focusRegion?.id ?? null;
+  }, [focusRegion]);
 
   // Load full dataset once on mount + request location
   useEffect(() => {
@@ -332,6 +404,107 @@ export default function MapScreen() {
     setTimeout(() => setSelected(row), 350);
   }, []);
 
+  // Tapping a region on the Offline screen hands it over through lib/mapFocus
+  // (see that file for why not route params) and pops back here. The request is
+  // claimed exactly once, so returning from Compass/About does not re-fly the
+  // camera. Reloading the pack list on every focus also powers the coverage
+  // toggle and drops an outline whose pack was deleted while we were away.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+
+      (async () => {
+        try {
+          const packs = await OfflineManager.getPacks();
+          if (cancelled) return;
+          setPackRegions(
+            packs.map((p) => ({
+              id: p.id,
+              name: String(
+                (p.metadata as { name?: string } | null)?.name ?? "Offline region",
+              ),
+              bounds: p.bounds as Bounds,
+            })),
+          );
+          const focusedId = focusIdRef.current;
+          if (focusedId && !packs.some((p) => p.id === focusedId)) {
+            setFocusRegion(null);
+          }
+        } catch (err) {
+          console.warn("getPacks error", err);
+        }
+      })();
+
+      const region = takePendingFocusRegion();
+      if (!region) {
+        return () => {
+          cancelled = true;
+        };
+      }
+
+      // Clear anything that would sit over the region we're about to frame.
+      setQuickInfo(null);
+      setSelected(null);
+      setSearchActive(false);
+      setSearchResults(null);
+      setFocusRegion(region);
+
+      let handle: ReturnType<typeof setTimeout> | undefined;
+      (async () => {
+        let reduceMotion = false;
+        try {
+          reduceMotion = await AccessibilityInfo.isReduceMotionEnabled();
+        } catch {
+          // Fall through to an animated fit.
+        }
+        if (cancelled) return;
+        // The pop transition is still running; fitting once it lands keeps the
+        // animation smooth and lets the camera use the final viewport size.
+        handle = setTimeout(() => {
+          cameraRef.current?.fitBounds(normalizeBounds(region.bounds), {
+            padding: {
+              top: insets.top + TOP_BAR_HEIGHT + REGION_PILL_HEIGHT + 12,
+              bottom: insets.bottom + 96, // clears the FAB stack
+              left: 24,
+              right: 24,
+            },
+            // The library defaults to a 2s "fly" arc, which reads as sluggish
+            // when hopping across BC.
+            duration: reduceMotion ? 0 : 700,
+            easing: reduceMotion ? undefined : "ease",
+          });
+        }, 260);
+      })();
+
+      return () => {
+        cancelled = true;
+        if (handle) clearTimeout(handle);
+      };
+    }, [insets.top, insets.bottom]),
+  );
+
+  const toggleCoverage = useCallback(() => {
+    // The outlines may be entirely off-screen at the current camera, so without
+    // this the toggle can feel dead.
+    Haptics.selectionAsync().catch(() => {});
+    setShowCoverage((prev) => !prev);
+  }, []);
+
+  // What the outline layers draw: every cached region when coverage is on,
+  // otherwise just the focused one. Rendered as null when there is nothing to
+  // show, because GeoJSONSource requires `data`.
+  const regionShape = useMemo(() => {
+    const list: RegionOutline[] = showCoverage
+      ? packRegions.map((r) => ({ ...r, focused: r.id === focusRegion?.id }))
+      : focusRegion
+        ? [{ id: focusRegion.id, name: focusRegion.name, bounds: focusRegion.bounds, focused: true }]
+        : [];
+    return list.length ? regionsToFeatureCollection(list) : null;
+  }, [showCoverage, packRegions, focusRegion]);
+
+  // The pill and the search dropdown occupy the same slot below the top bar.
+  const searchDropdownOpen = !!(searchActive && searchResults && searchResults.length > 0);
+
   return (
     <View style={[styles.root, { backgroundColor: colors.navyDeep }]}>
       <MapLibreMap
@@ -345,6 +518,45 @@ export default function MapScreen() {
           ref={cameraRef}
           initialViewState={{ bounds: regionToBounds(BC_REGION) }}
         />
+
+        {/*
+          Outlines of downloaded offline regions. `beforeId="clusters"` is
+          required, not cosmetic: this source unmounts whenever the overlay is
+          cleared, and a layer added back later is appended to the *top* of the
+          style — so without it the outline would render over the pins the second
+          time a region is opened. Anchoring to the first `occ` layer keeps the
+          rectangles underneath regardless of insertion order.
+        */}
+        {regionShape && (
+          <GeoJSONSource id="offline-regions" data={regionShape}>
+            <Layer
+              id="offline-region-fill"
+              type="fill"
+              beforeId="clusters"
+              style={regionFillStyle}
+            />
+            <Layer
+              id="offline-region-casing"
+              type="line"
+              beforeId="clusters"
+              style={regionCasingStyle}
+            />
+            <Layer
+              id="offline-region-line-other"
+              type="line"
+              beforeId="clusters"
+              filter={UNFOCUSED_FILTER as never}
+              style={regionOtherLineStyle}
+            />
+            <Layer
+              id="offline-region-line-focused"
+              type="line"
+              beforeId="clusters"
+              filter={FOCUSED_FILTER as never}
+              style={regionFocusedLineStyle}
+            />
+          </GeoJSONSource>
+        )}
 
         <GeoJSONSource
           id="occ"
@@ -491,12 +703,12 @@ export default function MapScreen() {
         </ScrollView>
       </View>
 
-      {searchActive && searchResults && searchResults.length > 0 && (
+      {searchDropdownOpen && (
         <View
           style={[
             styles.searchResults,
             {
-              top: insets.top + 132,
+              top: insets.top + TOP_BAR_HEIGHT,
               backgroundColor: colors.card,
               borderColor: colors.border,
             },
@@ -541,6 +753,33 @@ export default function MapScreen() {
       )}
 
       <View style={[styles.fabStack, { bottom: insets.bottom + 24 }]}>
+        {/* Offline coverage. Hidden with no downloads so the control is never
+            dead, and it doubles as the thumb-reachable way to clear the
+            region outline (the pill's Hide sits at the top of the screen). */}
+        {packRegions.length > 0 && Platform.OS !== "web" && (
+          <Pressable
+            onPress={toggleCoverage}
+            accessibilityRole="button"
+            accessibilityState={{ selected: showCoverage }}
+            accessibilityLabel={
+              showCoverage ? "Hide offline coverage" : "Show offline coverage"
+            }
+            style={({ pressed }) => [
+              styles.fab,
+              {
+                backgroundColor: showCoverage ? colors.gold : "rgba(14,36,68,0.92)",
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+          >
+            <Feather
+              name="layers"
+              size={20}
+              color={showCoverage ? colors.navyDeep : "#F4F1EA"}
+            />
+          </Pressable>
+        )}
+
         <Pressable
           onPress={recenter}
           style={({ pressed }) => [
@@ -566,6 +805,21 @@ export default function MapScreen() {
             Location permission denied — map is centered on BC.
           </Text>
         </View>
+      )}
+
+      {/* Shares the slot below the top bar with the search dropdown, so it
+          steps aside while results are open. */}
+      {!searchDropdownOpen && (
+        <OfflineRegionPill
+          region={focusRegion}
+          coverageCount={showCoverage ? packRegions.length : null}
+          userLoc={userLoc ? userLoc.coords : null}
+          onClear={() => {
+            setFocusRegion(null);
+            setShowCoverage(false);
+          }}
+          topOffset={insets.top + TOP_BAR_HEIGHT + 6}
+        />
       )}
 
       <QuickInfoCard
