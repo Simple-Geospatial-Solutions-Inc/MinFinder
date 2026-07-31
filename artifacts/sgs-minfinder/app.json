@@ -9,7 +9,7 @@
     "scheme": "sgs-minfinder",
     "userInterfaceStyle": "automatic",
     "runtimeVersion": {
-      "policy": "fingerprint"
+      "policy": "appVersion"
     },
     "updates": {
       "url": "https://u.expo.dev/10e37699-3c1a-495f-b49b-cc856866e691",
