@@ -123,9 +123,8 @@ export default function AboutScreen() {
           Sources: Esri, HERE, Garmin, FAO, NOAA, USGS, © OpenStreetMap contributors, and the GIS User Community
         </Text>
         <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11, marginTop: 6 }]}>
-          Map engine: Google Maps (the Esri tiles are drawn on top of the
-          Google Maps view, which is why the Google logo appears in the
-          corner).
+          Map engine: MapLibre, an open-source map renderer. The Esri
+          topographic tiles are drawn on the MapLibre map view.
         </Text>
         <Pressable
           onPress={() => WebBrowser.openBrowserAsync("https://www.esri.com/en-us/legal/terms/data-attributions")}
