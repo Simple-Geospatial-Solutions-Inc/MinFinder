@@ -29,7 +29,7 @@ import { useColors } from "@/hooks/useColors";
 import { countOccurrencesInBbox, queryOccurrences } from "@/lib/db";
 import { formatBytes, formatShortDate } from "@/lib/format";
 import { setPendingFocusRegion } from "@/lib/mapFocus";
-import { ESRI_STYLE_JSON } from "@/lib/mapStyle";
+import { ESRI_STYLE_JSON, ESRI_STYLE_URL, PACK_STYLE_VERSION } from "@/lib/mapStyle";
 import {
   boundsCenter,
   boundsToPlaceName,
@@ -70,6 +70,28 @@ interface PackMeta {
   createdAt?: number;
   /** Reverse-geocoded place name, resolved at download time while online. */
   place?: string;
+  styleVersion?: number;
+}
+
+// mbgl parses the offline style with no error handling whatsoever, so any
+// response that isn't valid style JSON — a Pages outage, a captive portal, a
+// hijacked DNS answer — terminates the process instead of failing the download.
+// Checking here turns that class of fatal crash into an alert.
+async function styleUrlIsUsable(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return false;
+    const body: unknown = JSON.parse(await res.text());
+    if (typeof body !== "object" || body === null) return false;
+    const style = body as { version?: unknown; sources?: unknown };
+    return (
+      typeof style.version === "number" &&
+      typeof style.sources === "object" &&
+      style.sources !== null
+    );
+  } catch {
+    return false;
+  }
 }
 
 function formatKm(km: number): string {
@@ -160,7 +182,26 @@ export default function OfflineScreen() {
 
   const refresh = useCallback(async () => {
     try {
-      const list = await OfflineManager.getPacks();
+      const all = await OfflineManager.getPacks();
+
+      // Drop packs from before the style-URL fix: they contain no Esri tiles,
+      // so listing one would wrongly promise that its area works offline.
+      const list: OfflinePack[] = [];
+      for (const p of all) {
+        const meta = (p.metadata ?? {}) as PackMeta;
+        if (meta.styleVersion === PACK_STYLE_VERSION) {
+          list.push(p);
+          continue;
+        }
+        try {
+          await OfflineManager.deletePack(p.id);
+        } catch (err) {
+          // Keep it visible if it can't be removed, so the manual Remove
+          // button stays available.
+          console.warn("stale pack cleanup error", err);
+          list.push(p);
+        }
+      }
       setPacks(list);
 
       const statusEntries = await Promise.all(
@@ -231,6 +272,15 @@ export default function OfflineScreen() {
       })();
     }, [refresh]),
   );
+
+  // Progress events keep arriving from native after this screen goes away; the
+  // library only unsubscribes on its own once a pack reports "complete".
+  useEffect(() => {
+    return () => {
+      const pack = activePack.current;
+      if (pack) OfflineManager.removeListener(pack.id);
+    };
+  }, []);
 
   // Centre the picker on the user when the modal opens.
   useEffect(() => {
@@ -367,10 +417,19 @@ export default function OfflineScreen() {
     for (let i = 2; existing.has(name); i++) name = `${base} (${i})`;
 
     setDownloading({ percentage: 0, tiles: 0 });
+    if (!(await styleUrlIsUsable(ESRI_STYLE_URL))) {
+      setDownloading(null);
+      Alert.alert(
+        "Download unavailable",
+        "Couldn't reach the map style needed to download this region. Check your connection and try again.",
+      );
+      return;
+    }
     try {
       const pack = await OfflineManager.createPack(
         {
-          mapStyle: ESRI_STYLE_JSON,
+          // Must be a URL, not ESRI_STYLE_JSON — see ESRI_STYLE_URL in lib/mapStyle.ts.
+          mapStyle: ESRI_STYLE_URL,
           bounds: selectionBounds,
           minZoom: MIN_ZOOM_DEFAULT,
           maxZoom: MAX_ZOOM_DEFAULT,
@@ -381,6 +440,7 @@ export default function OfflineScreen() {
             estTiles: tileCount,
             createdAt: Date.now(),
             place,
+            styleVersion: PACK_STYLE_VERSION,
           } satisfies PackMeta,
         },
         (_pack, status) => {
@@ -400,8 +460,11 @@ export default function OfflineScreen() {
             setShowAdd(false);
           }
         },
-        (_pack, error) => {
+        (pack, error) => {
           console.warn("offline pack error", error);
+          // Use the pack handed to the callback: activePack may not be assigned
+          // yet if this fires before createPack's promise resolves.
+          OfflineManager.removeListener(pack.id);
           Alert.alert("Download failed", error.message);
           activePack.current = null;
           setDownloading(null);
@@ -420,6 +483,7 @@ export default function OfflineScreen() {
     activePack.current = null;
     setDownloading(null);
     if (pack) {
+      OfflineManager.removeListener(pack.id);
       try {
         await OfflineManager.deletePack(pack.id);
       } catch (err) {

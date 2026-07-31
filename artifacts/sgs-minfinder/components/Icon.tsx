@@ -2,6 +2,7 @@ import React from "react";
 import {
   AlertCircle,
   AlertTriangle,
+  ChevronDown,
   Download,
   DownloadCloud,
   ExternalLink,
@@ -24,6 +25,7 @@ import {
 const ICONS = {
   "alert-circle": AlertCircle,
   "alert-triangle": AlertTriangle,
+  "chevron-down": ChevronDown,
   download: Download,
   "download-cloud": DownloadCloud,
   "external-link": ExternalLink,

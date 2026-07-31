@@ -39,7 +39,7 @@ import { STATUS_MAP, STATUS_ORDER, getStatusInfo } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
 import { queryOccurrences, type Occurrence } from "@/lib/db";
 import { takePendingFocusRegion, type FocusRegion } from "@/lib/mapFocus";
-import { ESRI_STYLE_JSON, LABEL_FONT } from "@/lib/mapStyle";
+import { ESRI_STYLE_JSON, LABEL_FONT, PACK_STYLE_VERSION } from "@/lib/mapStyle";
 import {
   deltaToZoom,
   normalizeBounds,
@@ -415,8 +415,16 @@ export default function MapScreen() {
 
       (async () => {
         try {
-          const packs = await OfflineManager.getPacks();
+          const all = await OfflineManager.getPacks();
           if (cancelled) return;
+          // Packs from before the style-URL fix hold no Esri tiles, so
+          // outlining one would promise offline coverage that doesn't exist.
+          // The Offline screen deletes them, but the map can be opened first.
+          const packs = all.filter(
+            (p) =>
+              ((p.metadata ?? {}) as { styleVersion?: number }).styleVersion ===
+              PACK_STYLE_VERSION,
+          );
           setPackRegions(
             packs.map((p) => ({
               id: p.id,
