@@ -5,7 +5,7 @@
     "owner": "simple-geospatial-solutions",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/icon-square.png",
     "scheme": "sgs-minfinder",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -19,6 +19,10 @@
     },
     "android": {
       "package": "ca.sgss.minfinder",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#0F2034"
+      },
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
@@ -28,7 +32,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/images/icon-square.png"
     },
     "plugins": [
       "expo-dev-client",
@@ -52,9 +56,17 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/icon.png",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 288,
           "resizeMode": "contain",
-          "backgroundColor": "#0E2444"
+          "backgroundColor": "#0F2034",
+          "ios": {
+            "imageWidth": 380
+          },
+          "dark": {
+            "image": "./assets/images/splash-icon.png",
+            "backgroundColor": "#0F2034"
+          }
         }
       ]
     ],
