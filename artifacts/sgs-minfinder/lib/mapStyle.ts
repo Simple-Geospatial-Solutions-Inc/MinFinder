@@ -30,3 +30,13 @@ export const ESRI_STYLE_JSON = JSON.stringify(ESRI_STYLE);
 // downloader is wired to the Network file source only.
 export const ESRI_STYLE_URL =
   "https://simple-geospatial-solutions-inc.github.io/MinFinder/style.json";
+
+// Bumped when a pack's contents stop being comparable to older ones. Packs
+// written before v2 were created by passing inline style JSON to createPack,
+// which MapLibre silently rejected in favour of its own demo style — they hold
+// no Esri tiles at all, so they are deleted on sight rather than shown.
+//
+// Lives here rather than in a screen because two surfaces have to agree on it:
+// the Offline list (which deletes stale packs) and the map's offline-coverage
+// overlay (which must not outline an area that holds no tiles).
+export const PACK_STYLE_VERSION = 2;

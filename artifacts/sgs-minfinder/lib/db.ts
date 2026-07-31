@@ -140,6 +140,20 @@ export async function getOccurrenceById(id: number): Promise<Occurrence | null> 
   return row ?? null;
 }
 
+// How many occurrences fall inside a box. Used by the offline-region rows,
+// which have no rows in memory (unlike the map screen) — so this counts in
+// SQLite rather than materialising and measuring a result set.
+export async function countOccurrencesInBbox(b: BBox): Promise<number> {
+  const db = await getDb();
+  const r = await db.getFirstAsync<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM minfile_occurrences
+     WHERE LATITUDE IS NOT NULL AND LONGITUDE IS NOT NULL
+       AND LATITUDE BETWEEN ? AND ? AND LONGITUDE BETWEEN ? AND ?`,
+    [b.minLat, b.maxLat, b.minLon, b.maxLon],
+  );
+  return r?.n ?? 0;
+}
+
 export async function countAll(): Promise<number> {
   const db = await getDb();
   const r = await db.getFirstAsync<{ n: number }>(

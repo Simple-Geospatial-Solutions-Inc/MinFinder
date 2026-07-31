@@ -58,6 +58,15 @@ export function formatBearing(deg: number): string {
   return `${Math.round(deg)}°`;
 }
 
+const COMPASS_8 = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+
+// Bearing -> coarse octant ("NE"). Used where a precise heading would be false
+// precision, e.g. "14 km to the edge NE" on an offline region.
+export function bearingToCompass(deg: number): string {
+  const normalized = ((deg % 360) + 360) % 360;
+  return COMPASS_8[Math.round(normalized / 45) % 8];
+}
+
 // Decimal degrees -> DMS string like N49°50'36.10"
 export function formatDMS(value: number, isLat: boolean): string {
   const hemi = isLat ? (value >= 0 ? "N" : "S") : value >= 0 ? "E" : "W";
