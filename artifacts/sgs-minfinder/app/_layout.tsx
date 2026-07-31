@@ -19,7 +19,9 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import colors from "@/constants/colors";
 import { SubscriptionProvider } from "@/lib/revenuecat";
 
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {});
+// Cross-fade the splash out instead of cutting to the map.
+SplashScreen.setOptions({ duration: 400, fade: true });
 
 const queryClient = new QueryClient();
 
