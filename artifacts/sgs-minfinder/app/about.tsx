@@ -1,7 +1,14 @@
 import { Feather } from "@/components/Icon";
 import * as WebBrowser from "expo-web-browser";
-import React from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useState } from "react";
+import {
+  LayoutAnimation,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import { STATUS_MAP, STATUS_ORDER } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
@@ -10,6 +17,15 @@ import { useSubscription } from "@/lib/revenuecat";
 export default function AboutScreen() {
   const colors = useColors();
   const { isPaid, resetTestUser, isLoading } = useSubscription();
+
+  // Marker legend doubles as a MINFILE glossary. Single-open accordion: tapping
+  // a row expands its explanation and collapses whichever one was open.
+  const [openStatus, setOpenStatus] = useState<string | null>(null);
+  const toggleStatus = useCallback((code: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setOpenStatus((prev) => (prev === code ? null : code));
+  }, []);
+
   return (
     <ScrollView
       style={{ backgroundColor: colors.background }}
@@ -24,22 +40,60 @@ export default function AboutScreen() {
       </Text>
 
       <Text style={[styles.h2, { color: colors.foreground }]}>Marker legend</Text>
+      <Text style={[styles.body, { color: colors.mutedForeground }]}>
+        MINFILE ranks each occurrence by how far exploration and development
+        have gone. Tap a status to see what it means.
+      </Text>
       <View style={styles.legendList}>
         {STATUS_ORDER.map((code) => {
           const info = STATUS_MAP[code];
+          const isOpen = openStatus === code;
           return (
-            <View key={code} style={styles.legendRow}>
-              <View
-                style={[
-                  styles.legendDot,
-                  { backgroundColor: info.color },
+            <View key={code}>
+              <Pressable
+                onPress={() => toggleStatus(code)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: isOpen }}
+                accessibilityLabel={info.label}
+                accessibilityHint={
+                  isOpen
+                    ? "Hide what this status means"
+                    : "Show what this status means"
+                }
+                style={({ pressed }) => [
+                  styles.legendRow,
+                  { opacity: pressed ? 0.7 : 1 },
                 ]}
               >
-                <Text style={styles.legendDotText}>{info.short}</Text>
-              </View>
-              <Text style={[styles.legendLabel, { color: colors.foreground }]}>
-                {info.label}
-              </Text>
+                <View
+                  style={[
+                    styles.legendDot,
+                    { backgroundColor: info.color },
+                  ]}
+                >
+                  <Text style={styles.legendDotText}>{info.short}</Text>
+                </View>
+                <Text style={[styles.legendLabel, { color: colors.foreground }]}>
+                  {info.label}
+                </Text>
+                <View style={styles.legendSpacer} />
+                <Feather
+                  name="chevron-down"
+                  size={16}
+                  color={colors.mutedForeground}
+                  style={isOpen ? styles.chevronOpen : undefined}
+                />
+              </Pressable>
+              {isOpen && info.description ? (
+                <Text
+                  style={[
+                    styles.legendDescription,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  {info.description}
+                </Text>
+              ) : null}
             </View>
           );
         })}
@@ -155,7 +209,14 @@ const styles = StyleSheet.create({
   h2: { fontSize: 16, fontFamily: "Inter_700Bold", marginTop: 8 },
   body: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20 },
   legendList: { gap: 8 },
-  legendRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  legendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 4,
+  },
+  legendSpacer: { flex: 1 },
+  chevronOpen: { transform: [{ rotate: "180deg" }] },
   legendDot: {
     width: 30,
     height: 30,
@@ -171,6 +232,15 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   legendLabel: { fontSize: 14, fontFamily: "Inter_500Medium" },
+  legendDescription: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 18,
+    // Aligns with the label: 30px dot + 12px row gap.
+    paddingLeft: 42,
+    paddingRight: 4,
+    paddingBottom: 4,
+  },
   card: {
     padding: 12,
     borderRadius: 12,
