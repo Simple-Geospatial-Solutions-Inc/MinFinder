@@ -105,7 +105,9 @@ PREMIUM
 A one-time or subscription purchase unlocks compass navigation and the full expanded occurrence details. The map, search, filtering, and offline region downloads are free.
 
 DATA SOURCES
-Mineral data: BC Ministry of Energy, Mines and Low Carbon Innovation (MINFILE). Basemap: Esri World Topographic Map.
+Mineral data: BC Ministry of Energy, Mines and Low Carbon Innovation (MINFILE), https://minfile.gov.bc.ca/. Basemap: Esri World Topographic Map.
+
+SGS MinFinder is an independent, third-party app. It is not affiliated with, endorsed by, or operated by the Government of British Columbia or any government agency.
 
 Use as a reference only. Always verify mine status, land access, and safety information before visiting any site.
 ```
