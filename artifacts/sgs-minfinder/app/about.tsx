@@ -113,6 +113,10 @@ export default function AboutScreen() {
             minfile.gov.bc.ca
           </Text>
         </Pressable>
+        <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11, marginTop: 6 }]}>
+          SGS MinFinder is an independent app and is not affiliated with, endorsed by, or
+          operated by the Government of British Columbia or any government agency.
+        </Text>
       </View>
 
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
