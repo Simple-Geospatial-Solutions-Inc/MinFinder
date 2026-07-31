@@ -5,6 +5,7 @@
   },
   "build": {
     "development": {
+      "channel": "development",
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
@@ -16,6 +17,7 @@
       }
     },
     "preview": {
+      "channel": "preview",
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_REVENUECAT_API_KEY": "test_PuMbDncUOVWUvvRhYcMUppJqAiQ",
@@ -23,6 +25,7 @@
       }
     },
     "production": {
+      "channel": "production",
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_REVENUECAT_API_KEY": "appl_YMbILuVsonPlIaCGSblEGUhdmTO",

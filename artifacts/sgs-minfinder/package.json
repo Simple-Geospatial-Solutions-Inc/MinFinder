@@ -7,7 +7,9 @@
     "dev": "EXPO_PACKAGER_PROXY_URL=https://$REPLIT_EXPO_DEV_DOMAIN EXPO_PUBLIC_DOMAIN=$REPLIT_DEV_DOMAIN EXPO_PUBLIC_REPL_ID=$REPL_ID REACT_NATIVE_PACKAGER_HOSTNAME=$REPLIT_DEV_DOMAIN pnpm exec expo start --localhost --port $PORT",
     "build": "node scripts/build.js",
     "serve": "node server/serve.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "update:preview": "npx eas-cli@latest update --channel preview --environment preview --message",
+    "update:prod": "npx eas-cli@latest update --channel production --environment production --message"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
@@ -61,6 +63,7 @@
     "expo-clipboard": "~56.0.4",
     "expo-file-system": "~56.0.8",
     "expo-sqlite": "^56.0.5",
+    "expo-updates": "~56.0.23",
     "lucide-react-native": "^1.16.0",
     "metro-runtime": "^0.84.4",
     "react-native-purchases": "^10.4.4"

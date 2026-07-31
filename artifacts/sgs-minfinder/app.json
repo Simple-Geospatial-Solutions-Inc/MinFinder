@@ -3,11 +3,19 @@
     "name": "SGS MinFinder",
     "slug": "sgs-minfinder",
     "owner": "simple-geospatial-solutions",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon-square.png",
     "scheme": "sgs-minfinder",
     "userInterfaceStyle": "automatic",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/10e37699-3c1a-495f-b49b-cc856866e691",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
     "ios": {
       "bundleIdentifier": "ca.sgss.minfinder",
       "supportsTablet": true,
