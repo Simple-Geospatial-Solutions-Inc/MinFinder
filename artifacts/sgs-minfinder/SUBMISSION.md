@@ -15,7 +15,7 @@ App Store + Google Play. Internal handoff: listing copy, screenshots, and outsta
 |---|---|
 | App name | SGS MinFinder |
 | Slug | sgs-minfinder |
-| Version | 1.0.0 |
+| Version | 1.0.1 (bumped from 1.0.0 — the next production build is the first to carry `expo-updates`; see §5) |
 | iOS bundle identifier | `ca.sgss.minfinder` |
 | Android package | `ca.sgss.minfinder` |
 | **App Store Connect SKU** | `sgs-minfinder` (private, internal, permanent) |
@@ -125,7 +125,62 @@ Same six screens for each store, in display order. App Store set is in iPhone fr
 5. Occurrence detail
 6. Offline region download
 
-## 5. Notes
+## 5. Shipping JS updates over the air (EAS Update)
+
+The app uses `expo-updates`, so **JS- and asset-only fixes ship without a store review**.
+Updates download silently in the background and take effect on the next cold start.
+
+**This starts at 1.0.1.** The 1.0.0 binary was built before `expo-updates` was added and
+can never receive an OTA update — those users must update through the store.
+
+### Publishing
+
+Run from `artifacts/sgs-minfinder`, on a clean tree at the commit you want to ship:
+
+```sh
+pnpm run update:preview "Fix compass drift"   # internal/TestFlight builds first
+pnpm run update:prod    "Fix compass drift"   # then production
+```
+
+Always test on `preview` before `prod`. Cold-start the app twice to see the change —
+the first launch downloads, the second runs it.
+
+> **Never call `eas update` bare.** The scripts pass `--environment`, which is what supplies
+> the RevenueCat keys. Without it the bundle picks up the Test Store key from the local
+> gitignored `.env` and **silently breaks purchases for every user**. `eas update` does *not*
+> read the `env` blocks in `eas.json` — only `eas build` does.
+
+### When a new store build is required instead
+
+`runtimeVersion` uses the `fingerprint` policy: Expo hashes the native layer and refuses to
+deliver an update to a binary whose native code differs. Anything that changes the native
+layer — adding/removing/upgrading a dependency, editing `app.json` plugins or permissions,
+bumping the SDK — produces a new fingerprint, and `eas update` will warn that no compatible
+build exists. That is the signal to cut a real build and submit it.
+
+Changes to `app/`, `components/`, `lib/`, `constants/`, `hooks/`, and bundled assets are OTA-safe.
+
+### Rolling back a bad update
+
+```sh
+npx eas-cli@latest update:rollback
+```
+
+Interactive: either re-publish a known-good earlier update, or send clients back to the
+build's embedded bundle. Publishing normally afterward resumes as usual.
+
+### Keys live in two places — keep them in sync
+
+The RevenueCat `EXPO_PUBLIC_*` keys exist in **both** `eas.json` (read by `eas build`) and
+the EAS server-side environment variables (read by `eas update --environment`). If a key
+ever changes, **update both** or builds and updates will disagree:
+
+```sh
+npx eas-cli@latest env:list --environment production
+npx eas-cli@latest env:update --environment production --name EXPO_PUBLIC_REVENUECAT_API_KEY
+```
+
+## 6. Notes
 
 - **Data:** BC Ministry of Energy, Mines and Low Carbon Innovation (MINFILE). Basemap: Esri World Topographic Map. Attribution is in the description.
 - **Accuracy:** build ships 16,259 records; advertise "16,000+". Do **not** use "100,000+".
