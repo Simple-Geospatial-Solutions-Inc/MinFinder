@@ -17,7 +17,6 @@ import {
   Plus,
   Search,
   Settings,
-  SquareDashed,
   Trash2,
   X,
   type LucideIcon,
@@ -40,7 +39,6 @@ const ICONS = {
   plus: Plus,
   search: Search,
   settings: Settings,
-  "square-dashed": SquareDashed,
   "trash-2": Trash2,
   x: X,
 } satisfies Record<string, LucideIcon>;
