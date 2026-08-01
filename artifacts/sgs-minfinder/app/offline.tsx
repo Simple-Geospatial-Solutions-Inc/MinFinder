@@ -41,7 +41,7 @@ import {
   type Region,
 } from "@/lib/mapGeo";
 import { distanceMeters } from "@/lib/geo";
-import { countTilesInRegion } from "@/lib/tileCache";
+import { countTilesInRegion, metersPerPixelAt } from "@/lib/tileCache";
 
 const BC_REGION: Region = {
   latitude: 54.5,
@@ -52,13 +52,21 @@ const BC_REGION: Region = {
 
 const MIN_ZOOM_DEFAULT = 8;
 const MAX_ZOOM_DEFAULT = 13;
-const TILE_LIMIT = 4000;
+// Was 4,000 while countTilesInRegion under-counted by ~4x, so it really allowed
+// ~15,400 tiles. Raised to keep the selectable area the same now that the count
+// is honest, rather than silently cutting it to a quarter. Lower this if the cap
+// should mean what it says (4,000 tiles is roughly 100 MB, 15,000 roughly 380).
+const TILE_LIMIT = 15000;
 // Inset of the gold selection frame inside the picker map, in points. Shared by
 // the frame's style and the bounds math so the two cannot drift apart.
 const SELECTION_INSET = 24;
-// Ground resolution of the deepest cached zoom level, at BC latitudes. Shown so
-// users aren't surprised when the basemap blurs past this.
-const MAX_DETAIL_M_PER_PX = 12;
+// Ground resolution of the deepest cached level, at BC latitudes. Shown so users
+// aren't surprised when the basemap blurs past this. Derived rather than fixed:
+// a 256px source caches one XYZ level deeper than MAX_ZOOM_DEFAULT implies, so
+// the detail is twice as fine as the hardcoded 12 m/px used to claim.
+const MAX_DETAIL_M_PER_PX = Math.round(
+  metersPerPixelAt(BC_REGION.latitude, MAX_ZOOM_DEFAULT),
+);
 
 // Metadata we stash on each MapLibre offline pack so the list can show a name,
 // zoom range, and tile estimate (MapLibre packs only carry bounds natively).
@@ -660,21 +668,20 @@ export default function OfflineScreen() {
 
                 <View style={styles.regionActions}>
                   {/* Not its own Pressable — the whole card is the target, so
-                      Remove stays the only nested touchable. */}
+                      Remove stays the only nested touchable. Icon-only: tapping
+                      anywhere on the card already opens the region on the map,
+                      so this is an affordance rather than a labelled action. */}
                   <View
                     style={[
                       styles.actionBtn,
-                      styles.actionPrimary,
+                      styles.actionIcon,
                       {
                         borderColor: colors.border,
                         backgroundColor: colors.background,
                       },
                     ]}
                   >
-                    <Feather name="square-dashed" size={16} color={colors.foreground} />
-                    <Text style={[styles.actionText, { color: colors.foreground }]}>
-                      Show on map
-                    </Text>
+                    <Feather name="square-dashed" size={18} color={colors.foreground} />
                   </View>
 
                   {incomplete && st?.state === "inactive" ? (
@@ -709,13 +716,11 @@ export default function OfflineScreen() {
                     hitSlop={6}
                     style={({ pressed }) => [
                       styles.actionBtn,
+                      styles.actionIcon,
                       { borderColor: colors.destructive, opacity: pressed ? 0.6 : 1 },
                     ]}
                   >
-                    <Feather name="trash-2" size={16} color={colors.destructive} />
-                    <Text style={[styles.actionText, { color: colors.destructive }]}>
-                      Remove
-                    </Text>
+                    <Feather name="trash-2" size={18} color={colors.destructive} />
                   </Pressable>
                 </View>
               </Pressable>
@@ -1026,7 +1031,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
   },
-  actionPrimary: { flex: 1 },
+  // Square, label-free variant for the card's icon actions.
+  actionIcon: { width: 44, paddingHorizontal: 0 },
   actionText: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
   dangerBtn: {
     marginTop: 4,
