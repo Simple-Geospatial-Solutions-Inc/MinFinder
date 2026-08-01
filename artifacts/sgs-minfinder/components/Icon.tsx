@@ -1,4 +1,5 @@
 import React from "react";
+import { View, type StyleProp, type ViewStyle } from "react-native";
 import {
   AlertCircle,
   AlertTriangle,
@@ -50,7 +51,7 @@ export type FeatherProps = {
   name: FeatherIconName;
   size?: number;
   color?: string;
-  style?: React.ComponentProps<LucideIcon>["style"];
+  style?: StyleProp<ViewStyle>;
 };
 
 /**
@@ -66,7 +67,16 @@ export type FeatherProps = {
 export function Feather({ name, size = 24, color = "black", style }: FeatherProps) {
   const Cmp = ICONS[name];
   if (!Cmp) return null;
-  return <Cmp size={size} color={color} style={style} />;
+  const icon = <Cmp size={size} color={color} />;
+  if (!style) return icon;
+  // `style` goes on a wrapper View, never on the icon itself: lucide spreads any
+  // prop it doesn't recognise (including `style`) onto every child SVG element,
+  // and react-native-svg reads `style.transform` there as an *SVG* transform,
+  // which rotates about the viewBox origin instead of the icon's centre. A
+  // `rotate: "180deg"` pushes the path outside the 24x24 viewBox and it stops
+  // rendering entirely. On a View it stays a normal RN view transform.
+  // (Same reason CompassDial rotates a View around its SvgXml.)
+  return <View style={style}>{icon}</View>;
 }
 
 Feather.font = {} as Record<string, never>;
