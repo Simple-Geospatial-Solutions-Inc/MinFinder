@@ -59,15 +59,26 @@ async function copyAssetToDocumentsAsync(): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const asset = Asset.fromModule(require("../assets/db/minfile.db"));
   await asset.downloadAsync();
-  // In Expo Go (dev), `asset.uri` is a Metro HTTP URL; in production it's a
-  // bundled file path. `downloadAsync` handles both and reliably writes the
-  // raw bytes to disk (avoids the binary-corruption issues that can occur
-  // when `copyAsync` reads from Metro's dev-server cache).
-  const src = asset.uri ?? asset.localUri;
+  // `localUri` first, and `||` not `??`: once expo-updates is enabled, expo-asset
+  // resolves bundled assets through the updates asset store and deliberately
+  // reports `asset.uri` as an EMPTY STRING (there is no remote URL to fetch) —
+  // which `??` happily passes through, breaking the copy. In dev, Metro serves
+  // the asset over HTTP and only `uri` is set.
+  const src = asset.localUri || asset.uri;
   if (!src) {
     throw new Error("Failed to resolve bundled minfile.db asset URI");
   }
-  await FileSystem.downloadAsync(src, dest);
+  if (/^https?:/.test(src)) {
+    // Metro dev server. `downloadAsync` (not `copyAsync`) reliably writes the raw
+    // bytes and avoids the binary corruption that copying from Metro's cache can
+    // produce.
+    await FileSystem.downloadAsync(src, dest);
+  } else {
+    // A local file, either embedded in the app or in the updates asset store.
+    // This has to be a copy: on Android `downloadAsync` hands the URL to OkHttp,
+    // which rejects anything that isn't http(s).
+    await FileSystem.copyAsync({ from: src, to: dest });
+  }
 
   // Write version marker only after a successful copy.
   await FileSystem.writeAsStringAsync(versionMarker, DB_VERSION);

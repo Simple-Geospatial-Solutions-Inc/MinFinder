@@ -189,6 +189,9 @@ export default function MapScreen() {
   const [userLoc, setUserLoc] = useState<Location.LocationObject | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [loadingDb, setLoadingDb] = useState(true);
+  // A failed DB load used to render as a plausible-looking "0 of 0", which is how
+  // a broken build shipped unnoticed. Surface it instead.
+  const [dbError, setDbError] = useState(false);
 
   const [statuses, setStatuses] = useState<string[]>([...STATUS_ORDER]);
   const [search, setSearch] = useState("");
@@ -223,13 +226,25 @@ export default function MapScreen() {
     (async () => {
       try {
         const rows = await queryOccurrences({ limit: 100_000 });
+        if (rows.length === 0) {
+          // The bundled DB always has rows, so an empty result means it opened
+          // but has no usable data (wrong/corrupt copy, missing table).
+          console.warn(
+            "load DB returned 0 occurrences — the bundled minfile.db copy is " +
+              "present but empty or unreadable",
+          );
+        }
         if (!cancelled) {
           setAllRows(rows);
+          setDbError(rows.length === 0);
           setLoadingDb(false);
         }
       } catch (err) {
         console.warn("load DB error", err);
-        if (!cancelled) setLoadingDb(false);
+        if (!cancelled) {
+          setDbError(true);
+          setLoadingDb(false);
+        }
       }
 
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -625,7 +640,9 @@ export default function MapScreen() {
             <Text style={styles.brandSub}>
               {loadingDb
                 ? "Loading…"
-                : `${allFilteredRows.length.toLocaleString()} of ${allRows.length.toLocaleString()} BC MINFILE occurrences`}
+                : dbError
+                  ? "Occurrence data failed to load"
+                  : `${allFilteredRows.length.toLocaleString()} of ${allRows.length.toLocaleString()} BC MINFILE occurrences`}
             </Text>
           </View>
           <View style={styles.topActions}>
