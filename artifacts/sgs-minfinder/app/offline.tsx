@@ -634,56 +634,44 @@ export default function OfflineScreen() {
                   },
                 ]}
               >
-                <Text
-                  style={[styles.regionTitle, { color: colors.foreground }]}
-                  numberOfLines={1}
-                >
-                  {title}
-                </Text>
-
-                <Text style={[styles.regionAnswer, { color: answerColor }]}>
-                  {answer}
-                </Text>
-
-                <Text style={[styles.regionMeta, { color: colors.mutedForeground }]}>
-                  {formatSpanKm(bounds)}
-                  {occCount != null
-                    ? occCount === 0
-                      ? " · no MINFILE occurrences inside"
-                      : ` · ${occCount.toLocaleString()} MINFILE occurrences`
-                    : ""}
-                </Text>
-
-                <Text style={[styles.regionMeta, { color: colors.mutedForeground }]}>
-                  {st ? formatBytes(st.completedTileSize) : "…"} ·{" "}
-                  {(st?.completedTileCount ?? meta.estTiles ?? 0).toLocaleString()}{" "}
-                  tiles · detail to ~{MAX_DETAIL_M_PER_PX} m/pixel
-                </Text>
-
-                {saved ? (
-                  <Text style={[styles.regionMeta, { color: colors.mutedForeground }]}>
-                    Downloaded {saved}
-                  </Text>
-                ) : null}
-
-                <View style={styles.regionActions}>
-                  {/* Not its own Pressable — the whole card is the target, so
-                      Remove stays the only nested touchable. Icon-only: tapping
-                      anywhere on the card already opens the region on the map,
-                      so this is an affordance rather than a labelled action. */}
-                  <View
-                    style={[
-                      styles.actionBtn,
-                      styles.actionIcon,
-                      {
-                        borderColor: colors.border,
-                        backgroundColor: colors.background,
-                      },
-                    ]}
+                <View style={styles.regionBody}>
+                  <Text
+                    style={[styles.regionTitle, { color: colors.foreground }]}
+                    numberOfLines={1}
                   >
-                    <Feather name="square-dashed" size={18} color={colors.foreground} />
-                  </View>
+                    {title}
+                  </Text>
 
+                  <Text style={[styles.regionAnswer, { color: answerColor }]}>
+                    {answer}
+                  </Text>
+
+                  <Text style={[styles.regionMeta, { color: colors.mutedForeground }]}>
+                    {formatSpanKm(bounds)}
+                    {occCount != null
+                      ? occCount === 0
+                        ? " · no MINFILE occurrences inside"
+                        : ` · ${occCount.toLocaleString()} MINFILE occurrences`
+                      : ""}
+                  </Text>
+
+                  <Text style={[styles.regionMeta, { color: colors.mutedForeground }]}>
+                    {st ? formatBytes(st.completedTileSize) : "…"} ·{" "}
+                    {(st?.completedTileCount ?? meta.estTiles ?? 0).toLocaleString()}{" "}
+                    tiles · detail to ~{MAX_DETAIL_M_PER_PX} m/pixel
+                  </Text>
+
+                  {saved ? (
+                    <Text style={[styles.regionMeta, { color: colors.mutedForeground }]}>
+                      Downloaded {saved}
+                    </Text>
+                  ) : null}
+                </View>
+
+                {/* Beside the text rather than in a row underneath it, so the
+                    card is only as tall as its own content. There is no
+                    "show on map" button: tapping the card does that. */}
+                <View style={styles.regionActions}>
                   {incomplete && st?.state === "inactive" ? (
                     <Pressable
                       onPress={async () => {
@@ -699,13 +687,11 @@ export default function OfflineScreen() {
                       hitSlop={6}
                       style={({ pressed }) => [
                         styles.actionBtn,
+                        styles.actionIcon,
                         { borderColor: colors.gold, opacity: pressed ? 0.6 : 1 },
                       ]}
                     >
-                      <Feather name="play" size={16} color={colors.goldDim} />
-                      <Text style={[styles.actionText, { color: colors.goldDim }]}>
-                        Resume
-                      </Text>
+                      <Feather name="play" size={18} color={colors.goldDim} />
                     </Pressable>
                   ) : null}
 
@@ -1004,10 +990,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   regionCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
     padding: 14,
     borderRadius: 14,
     borderWidth: 1,
   },
+  regionBody: { flex: 1 },
   regionTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
   regionAnswer: {
     fontSize: 13,
@@ -1019,7 +1009,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    marginTop: 12,
   },
   actionBtn: {
     flexDirection: "row",
@@ -1033,7 +1022,6 @@ const styles = StyleSheet.create({
   },
   // Square, label-free variant for the card's icon actions.
   actionIcon: { width: 44, paddingHorizontal: 0 },
-  actionText: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
   dangerBtn: {
     marginTop: 4,
     paddingVertical: 10,
