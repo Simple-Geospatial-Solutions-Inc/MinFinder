@@ -284,8 +284,9 @@ export function DetailsSheet({
 
 const styles = StyleSheet.create({
   backdrop: {
+    // No scrim — the sheet sits directly over the live map. The absoluteFill
+    // Pressable below still catches taps outside the sheet to dismiss it.
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
     justifyContent: "flex-end",
   },
   sheet: {
