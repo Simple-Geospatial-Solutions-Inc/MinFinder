@@ -34,6 +34,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DetailsSheet } from "@/components/DetailsSheet";
 import { OfflineRegionPill } from "@/components/OfflineRegionPill";
+import { PaywallSheet } from "@/components/PaywallSheet";
 import { QuickInfoCard } from "@/components/QuickInfoCard";
 import { STATUS_MAP, STATUS_ORDER, getStatusInfo } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
@@ -201,11 +202,15 @@ export default function MapScreen() {
   const [allRows, setAllRows] = useState<Occurrence[]>([]);
   // Two-tier popup: tapping a marker shows `quickInfo` (small preview card).
   // The "+" expand button promotes that occurrence into `selected`, which
-  // opens the full DetailsSheet. The expand action is intended to be
-  // paywalled in a future release.
+  // opens the full DetailsSheet. DetailsSheet gates its own body and Navigate
+  // button on the Pro entitlement, so search picks (which skip quickInfo
+  // entirely) stay behind the paywall too.
   const [quickInfo, setQuickInfo] = useState<Occurrence | null>(null);
   const [selected, setSelected] = useState<Occurrence | null>(null);
   const [searchResults, setSearchResults] = useState<Occurrence[] | null>(null);
+  // Paywall lives here rather than inside DetailsSheet: that component is a
+  // Modal, and stacking a second Modal on top of it is unreliable on Android.
+  const [paywallFor, setPaywallFor] = useState<string | null>(null);
 
   // The downloaded region the user tapped on the Offline screen, plus every
   // cached region for the coverage toggle.
@@ -857,7 +862,20 @@ export default function MapScreen() {
         bottomOffset={insets.bottom + 96}
       />
 
-      <DetailsSheet occurrence={selected} onClose={() => setSelected(null)} />
+      <DetailsSheet
+        occurrence={selected}
+        onClose={() => setSelected(null)}
+        onRequestUpgrade={(feature) => {
+          setSelected(null);
+          setPaywallFor(feature);
+        }}
+      />
+
+      <PaywallSheet
+        visible={paywallFor != null}
+        feature={paywallFor ?? ""}
+        onClose={() => setPaywallFor(null)}
+      />
     </View>
   );
 }

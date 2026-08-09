@@ -15,6 +15,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import type { Occurrence } from "@/lib/db";
 import { formatDMS } from "@/lib/geo";
 import { useColors } from "@/hooks/useColors";
+import { useEntitlement } from "@/hooks/useEntitlement";
 
 function Row({
   label,
@@ -48,11 +49,19 @@ function Row({
 export function DetailsSheet({
   occurrence,
   onClose,
+  onRequestUpgrade,
 }: {
   occurrence: Occurrence | null;
   onClose: () => void;
+  /**
+   * Called when a free user taps a gated action. The parent owns the paywall
+   * rather than this component because DetailsSheet is itself a Modal, and
+   * nesting Modals is unreliable on Android.
+   */
+  onRequestUpgrade: (feature: string) => void;
 }) {
   const colors = useColors();
+  const { isPaid } = useEntitlement();
   const visible = !!occurrence;
 
   const officialUrl = occurrence?.MINFILNO
@@ -123,12 +132,17 @@ export function DetailsSheet({
               <View style={styles.actions}>
                 <Pressable
                   onPress={() => {
+                    if (!isPaid) {
+                      onRequestUpgrade("Navigate");
+                      return;
+                    }
                     onClose();
                     router.push({
                       pathname: "/compass",
                       params: { id: String(occurrence.id) },
                     });
                   }}
+                  accessibilityLabel={isPaid ? "Navigate" : "Navigate (premium)"}
                   style={({ pressed }) => [
                     styles.primaryBtn,
                     {
@@ -137,7 +151,11 @@ export function DetailsSheet({
                     },
                   ]}
                 >
-                  <Feather name="navigation" size={18} color={colors.primaryForeground} />
+                  <Feather
+                    name={isPaid ? "navigation" : "lock"}
+                    size={18}
+                    color={colors.primaryForeground}
+                  />
                   <Text style={[styles.primaryBtnText, { color: colors.primaryForeground }]}>
                     Navigate
                   </Text>
@@ -164,6 +182,45 @@ export function DetailsSheet({
                 )}
               </View>
 
+              {!isPaid ? (
+                // Free tier keeps the quick-info summary above (name, status,
+                // MINFILNO) and swaps the full record for an upgrade prompt.
+                <View
+                  style={[
+                    styles.upsell,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.gold,
+                    },
+                  ]}
+                >
+                  <View style={styles.upsellHead}>
+                    <Feather name="lock" size={16} color={colors.gold} />
+                    <Text style={[styles.upsellTitle, { color: colors.foreground }]}>
+                      Full details are a Pro feature
+                    </Text>
+                  </View>
+                  <Text style={[styles.upsellBody, { color: colors.mutedForeground }]}>
+                    MinFinder Pro unlocks coordinates in decimal, DMS and UTM,
+                    elevation, host rock and deposit class — plus compass
+                    navigation to any occurrence.
+                  </Text>
+                  <Pressable
+                    onPress={() => onRequestUpgrade("Full details")}
+                    style={({ pressed }) => [
+                      styles.upsellBtn,
+                      {
+                        backgroundColor: colors.gold,
+                        opacity: pressed ? 0.85 : 1,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.upsellBtnText, { color: colors.navyDeep }]}>
+                      Unlock MinFinder Pro
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : (
               <View
                 style={[
                   styles.section,
@@ -207,6 +264,7 @@ export function DetailsSheet({
                 <Row label="Host rock" value={occurrence.HOSTROCK} />
                 <Row label="Deposit class" value={occurrence.DEPOSIT_CLASS} />
               </View>
+              )}
 
               {officialUrl && (
                 <Text
@@ -325,6 +383,38 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 12,
     gap: 10,
+  },
+  upsell: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 10,
+  },
+  upsellHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  upsellTitle: {
+    flex: 1,
+    fontFamily: "Inter_700Bold",
+    fontSize: 15,
+  },
+  upsellBody: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  upsellBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 11,
+    borderRadius: 12,
+    marginTop: 2,
+  },
+  upsellBtnText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 14,
   },
   row: {
     gap: 2,
