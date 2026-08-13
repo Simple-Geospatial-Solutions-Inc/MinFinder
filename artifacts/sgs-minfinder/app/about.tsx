@@ -1,5 +1,6 @@
 import { Feather } from "@/components/Icon";
 import Constants from "expo-constants";
+import { router } from "expo-router";
 import * as Updates from "expo-updates";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useState } from "react";
@@ -211,6 +212,28 @@ export default function AboutScreen() {
           <Feather name="external-link" size={14} color={colors.primary} />
           <Text style={[styles.linkText, { color: colors.primary }]}>
             Terms of Use (EULA)
+          </Text>
+        </Pressable>
+      </View>
+
+      <Text style={[styles.h2, { color: colors.foreground }]}>MinFinder Pro</Text>
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.cardText, { color: colors.foreground }]}>
+          {isPaid
+            ? "Pro is active on this device."
+            : "Compass navigation and full occurrence details are Pro features."}
+        </Text>
+        <Pressable
+          onPress={() => router.push("/redeem")}
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.linkRow,
+            { opacity: pressed ? 0.7 : 1 },
+          ]}
+        >
+          <Feather name="gift" size={14} color={colors.primary} />
+          <Text style={[styles.linkText, { color: colors.primary }]}>
+            Redeem a promo code
           </Text>
         </Pressable>
       </View>

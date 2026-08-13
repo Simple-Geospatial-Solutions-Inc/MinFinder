@@ -6,7 +6,7 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 
 // Must exactly match the entitlement identifier configured in RevenueCat
 // (Dashboard → Entitlements). It is the key under info.entitlements.active.
@@ -47,6 +47,27 @@ type SubscriptionState = {
   purchase: (pkg: PurchasesPackage) => Promise<boolean>;
   restore: () => Promise<boolean>;
   refresh: () => Promise<void>;
+  /**
+   * Discards the SDK's cached CustomerInfo and re-reads it from RevenueCat,
+   * polling briefly until `isPaid` turns true.
+   *
+   * Used after redeeming a promo code: the entitlement is granted by our server
+   * over the REST API, so this device has no idea anything changed, and the
+   * cached CustomerInfo would otherwise keep reporting free. RevenueCat's read
+   * path can also lag a write by a beat, hence the retries.
+   *
+   * Resolves true once the entitlement is visible, false if it never appeared.
+   */
+  syncAfterGrant: () => Promise<boolean>;
+  /**
+   * Opens the App Store's code redemption sheet (iOS only).
+   *
+   * Resolves true once the sheet has been shown — StoreKit reports nothing
+   * about whether a code was actually entered, so callers must re-read
+   * entitlements rather than treating this as a success signal. Returns false
+   * where the sheet is unavailable, which is every non-iOS platform.
+   */
+  presentCodeRedemption: () => Promise<boolean>;
   /**
    * DEV ONLY. Switches to a brand-new random RevenueCat user so the current
    * entitlement/purchase is cleared, letting you re-run the purchase flow
@@ -178,6 +199,68 @@ export function SubscriptionProvider({
     }
   }, []);
 
+  const syncAfterGrant = useCallback(async (): Promise<boolean> => {
+    const Purchases = getPurchases();
+    if (!Purchases) return false;
+    setIsLoading(true);
+    try {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, 1200));
+        }
+        try {
+          // Without invalidating first, getCustomerInfo can be served straight
+          // from the SDK's cache and never observe the server-side grant.
+          await Purchases.invalidateCustomerInfoCache();
+          const info = await Purchases.getCustomerInfo();
+          setCustomerInfo(info);
+          if (entitlementActive(info)) return true;
+        } catch (err) {
+          console.warn("[RevenueCat] syncAfterGrant attempt failed:", err);
+        }
+      }
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Re-read entitlements whenever the app comes back to the foreground.
+  //
+  // A promo code holds a single seat, so redeeming it elsewhere revokes this
+  // device server-side. Nothing pushes that down: the SDK's update listener
+  // only fires for changes this device initiated, and its cache would happily
+  // report Pro indefinitely. Checking on foreground is what makes the handoff
+  // take effect here within seconds. A device kept offline still keeps access
+  // until it can reach RevenueCat again.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
+      const Purchases = getPurchases();
+      if (!Purchases) return;
+      Purchases.getCustomerInfo()
+        .then(setCustomerInfo)
+        .catch((err: unknown) => {
+          console.warn("[RevenueCat] foreground refresh failed:", err);
+        });
+    });
+    return () => sub.remove();
+  }, []);
+
+  const presentCodeRedemption = useCallback(async (): Promise<boolean> => {
+    const Purchases = getPurchases();
+    // The sheet is StoreKit's, so it exists on iOS only. Android redeems offer
+    // codes through the Play Store app instead.
+    if (!Purchases || Platform.OS !== "ios") return false;
+    try {
+      await Purchases.presentCodeRedemptionSheet();
+      return true;
+    } catch (err) {
+      console.warn("[RevenueCat] presentCodeRedemptionSheet failed:", err);
+      return false;
+    }
+  }, []);
+
   const purchase = useCallback(
     async (pkg: PurchasesPackage): Promise<boolean> => {
       const Purchases = getPurchases();
@@ -268,6 +351,8 @@ export function SubscriptionProvider({
       purchase,
       restore,
       refresh,
+      syncAfterGrant,
+      presentCodeRedemption,
       resetTestUser,
     }),
     [
@@ -279,6 +364,8 @@ export function SubscriptionProvider({
       purchase,
       restore,
       refresh,
+      syncAfterGrant,
+      presentCodeRedemption,
       resetTestUser,
     ],
   );

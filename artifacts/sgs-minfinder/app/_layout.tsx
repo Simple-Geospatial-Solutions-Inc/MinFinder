@@ -56,6 +56,7 @@ function RootLayoutNav() {
         name="about"
         options={{ title: "About", headerBackTitle: "Map" }}
       />
+      <Stack.Screen name="redeem" options={{ title: "Redeem code" }} />
     </Stack>
   );
 }
