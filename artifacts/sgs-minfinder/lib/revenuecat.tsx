@@ -51,12 +51,13 @@ type SubscriptionState = {
    * Discards the SDK's cached CustomerInfo and re-reads it from RevenueCat,
    * polling briefly until `isPaid` turns true.
    *
-   * Used after redeeming a promo code: the entitlement is granted by our server
-   * over the REST API, so this device has no idea anything changed, and the
-   * cached CustomerInfo would otherwise keep reporting free. RevenueCat's read
-   * path can also lag a write by a beat, hence the retries.
+   * Used after redeeming a store code: the purchase happens inside StoreKit or
+   * the Play Store, so the cached CustomerInfo here still reports free, and the
+   * store has to reach RevenueCat before this device can observe the grant.
+   * That lag is why this polls rather than reading once.
    *
-   * Resolves true once the entitlement is visible, false if it never appeared.
+   * Resolves true once the entitlement is visible, false if it never appeared
+   * within the polling window — false means "not yet", not "no entitlement".
    */
   syncAfterGrant: () => Promise<boolean>;
   /**
@@ -77,6 +78,16 @@ type SubscriptionState = {
 };
 
 const SubscriptionContext = createContext<SubscriptionState | null>(null);
+
+/**
+ * Delays before each `syncAfterGrant` read, in ms. Front-loaded because the
+ * entitlement is usually there immediately, then stretched out to roughly 30
+ * seconds total: a redeemed code has to travel store → RevenueCat before this
+ * device can see it, and in the sandbox that regularly takes longer than the
+ * few seconds it takes a user to walk back to the map. Giving up early is what
+ * leaves the UI showing locked features against a live entitlement.
+ */
+const GRANT_POLL_DELAYS = [0, 1000, 2000, 3000, 4000, 5000, 5000, 5000, 5000];
 
 function entitlementActive(info: CustomerInfo | null): boolean {
   if (!info) return false;
@@ -204,9 +215,10 @@ export function SubscriptionProvider({
     if (!Purchases) return false;
     setIsLoading(true);
     try {
-      for (let attempt = 0; attempt < 4; attempt++) {
-        if (attempt > 0) {
-          await new Promise((r) => setTimeout(r, 1200));
+      for (let attempt = 0; attempt < GRANT_POLL_DELAYS.length; attempt++) {
+        const delay = GRANT_POLL_DELAYS[attempt];
+        if (delay > 0) {
+          await new Promise((r) => setTimeout(r, delay));
         }
         try {
           // Without invalidating first, getCustomerInfo can be served straight

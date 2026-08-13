@@ -10,6 +10,8 @@ import {
   View,
 } from "react-native";
 
+import * as Updates from "expo-updates";
+
 import { Feather } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
 import { useSubscription } from "@/lib/revenuecat";
@@ -33,6 +35,7 @@ type RedeemState =
   | { kind: "idle" }
   | { kind: "working" }
   | { kind: "opened" }
+  | { kind: "unlocked" }
   | { kind: "error"; message: string };
 
 /**
@@ -52,7 +55,9 @@ export default function RedeemScreen() {
   const { isPaid, syncAfterGrant, presentCodeRedemption } = useSubscription();
 
   const [state, setState] = useState<RedeemState>({ kind: "idle" });
-  const busy = state.kind === "working";
+  // "opened" keeps the spinner running: the sheet has closed but we are still
+  // waiting on the store to reach RevenueCat, which is the part that takes time.
+  const busy = state.kind === "working" || state.kind === "opened";
 
   const redeem = useCallback(async () => {
     setState({ kind: "working" });
@@ -76,7 +81,22 @@ export default function RedeemScreen() {
       // listener in SubscriptionProvider covers the Android hand-off, where
       // the user comes back from a different app entirely.
       setState({ kind: "opened" });
-      await syncAfterGrant();
+
+      if (await syncAfterGrant()) {
+        // Context alone would unlock every gate, but screens the user already
+        // visited keep whatever they derived at mount — the map still drawing
+        // locks over a live entitlement is the confusing part. Restarting
+        // rebuilds all of them against the granted entitlement at once.
+        setState({ kind: "unlocked" });
+        await new Promise((r) => setTimeout(r, 1200));
+        try {
+          await Updates.reloadAsync();
+        } catch (err) {
+          // Reload is unavailable when updates are disabled (notably in Expo
+          // Go). The entitlement is live either way, so this is cosmetic.
+          console.warn("[Redeem] reload after unlock failed:", err);
+        }
+      }
     } catch {
       setState({
         kind: "error",
@@ -138,8 +158,14 @@ export default function RedeemScreen() {
 
         {state.kind === "opened" && (
           <Text style={[styles.note, { color: colors.mutedForeground }]}>
-            Once the code is accepted, Pro unlocks automatically. If it hasn&apos;t
-            appeared yet, reopen the app.
+            Checking for your code&hellip; this can take up to a minute. If Pro
+            hasn&apos;t appeared by then, reopen the app.
+          </Text>
+        )}
+
+        {state.kind === "unlocked" && (
+          <Text style={[styles.note, { color: colors.mutedForeground }]}>
+            MinFinder Pro is active. Restarting&hellip;
           </Text>
         )}
 
