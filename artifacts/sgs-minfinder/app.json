@@ -44,12 +44,7 @@
     },
     "plugins": [
       "expo-dev-client",
-      [
-        "expo-router",
-        {
-          "origin": "https://replit.com/"
-        }
-      ],
+      "expo-router",
       "expo-font",
       "expo-web-browser",
       [
