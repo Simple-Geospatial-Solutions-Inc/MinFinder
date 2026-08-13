@@ -13,7 +13,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CalibrationModal } from "@/components/CalibrationModal";
 import { CompassDial } from "@/components/CompassDial";
+import { PaywallSheet } from "@/components/PaywallSheet";
 import { useColors } from "@/hooks/useColors";
+import { useEntitlement } from "@/hooks/useEntitlement";
 import {
   applyOffset,
   clearOffset,
@@ -34,6 +36,11 @@ export default function CompassScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  // The compass is the premium feature itself. Gating here — not only at the
+  // buttons that navigate here — means a future call site that forgets to
+  // check can't hand it out for free.
+  const { isPaid, isReady } = useEntitlement();
+  const [showPaywall, setShowPaywall] = useState(false);
 
   const [target, setTarget] = useState<Occurrence | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -92,6 +99,9 @@ export default function CompassScreen() {
 
   useEffect(() => {
     let cancelled = false;
+    // Don't ask for location until we know the user is entitled — a free user
+    // bounced to the paywall should never see a fine-location prompt first.
+    if (!isReady || !isPaid) return;
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
@@ -181,7 +191,7 @@ export default function CompassScreen() {
       subPos.current?.remove();
       subHeading.current?.remove();
     };
-  }, []);
+  }, [isReady, isPaid]);
 
   const hasTargetCoords =
     target?.LATITUDE != null && target?.LONGITUDE != null;
@@ -211,6 +221,54 @@ export default function CompassScreen() {
   // calibration offset (modulo 360). When offset === 0 this is a no-op.
   const displayedHeading = applyOffset(heading, offset);
   const calibrated = offset !== 0;
+
+  // Wait for RevenueCat before deciding — otherwise a paying user sees the
+  // paywall flash on every cold start while CustomerInfo is still in flight.
+  if (!isReady) {
+    return (
+      <View style={[styles.loadingWrap, { backgroundColor: colors.navyDeep }]}>
+        <ActivityIndicator color={colors.gold} />
+      </View>
+    );
+  }
+
+  if (!isPaid) {
+    return (
+      <View style={[styles.errorWrap, { backgroundColor: colors.navyDeep }]}>
+        <Feather name="lock" size={28} color={colors.gold} />
+        <Text style={styles.errorText}>
+          Compass navigation is a MinFinder Pro feature.
+        </Text>
+        <Pressable
+          onPress={() => setShowPaywall(true)}
+          style={({ pressed }) => [
+            styles.unlockBtn,
+            { backgroundColor: colors.gold, opacity: pressed ? 0.85 : 1 },
+          ]}
+        >
+          <Text style={[styles.unlockBtnText, { color: colors.navyDeep }]}>
+            Unlock MinFinder Pro
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => [
+            styles.errorBtn,
+            { borderColor: colors.gold, opacity: pressed ? 0.7 : 1 },
+          ]}
+        >
+          <Text style={[styles.errorBtnText, { color: colors.gold }]}>
+            Back to map
+          </Text>
+        </Pressable>
+        <PaywallSheet
+          visible={showPaywall}
+          feature="Navigate"
+          onClose={() => setShowPaywall(false)}
+        />
+      </View>
+    );
+  }
 
   if (loadError) {
     return (
@@ -413,6 +471,12 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   errorBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  unlockBtn: {
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 999,
+  },
+  unlockBtnText: { fontFamily: "Inter_700Bold", fontSize: 15 },
   dialWrap: { marginTop: 8, alignItems: "center", position: "relative" },
   // Floating cog overlay in the top-right of the dial body.
   cogBtn: {

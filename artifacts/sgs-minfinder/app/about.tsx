@@ -1,7 +1,10 @@
 import { Feather } from "@/components/Icon";
+import Constants from "expo-constants";
+import * as Updates from "expo-updates";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useState } from "react";
 import {
+  ActivityIndicator,
   LayoutAnimation,
   Pressable,
   ScrollView,
@@ -14,9 +17,58 @@ import { STATUS_MAP, STATUS_ORDER } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
 import { useSubscription } from "@/lib/revenuecat";
 
+/**
+ * Where the manual "Check for updates" button is in its cycle. `ready` means a
+ * new bundle is downloaded and only takes effect once the app restarts.
+ */
+type UpdateState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "downloading" }
+  | { kind: "current" }
+  | { kind: "ready" }
+  | { kind: "error" };
+
 export default function AboutScreen() {
   const colors = useColors();
   const { isPaid, resetTestUser, isLoading } = useSubscription();
+
+  const [updateState, setUpdateState] = useState<UpdateState>({ kind: "idle" });
+
+  const appVersion = Constants.expoConfig?.version ?? "—";
+
+  // Which JS bundle is actually running: the one baked into the store build,
+  // or an OTA update downloaded since. `createdAt` is null for embedded launches.
+  const bundleLabel = Updates.isEmbeddedLaunch
+    ? "Bundled with app"
+    : Updates.createdAt
+      ? `Updated ${Updates.createdAt.toLocaleDateString()}`
+      : "Updated";
+
+  const checkForUpdate = useCallback(async () => {
+    setUpdateState({ kind: "checking" });
+    try {
+      const result = await Updates.checkForUpdateAsync();
+      // A rollback is delivered as `isRollBackToEmbedded`, not `isAvailable`,
+      // but it still needs fetching and restarting like any other update.
+      if (!result.isAvailable && !result.isRollBackToEmbedded) {
+        setUpdateState({ kind: "current" });
+        return;
+      }
+      setUpdateState({ kind: "downloading" });
+      const fetched = await Updates.fetchUpdateAsync();
+      setUpdateState(
+        fetched.isNew || fetched.isRollBackToEmbedded
+          ? { kind: "ready" }
+          : { kind: "current" },
+      );
+    } catch {
+      setUpdateState({ kind: "error" });
+    }
+  }, []);
+
+  const busy =
+    updateState.kind === "checking" || updateState.kind === "downloading";
 
   // Marker legend doubles as a MINFILE glossary. Single-open accordion: tapping
   // a row expands its explanation and collapses whichever one was open.
@@ -163,6 +215,83 @@ export default function AboutScreen() {
         </Pressable>
       </View>
 
+      <Text style={[styles.h2, { color: colors.foreground }]}>Version</Text>
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.versionRow}>
+          <Text style={[styles.cardText, { color: colors.foreground }]}>
+            SGS MinFinder {appVersion}
+          </Text>
+          <Text style={[styles.versionMeta, { color: colors.mutedForeground }]}>
+            {bundleLabel}
+          </Text>
+        </View>
+
+        {Updates.isEnabled ? (
+          <>
+            <Pressable
+              onPress={
+                updateState.kind === "ready"
+                  ? () => Updates.reloadAsync()
+                  : checkForUpdate
+              }
+              disabled={busy}
+              accessibilityRole="button"
+              style={({ pressed }) => [
+                styles.linkRow,
+                { opacity: pressed || busy ? 0.6 : 1 },
+              ]}
+            >
+              {busy ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Feather
+                  name={
+                    updateState.kind === "ready" ? "rotate-cw" : "download-cloud"
+                  }
+                  size={14}
+                  color={colors.primary}
+                />
+              )}
+              <Text style={[styles.linkText, { color: colors.primary }]}>
+                {updateState.kind === "checking"
+                  ? "Checking…"
+                  : updateState.kind === "downloading"
+                    ? "Downloading…"
+                    : updateState.kind === "ready"
+                      ? "Restart to finish updating"
+                      : "Check for updates"}
+              </Text>
+            </Pressable>
+
+            {(updateState.kind === "current" ||
+              updateState.kind === "ready" ||
+              updateState.kind === "error") && (
+              <Text
+                style={[
+                  styles.cardText,
+                  { color: colors.mutedForeground, fontSize: 11 },
+                ]}
+              >
+                {updateState.kind === "current"
+                  ? "You're running the latest version."
+                  : updateState.kind === "ready"
+                    ? "An update is ready and will be applied when you restart."
+                    : "Couldn't check right now. Connect to the internet and try again."}
+              </Text>
+            )}
+          </>
+        ) : (
+          <Text
+            style={[
+              styles.cardText,
+              { color: colors.mutedForeground, fontSize: 11 },
+            ]}
+          >
+            Over-the-air updates are disabled in this build.
+          </Text>
+        )}
+      </View>
+
       {__DEV__ && (
         <>
           <Text style={[styles.h2, { color: colors.foreground }]}>
@@ -251,6 +380,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   cardText: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  versionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  versionMeta: { fontSize: 11, fontFamily: "Inter_400Regular" },
   linkRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   linkText: { fontSize: 13, fontFamily: "Inter_500Medium" },
   footer: {
