@@ -24,12 +24,20 @@ import { useSubscription } from "@/lib/revenuecat";
 const PLAY_REDEEM_URL = "https://play.google.com/redeem";
 
 /**
- * The App Store's own redemption page. Needed as more than a fallback: the
- * StoreKit sheet only handles subscription offer codes, while the promo codes
- * issued against a non-consumable (our lifetime product) are redeemable here
- * and nowhere else in-app.
+ * The App Store's own redemption page. Not a fallback — it is the only route
+ * for lifetime codes. StoreKit's in-app sheet handles subscription offer codes
+ * exclusively, and silently rejects the promo codes issued against a
+ * non-consumable.
  */
 const APP_STORE_REDEEM_URL = "https://apps.apple.com/redeem";
+
+/**
+ * Which kind of code the user holds. This only matters on iOS, where Apple
+ * splits redemption across two mechanisms that accept different codes and live
+ * in different places. Android's Play Store takes both through one page, so the
+ * choice is hidden there rather than asking a question with one answer.
+ */
+type CodeKind = "subscription" | "lifetime";
 
 type RedeemState =
   | { kind: "idle" }
@@ -39,7 +47,7 @@ type RedeemState =
   | { kind: "error"; message: string };
 
 /**
- * Entry point for redeeming a store offer code.
+ * Entry point for redeeming a store code.
  *
  * Redemption itself happens in the App Store or Play Store, not here — codes
  * are issued in App Store Connect / Play Console and the store applies the
@@ -54,32 +62,37 @@ export default function RedeemScreen() {
   const colors = useColors();
   const { isPaid, syncAfterGrant, presentCodeRedemption } = useSubscription();
 
+  const [codeKind, setCodeKind] = useState<CodeKind>("subscription");
   const [state, setState] = useState<RedeemState>({ kind: "idle" });
   // "opened" keeps the spinner running: the sheet has closed but we are still
   // waiting on the store to reach RevenueCat, which is the part that takes time.
   const busy = state.kind === "working" || state.kind === "opened";
 
+  const selectKind = useCallback((next: CodeKind) => {
+    setCodeKind(next);
+    // A result from the other route would read as though it applied to this one.
+    setState({ kind: "idle" });
+  }, []);
+
   const redeem = useCallback(async () => {
     setState({ kind: "working" });
     try {
-      if (Platform.OS === "ios") {
+      if (Platform.OS !== "ios") {
+        const canOpen = await Linking.canOpenURL(PLAY_REDEEM_URL);
+        if (!canOpen) throw new Error("Play Store unavailable");
+        await Linking.openURL(PLAY_REDEEM_URL);
+      } else if (codeKind === "lifetime") {
+        await Linking.openURL(APP_STORE_REDEEM_URL);
+      } else {
         // Dispatch-only: the native method takes no callback, so this resolves
-        // whether or not a sheet ever appears. It silently does nothing outside
-        // an App Store-installed build, which is why the App Store route below
-        // is offered alongside rather than only after a failure.
+        // whether or not a sheet ever appears.
         const dispatched = await presentCodeRedemption();
         if (!dispatched) throw new Error("Redemption sheet unavailable");
-      } else {
-        const opened = await Linking.canOpenURL(PLAY_REDEEM_URL);
-        if (!opened) throw new Error("Play Store unavailable");
-        await Linking.openURL(PLAY_REDEEM_URL);
       }
 
-      // The sheet gives no completion signal — it resolves as soon as it is
-      // shown, whether or not a code was entered — so we can only re-read
-      // entitlements and let the outcome speak for itself. The AppState
-      // listener in SubscriptionProvider covers the Android hand-off, where
-      // the user comes back from a different app entirely.
+      // Nothing above reports whether a code was actually entered — the sheet
+      // resolves as soon as it is shown, and a browser hand-off tells us even
+      // less. So we re-read entitlements and let the outcome speak for itself.
       setState({ kind: "opened" });
 
       if (await syncAfterGrant()) {
@@ -101,12 +114,20 @@ export default function RedeemScreen() {
       setState({
         kind: "error",
         message:
-          Platform.OS === "ios"
-            ? "Couldn't open the redemption sheet. You can also redeem the code in the App Store: tap your profile picture, then Redeem Gift Card or Code."
-            : "Couldn't open the Play Store. You can redeem the code in the Play Store app under Payments and subscriptions → Redeem code.",
+          Platform.OS !== "ios"
+            ? "Couldn't open the Play Store. You can redeem the code in the Play Store app under Payments and subscriptions → Redeem code."
+            : "Couldn't open the App Store. You can redeem the code there directly: tap your profile picture, then Redeem Gift Card or Code.",
       });
     }
-  }, [presentCodeRedemption, syncAfterGrant]);
+  }, [codeKind, presentCodeRedemption, syncAfterGrant]);
+
+  const isLifetime = Platform.OS === "ios" && codeKind === "lifetime";
+  const actionLabel =
+    Platform.OS !== "ios"
+      ? "Redeem in Play Store"
+      : isLifetime
+        ? "Redeem in the App Store"
+        : "Redeem a code";
 
   return (
     <ScrollView
@@ -131,73 +152,120 @@ export default function RedeemScreen() {
         and full occurrence details.
       </Text>
 
+      {Platform.OS === "ios" && (
+        <View
+          style={[
+            styles.segment,
+            { backgroundColor: colors.muted, borderColor: colors.border },
+          ]}
+        >
+          {(
+            [
+              { key: "subscription", label: "Monthly or annual" },
+              { key: "lifetime", label: "Lifetime" },
+            ] as const
+          ).map((tab) => {
+            const selected = codeKind === tab.key;
+            return (
+              <Pressable
+                key={tab.key}
+                onPress={() => selectKind(tab.key)}
+                disabled={busy}
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+                style={({ pressed }) => [
+                  styles.segmentItem,
+                  selected && { backgroundColor: colors.primary },
+                  { opacity: pressed && !selected ? 0.6 : 1 },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.segmentText,
+                    {
+                      color: selected
+                        ? colors.primaryForeground
+                        : colors.mutedForeground,
+                    },
+                  ]}
+                >
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+
       <View
         style={[
           styles.card,
           { backgroundColor: colors.card, borderColor: colors.border },
         ]}
       >
+        <Text style={[styles.cardText, { color: colors.foreground }]}>
+          {Platform.OS !== "ios"
+            ? "Codes are redeemed in the Play Store"
+            : isLifetime
+              ? "Lifetime codes are redeemed in the App Store"
+              : "Subscription codes are redeemed here"}
+        </Text>
+
+        <Text style={[styles.body, { color: colors.mutedForeground }]}>
+          {Platform.OS !== "ios"
+            ? "The Play Store accepts every kind of MinFinder code. You'll come straight back once it's applied."
+            : isLifetime
+              ? "A code that unlocks Pro permanently only works on the App Store's redemption page, not the sheet inside apps. Come back here once it's accepted."
+              : "A code for a free month, several months, or a year opens a sheet without leaving MinFinder."}
+        </Text>
+
         <Pressable
           onPress={redeem}
           disabled={busy}
           accessibilityRole="button"
           style={({ pressed }) => [
-            styles.linkRow,
-            { opacity: pressed || busy ? 0.6 : 1 },
+            styles.actionBtn,
+            {
+              backgroundColor: colors.primary,
+              opacity: pressed || busy ? 0.6 : 1,
+            },
           ]}
         >
           {busy ? (
-            <ActivityIndicator size="small" color={colors.primary} />
+            <ActivityIndicator size="small" color={colors.primaryForeground} />
           ) : (
-            <Feather name="gift" size={14} color={colors.primary} />
+            <Feather
+              name={isLifetime ? "external-link" : "gift"}
+              size={16}
+              color={colors.primaryForeground}
+            />
           )}
-          <Text style={[styles.linkText, { color: colors.primary }]}>
-            {Platform.OS === "ios" ? "Redeem a code" : "Redeem in Play Store"}
+          <Text
+            style={[styles.actionText, { color: colors.primaryForeground }]}
+          >
+            {actionLabel}
           </Text>
         </Pressable>
 
         {state.kind === "opened" && (
-          <Text style={[styles.note, { color: colors.mutedForeground }]}>
+          <Text style={[styles.body, { color: colors.mutedForeground }]}>
             Checking for your code&hellip; this can take up to a minute. If Pro
             hasn&apos;t appeared by then, reopen the app.
           </Text>
         )}
 
         {state.kind === "unlocked" && (
-          <Text style={[styles.note, { color: colors.mutedForeground }]}>
+          <Text style={[styles.body, { color: colors.foreground }]}>
             MinFinder Pro is active. Restarting&hellip;
           </Text>
         )}
 
         {state.kind === "error" && (
-          <Text style={[styles.note, { color: colors.destructive }]}>
+          <Text style={[styles.body, { color: colors.destructive }]}>
             {state.message}
           </Text>
         )}
-
-        {Platform.OS === "ios" && (
-          <Pressable
-            onPress={() => Linking.openURL(APP_STORE_REDEEM_URL)}
-            accessibilityRole="button"
-            style={({ pressed }) => [
-              styles.linkRow,
-              { opacity: pressed ? 0.6 : 1 },
-            ]}
-          >
-            <Feather name="external-link" size={14} color={colors.primary} />
-            <Text style={[styles.linkText, { color: colors.primary }]}>
-              Redeem in the App Store
-            </Text>
-          </Pressable>
-        )}
       </View>
-
-      {Platform.OS === "ios" && (
-        <Text style={[styles.note, { color: colors.mutedForeground }]}>
-          If the sheet above doesn&apos;t open, or your code is for lifetime
-          access, use the App Store link — it accepts every kind of code.
-        </Text>
-      )}
 
       <Text style={[styles.note, { color: colors.mutedForeground }]}>
         Codes are redeemed through your{" "}
@@ -212,9 +280,37 @@ export default function RedeemScreen() {
 const styles = StyleSheet.create({
   scroll: { padding: 20, gap: 16, paddingBottom: 40 },
   body: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
-  card: { padding: 12, borderRadius: 12, borderWidth: 1, gap: 8 },
-  cardText: { fontFamily: "Inter_500Medium", fontSize: 13 },
-  linkRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  linkText: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
-  note: { fontFamily: "Inter_400Regular", fontSize: 11, lineHeight: 16 },
+  card: { padding: 16, borderRadius: 12, borderWidth: 1, gap: 10 },
+  cardText: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
+  segment: {
+    flexDirection: "row",
+    padding: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 4,
+  },
+  segmentItem: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  segmentText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+    textAlign: "center",
+  },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 10,
+    marginTop: 2,
+  },
+  actionText: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
+  note: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 18 },
 });
