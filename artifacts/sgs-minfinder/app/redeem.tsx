@@ -21,6 +21,14 @@ import { useSubscription } from "@/lib/revenuecat";
  */
 const PLAY_REDEEM_URL = "https://play.google.com/redeem";
 
+/**
+ * The App Store's own redemption page. Needed as more than a fallback: the
+ * StoreKit sheet only handles subscription offer codes, while the promo codes
+ * issued against a non-consumable (our lifetime product) are redeemable here
+ * and nowhere else in-app.
+ */
+const APP_STORE_REDEEM_URL = "https://apps.apple.com/redeem";
+
 type RedeemState =
   | { kind: "idle" }
   | { kind: "working" }
@@ -50,8 +58,12 @@ export default function RedeemScreen() {
     setState({ kind: "working" });
     try {
       if (Platform.OS === "ios") {
-        const shown = await presentCodeRedemption();
-        if (!shown) throw new Error("Redemption sheet unavailable");
+        // Dispatch-only: the native method takes no callback, so this resolves
+        // whether or not a sheet ever appears. It silently does nothing outside
+        // an App Store-installed build, which is why the App Store route below
+        // is offered alongside rather than only after a failure.
+        const dispatched = await presentCodeRedemption();
+        if (!dispatched) throw new Error("Redemption sheet unavailable");
       } else {
         const opened = await Linking.canOpenURL(PLAY_REDEEM_URL);
         if (!opened) throw new Error("Play Store unavailable");
@@ -136,7 +148,30 @@ export default function RedeemScreen() {
             {state.message}
           </Text>
         )}
+
+        {Platform.OS === "ios" && (
+          <Pressable
+            onPress={() => Linking.openURL(APP_STORE_REDEEM_URL)}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.linkRow,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Feather name="external-link" size={14} color={colors.primary} />
+            <Text style={[styles.linkText, { color: colors.primary }]}>
+              Redeem in the App Store
+            </Text>
+          </Pressable>
+        )}
       </View>
+
+      {Platform.OS === "ios" && (
+        <Text style={[styles.note, { color: colors.mutedForeground }]}>
+          If the sheet above doesn&apos;t open, or your code is for lifetime
+          access, use the App Store link — it accepts every kind of code.
+        </Text>
+      )}
 
       <Text style={[styles.note, { color: colors.mutedForeground }]}>
         Codes are redeemed through your{" "}
