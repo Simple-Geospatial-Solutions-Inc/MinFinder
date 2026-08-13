@@ -44,9 +44,5 @@ Thumbs.db
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md
 
-# Replit
-.cache/
-.local/
-
 # Claude Code (local worktrees and session state)
 .claude/

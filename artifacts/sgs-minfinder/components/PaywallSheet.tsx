@@ -1,5 +1,6 @@
 import { Feather } from "@/components/Icon";
 import * as Clipboard from "expo-clipboard";
+import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import React, { useMemo, useState } from "react";
 import {
@@ -208,6 +209,25 @@ export function PaywallSheet({
               style={[styles.secondaryBtnText, { color: colors.mutedForeground }]}
             >
               Restore purchases
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              // Dismiss before navigating: this sheet is a Modal, and pushing a
+              // route out from under an open Modal leaves the navigation stack
+              // and the overlay fighting each other on Android.
+              onClose();
+              router.push("/redeem");
+            }}
+            hitSlop={6}
+            disabled={isLoading}
+            style={styles.secondaryBtn}
+          >
+            <Text
+              style={[styles.secondaryBtnText, { color: colors.mutedForeground }]}
+            >
+              Have a promo code?
             </Text>
           </Pressable>
 
