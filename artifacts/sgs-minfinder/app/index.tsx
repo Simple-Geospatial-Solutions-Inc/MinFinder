@@ -36,14 +36,25 @@ import { DetailsSheet } from "@/components/DetailsSheet";
 import { OfflineRegionPill } from "@/components/OfflineRegionPill";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { QuickInfoCard } from "@/components/QuickInfoCard";
+import { SearchMatchesPill } from "@/components/SearchMatchesPill";
 import { STATUS_MAP, STATUS_ORDER, getStatusInfo } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
-import { queryOccurrences, type Occurrence } from "@/lib/db";
+import {
+  hitIsAlias,
+  hitTitle,
+  queryOccurrences,
+  searchOccurrences,
+  toOccurrence,
+  type Occurrence,
+  type SearchHit,
+} from "@/lib/db";
 import { takePendingFocusRegion, type FocusRegion } from "@/lib/mapFocus";
 import { ESRI_STYLE_JSON, LABEL_FONT, PACK_STYLE_VERSION } from "@/lib/mapStyle";
 import {
+  boundsCenter,
   deltaToZoom,
   normalizeBounds,
+  occurrencesToBounds,
   occurrencesToFeatureCollection,
   regionToBounds,
   regionsToFeatureCollection,
@@ -112,13 +123,15 @@ const pointTextStyle = {
   textIgnorePlacement: true,
 } as unknown as SymbolLayerStyle;
 
-const clusterCircleStyle = {
+// Kept as a plain object so the search-mode variant below can spread it.
+const clusterCircle = {
   circleColor: "#16365C",
   circleOpacity: 0.95,
   circleStrokeColor: "#ffffff",
   circleStrokeWidth: 2,
   circleRadius: ["step", ["get", "point_count"], 16, 25, 20, 100, 26, 500, 32],
-} as unknown as CircleLayerStyle;
+};
+const clusterCircleStyle = clusterCircle as unknown as CircleLayerStyle;
 
 const clusterTextStyle = {
   textField: ["get", "point_count_abbreviated"],
@@ -128,6 +141,28 @@ const clusterTextStyle = {
   textAllowOverlap: true,
   textIgnorePlacement: true,
 } as unknown as SymbolLayerStyle;
+
+// --- Committed-search highlight --------------------------------------------
+// Pressing Enter commits the query to the map: the source is swapped to just the
+// matches, so they cluster into count bubbles exactly the way the full dataset
+// does. Drawing every match as an individual pin was the first attempt and it
+// does not survive contact with a real query — 1,883 "CREEK" pins bury the
+// province. Non-matches are not drawn at all rather than dimmed, which makes the
+// gold halo that used to mark a match redundant: everything on the map is one.
+//
+// The clusters do get a gold stroke instead of white, so the map still reads as
+// "showing a search" at a glance rather than looking like a sparse basemap.
+const clusterCircleSearchStyle = {
+  ...clusterCircle,
+  circleStrokeColor: "#FCBA19",
+  circleStrokeWidth: 3,
+} as unknown as CircleLayerStyle;
+
+// Enter highlights every match, not just the 50 the dropdown lists. A
+// single-letter query matches ~12k occurrences and still returns in tens of
+// milliseconds, and capping would make the pill's count a lie. Set above the
+// table size so it is a backstop rather than a limit.
+const HIGHLIGHT_LIMIT = 20_000;
 
 // A gold ring around the selected pin (transparent fill so it sits on top).
 // Sized to hug the radius-16 dot + its 3px white border.
@@ -207,7 +242,23 @@ export default function MapScreen() {
   // entirely) stay behind the paywall too.
   const [quickInfo, setQuickInfo] = useState<Occurrence | null>(null);
   const [selected, setSelected] = useState<Occurrence | null>(null);
-  const [searchResults, setSearchResults] = useState<Occurrence[] | null>(null);
+  // Search hits carry which of the occurrence's names matched, so a row found by
+  // an old claim name can show that name rather than the primary one.
+  const [searchResults, setSearchResults] = useState<SearchHit[] | null>(null);
+  // A query committed to the map with the keyboard's Search key. Distinct from
+  // `searchResults`, which is the (50-row) dropdown list: this is every match,
+  // frozen at the moment Enter was pressed, and it drives the map rather than a
+  // list. `rows` is empty for a query that matched nothing — the pill still needs
+  // to say so.
+  const [highlight, setHighlight] = useState<{
+    term: string;
+    rows: SearchHit[];
+  } | null>(null);
+  // The matched name for a row picked straight out of the dropdown. That path
+  // clears the search state and opens the sheet directly, so it cannot go
+  // through `matchedNameById` — but the row the user tapped was titled with the
+  // matched name, and the sheet must not silently drop it.
+  const [pickedMatch, setPickedMatch] = useState<string | null>(null);
   // Paywall lives here rather than inside DetailsSheet: that component is a
   // Modal, and stacking a second Modal on top of it is unreliable on Android.
   const [paywallFor, setPaywallFor] = useState<string | null>(null);
@@ -305,12 +356,33 @@ export default function MapScreen() {
     return allRows.filter((r) => statusSet.has(r.STATUS_C ?? ""));
   }, [allRows, statuses.length, statusSet]);
 
+  // A committed search narrows the map to its matches. Status chips still apply
+  // on top, so toggling one after pressing Enter narrows the highlight instead
+  // of invalidating it.
+  const highlightRows = useMemo(() => {
+    if (!highlight) return null;
+    if (statuses.length === STATUS_ORDER.length) return highlight.rows;
+    return highlight.rows.filter((r) => statusSet.has(r.STATUS_C ?? ""));
+  }, [highlight, statuses.length, statusSet]);
+
+  // Everything downstream — the source, the header count, the search-mode
+  // styling — reads this one list, so the map and the count cannot disagree.
+  // A query that matched nothing falls back to the full map on purpose: there is
+  // nothing to narrow to, and blanking the map would be a dead end. The pill
+  // still reports the miss.
+  const drawnRows =
+    highlightRows && highlightRows.length > 0 ? highlightRows : allFilteredRows;
+  const highlightBounds = useMemo(
+    () => (highlightRows ? occurrencesToBounds(highlightRows) : null),
+    [highlightRows],
+  );
+
   // GeoJSON fed to the clustered MapLibre source. MapLibre clusters natively on
   // the GPU (no manual grid, no marker pool, no viewport cull) — the layer
   // re-renders from this data whenever the status filter changes.
   const featureCollection = useMemo(
-    () => occurrencesToFeatureCollection(allFilteredRows),
-    [allFilteredRows],
+    () => occurrencesToFeatureCollection(drawnRows),
+    [drawnRows],
   );
   const occById = useMemo(() => {
     const m = new Map<number, Occurrence>();
@@ -320,6 +392,38 @@ export default function MapScreen() {
 
   // The pin currently previewed (quickInfo) or opened (selected) gets a ring.
   const selectedId = quickInfo?.id ?? selected?.id ?? null;
+
+  const searchMode = drawnRows === highlightRows;
+
+  // Most occurrences have several names, so a search for "CAMP CREEK" surfaces
+  // pins whose primary name is JUNIPER or THORN. Tapping one and reading only
+  // "JUNIPER" gives no hint why it is on the map, so the card and the sheet get
+  // the name that actually matched. Only aliases are recorded: a hit on the
+  // primary name needs no explaining, and a MINFILNO-only hit has no name.
+  const matchedNameById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const r of highlight?.rows ?? []) {
+      if (r.matchedName && hitIsAlias(r)) m.set(r.id, r.matchedName);
+    }
+    return m;
+  }, [highlight]);
+
+  const quickInfoMatch = quickInfo
+    ? matchedNameById.get(quickInfo.id) ?? null
+    : null;
+  const selectedMatch = selected
+    ? matchedNameById.get(selected.id) ?? pickedMatch
+    : null;
+
+  // The open pin, on a source that never clusters. The `occ` source clusters at
+  // z<=14, and a point swallowed by a cluster is not a feature at that zoom — so
+  // a filter-based ring on that source draws nothing when zoomed out, which is
+  // why the gold ring used to vanish after a search pick (which lands at z~12.8).
+  // At most one feature.
+  const overlayShape = useMemo(() => {
+    const open = quickInfo ?? selected;
+    return occurrencesToFeatureCollection(open ? [open] : []);
+  }, [quickInfo, selected]);
 
   // Tap on the source: a cluster zooms to its expansion level; a point opens the
   // quick-info card.
@@ -354,6 +458,12 @@ export default function MapScreen() {
     [occById],
   );
 
+  // The TextInput carries `padding: 0` and so its own touch target is barely
+  // taller than one line of text, well short of the pill drawn around it. Taps
+  // on the pill's padding hit nothing, which reads as the field needing a couple
+  // of tries to focus. The wrapping Pressable forwards those taps here.
+  const searchInputRef = useRef<TextInput>(null);
+
   // Search across the whole dataset (debounced, DB-backed for substring match).
   const searchSeq = useRef(0);
   useEffect(() => {
@@ -364,8 +474,7 @@ export default function MapScreen() {
     const seq = ++searchSeq.current;
     const handle = setTimeout(async () => {
       try {
-        const rows = await queryOccurrences({
-          search,
+        const rows = await searchOccurrences(search, {
           statuses: statuses.length === STATUS_ORDER.length ? undefined : statuses,
           limit: 50,
         });
@@ -409,11 +518,74 @@ export default function MapScreen() {
     );
   }, []);
 
-  const onPickSearchResult = useCallback((row: Occurrence) => {
+  const clearHighlight = useCallback(() => setHighlight(null), []);
+
+  // Enter commits the query to the map. Re-queries without the dropdown's 50-row
+  // cap, because "highlight the search results" means all of them.
+  const submitSeq = useRef(0);
+  const onSubmitSearch = useCallback(async () => {
+    const term = search.trim();
+    if (!term) return;
+    Keyboard.dismiss();
+    // Fold the dropdown away — it covers the part of the map we are about to
+    // frame. The results stay in state, so refocusing the field reopens it.
+    setSearchActive(false);
+
+    const seq = ++submitSeq.current;
+    let rows: SearchHit[];
+    try {
+      rows = await searchOccurrences(term, {
+        statuses: statuses.length === STATUS_ORDER.length ? undefined : statuses,
+        limit: HIGHLIGHT_LIMIT,
+      });
+    } catch (err) {
+      console.warn("highlight search error", err);
+      return;
+    }
+    if (seq !== submitSeq.current) return;
+
+    const bounds = occurrencesToBounds(rows);
+    setHighlight({ term, rows });
+    // The change is often entirely off-screen (a result set typically spans most
+    // of BC), so confirm it in the hand as well as on the map.
+    Haptics.selectionAsync().catch(() => {});
+
+    if (rows.length === 0 || !bounds) return;
+    if (rows.length === 1) {
+      // Same landing as tapping the row, which keeps some context around a lone
+      // hit instead of dropping to street level as a fitBounds would.
+      cameraRef.current?.flyTo({
+        center: boundsCenter(bounds),
+        zoom: deltaToZoom(0.05),
+        duration: 600,
+      });
+      return;
+    }
+
+    let reduceMotion = false;
+    try {
+      reduceMotion = await AccessibilityInfo.isReduceMotionEnabled();
+    } catch {
+      // Fall through to an animated fit.
+    }
+    cameraRef.current?.fitBounds(normalizeBounds(bounds), {
+      padding: {
+        top: insets.top + TOP_BAR_HEIGHT + REGION_PILL_HEIGHT + 12,
+        bottom: insets.bottom + 96, // clears the FAB stack
+        left: 24,
+        right: 24,
+      },
+      duration: reduceMotion ? 0 : 700,
+      easing: reduceMotion ? undefined : "ease",
+    });
+  }, [search, statuses, insets]);
+
+  const onPickSearchResult = useCallback((row: SearchHit) => {
     Keyboard.dismiss();
     setSearch("");
     setSearchActive(false);
     setSearchResults(null);
+    setHighlight(null);
     setQuickInfo(null); // search picks go straight to the full sheet
     if (row.LATITUDE == null || row.LONGITUDE == null) return;
     cameraRef.current?.flyTo({
@@ -421,7 +593,8 @@ export default function MapScreen() {
       zoom: deltaToZoom(0.05),
       duration: 600,
     });
-    setTimeout(() => setSelected(row), 350);
+    setPickedMatch(hitIsAlias(row) ? row.matchedName : null);
+    setTimeout(() => setSelected(toOccurrence(row)), 350);
   }, []);
 
   // Tapping a region on the Offline screen hands it over through lib/mapFocus
@@ -511,6 +684,14 @@ export default function MapScreen() {
     }, [insets.top, insets.bottom]),
   );
 
+  // Anywhere on the map is a "done typing" gesture. This fires for pin and
+  // cluster taps too (the source handlers don't stop propagation), which is
+  // wanted: reaching for a pin means the search field is finished with.
+  const onMapPress = useCallback(() => {
+    Keyboard.dismiss();
+    setSearchActive(false);
+  }, []);
+
   const toggleCoverage = useCallback(() => {
     // The outlines may be entirely off-screen at the current camera, so without
     // this the toggle can feel dead.
@@ -541,6 +722,7 @@ export default function MapScreen() {
         attribution={false}
         touchRotate={false}
         touchPitch={false}
+        onPress={onMapPress}
       >
         <Camera
           ref={cameraRef}
@@ -599,7 +781,7 @@ export default function MapScreen() {
             id="clusters"
             type="circle"
             filter={CLUSTER_FILTER as never}
-            style={clusterCircleStyle}
+            style={searchMode ? clusterCircleSearchStyle : clusterCircleStyle}
           />
           <Layer
             id="cluster-count"
@@ -619,6 +801,27 @@ export default function MapScreen() {
             filter={POINT_FILTER as never}
             style={pointTextStyle}
           />
+        </GeoJSONSource>
+
+        {/*
+          The open pin on an un-clustered source, so its gold ring survives being
+          zoomed out (see overlayShape). Declared after `occ` so it paints above
+          the base pins, and kept permanently mounted with an empty collection
+          when idle rather than conditionally rendered — a source that unmounts
+          has its layers re-appended to the top of the style on remount, which is
+          the trap the offline-regions source works around with `beforeId` above.
+
+          `onPress` is required, not optional: a press goes to the source whose
+          layer has the highest z-index under the touch, so without a handler
+          these layers would swallow taps and make the open pin dead.
+        */}
+        <GeoJSONSource
+          id="occ-overlay"
+          data={overlayShape as unknown as GeoJSON.FeatureCollection}
+          onPress={onFeaturePress}
+        >
+          <Layer id="overlay-point" type="circle" style={pointCircleStyle} />
+          <Layer id="overlay-code" type="symbol" style={pointTextStyle} />
           <Layer
             id="point-selected"
             type="circle"
@@ -647,7 +850,7 @@ export default function MapScreen() {
                 ? "Loading…"
                 : dbError
                   ? "Occurrence data failed to load"
-                  : `${allFilteredRows.length.toLocaleString()} of ${allRows.length.toLocaleString()} BC MINFILE occurrences`}
+                  : `${drawnRows.length.toLocaleString()} of ${allRows.length.toLocaleString()} BC MINFILE occurrences`}
             </Text>
           </View>
           <View style={styles.topActions}>
@@ -664,19 +867,27 @@ export default function MapScreen() {
           </View>
         </View>
 
-        <View
+        <Pressable
+          onPress={() => searchInputRef.current?.focus()}
+          accessible={false}
           style={[styles.searchBar, { backgroundColor: "rgba(244,241,234,0.12)" }]}
         >
           <Feather name="search" size={16} color="#F4F1EA" />
           <TextInput
-            placeholder="Search name or MINFILNO"
+            ref={searchInputRef}
+            placeholder="Search any name or MINFILNO"
             placeholderTextColor="rgba(244,241,234,0.6)"
             value={search}
             onChangeText={(t) => {
               setSearch(t);
               setSearchActive(true);
+              // The highlight belongs to the query that was committed; editing
+              // the field invalidates it, and a pill reading "59 matches for
+              // SPAR" above a field saying SPARK is worse than no pill.
+              setHighlight(null);
             }}
             onFocus={() => setSearchActive(true)}
+            onSubmitEditing={onSubmitSearch}
             style={styles.searchInput}
             autoCorrect={false}
             autoCapitalize="characters"
@@ -687,13 +898,14 @@ export default function MapScreen() {
               onPress={() => {
                 setSearch("");
                 setSearchResults(null);
+                setHighlight(null);
               }}
               hitSlop={10}
             >
               <Feather name="x" size={16} color="#F4F1EA" />
             </Pressable>
           )}
-        </View>
+        </Pressable>
 
         <ScrollView
           horizontal
@@ -765,12 +977,15 @@ export default function MapScreen() {
                       style={[styles.resultTitle, { color: colors.foreground }]}
                       numberOfLines={1}
                     >
-                      {r.NAME1 || "Unnamed"}
+                      {hitTitle(r)}
                     </Text>
                     <Text
                       style={[styles.resultSub, { color: colors.mutedForeground }]}
                       numberOfLines={1}
                     >
+                      {/* An alias hit leads with the primary name, so the row the
+                          user taps is still identifiable as the right record. */}
+                      {hitIsAlias(r) ? `${r.NAME1?.trim()} · ` : ""}
                       {r.MINFILNO?.trim()} · {info.label}
                     </Text>
                   </View>
@@ -837,9 +1052,20 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* Shares the slot below the top bar with the search dropdown, so it
-          steps aside while results are open. */}
-      {!searchDropdownOpen && (
+      {/* One slot below the top bar, three claimants. The dropdown wins while
+          results are open; a committed search outranks the offline-region pill,
+          because it is the more recent thing the user asked for. */}
+      {!searchDropdownOpen && highlight && (
+        <SearchMatchesPill
+          term={highlight.term}
+          count={highlightRows?.length ?? 0}
+          bounds={highlightBounds}
+          onClear={clearHighlight}
+          topOffset={insets.top + TOP_BAR_HEIGHT + 6}
+        />
+      )}
+
+      {!searchDropdownOpen && !highlight && (
         <OfflineRegionPill
           region={focusRegion}
           coverageCount={showCoverage ? packRegions.length : null}
@@ -854,9 +1080,13 @@ export default function MapScreen() {
 
       <QuickInfoCard
         occurrence={quickInfo}
+        matchedName={quickInfoMatch}
         onClose={() => setQuickInfo(null)}
         onExpand={() => {
-          if (quickInfo) setSelected(quickInfo);
+          if (quickInfo) {
+            setPickedMatch(null);
+            setSelected(quickInfo);
+          }
           setQuickInfo(null);
         }}
         bottomOffset={insets.bottom + 96}
@@ -864,6 +1094,7 @@ export default function MapScreen() {
 
       <DetailsSheet
         occurrence={selected}
+        matchedName={selectedMatch}
         onClose={() => setSelected(null)}
         onRequestUpgrade={(feature) => {
           setSelected(null);
@@ -952,6 +1183,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: Platform.OS === "ios" ? 10 : 6,
+    // Below the 44pt floor on Android from the padding alone, and the whole row
+    // is the touch target now, so give it the height to be one.
+    minHeight: 44,
   },
   searchInput: {
     flex: 1,
