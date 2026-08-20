@@ -25,11 +25,18 @@ import {
 } from "@/lib/calibration";
 import { getOccurrenceById, type Occurrence } from "@/lib/db";
 import {
+  coordFormatLabel,
+  formatCoord,
+  loadCoordFormat,
+  otherFormat,
+  saveCoordFormat,
+  type CoordFormat,
+} from "@/lib/coordFormat";
+import {
   bearingDegrees,
   distanceMeters,
   formatBearing,
   formatDistance,
-  formatDMS,
 } from "@/lib/geo";
 
 export default function CompassScreen() {
@@ -48,6 +55,10 @@ export default function CompassScreen() {
   const [heading, setHeading] = useState<number>(0);
   const [headingSource, setHeadingSource] = useState<"true" | "magnetic" | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
+
+  // DMS vs decimal degrees for the position readout. Loaded once on mount,
+  // persisted on change.
+  const [coordFormat, setCoordFormat] = useState<CoordFormat>("dms");
 
   // Calibration offset (degrees). Loaded once on mount, persisted on change.
   const [offset, setOffset] = useState<number>(0);
@@ -182,6 +193,11 @@ export default function CompassScreen() {
     // Load persisted calibration offset.
     loadOffset().then((o) => {
       if (!cancelled) setOffset(o);
+    });
+
+    // Load persisted coordinate format (DMS vs decimal degrees).
+    loadCoordFormat().then((f) => {
+      if (!cancelled) setCoordFormat(f);
     });
 
     return () => {
@@ -371,13 +387,17 @@ export default function CompassScreen() {
         <DetailRow
           label="Your Latitude"
           value={
-            coords ? formatDMS(coords.latitude, true) : "Locating…"
+            coords
+              ? formatCoord(coords.latitude, true, coordFormat)
+              : "Locating…"
           }
         />
         <DetailRow
           label="Your Longitude"
           value={
-            coords ? formatDMS(coords.longitude, false) : "Locating…"
+            coords
+              ? formatCoord(coords.longitude, false, coordFormat)
+              : "Locating…"
           }
         />
         <DetailRow
@@ -390,6 +410,31 @@ export default function CompassScreen() {
                 : "Locating…"
           }
         />
+        <Pressable
+          onPress={() => {
+            const next = otherFormat(coordFormat);
+            setCoordFormat(next);
+            saveCoordFormat(next);
+          }}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel={`Switch coordinates to ${coordFormatLabel(
+            otherFormat(coordFormat),
+          )}`}
+          style={({ pressed }) => [
+            styles.formatToggle,
+            { opacity: pressed ? 0.6 : 1 },
+          ]}
+        >
+          <Feather
+            name="arrow-left-right"
+            size={11}
+            color="rgba(244,241,234,0.8)"
+          />
+          <Text style={styles.formatToggleText}>
+            {coordFormatLabel(otherFormat(coordFormat))}
+          </Text>
+        </Pressable>
       </View>
 
       <CalibrationModal
@@ -548,7 +593,23 @@ const styles = StyleSheet.create({
   detailsBlock: {
     marginTop: 18,
     alignItems: "center",
-    gap: 4,
+    gap: 8,
+  },
+  formatToggle: {
+    marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(244,241,234,0.25)",
+  },
+  formatToggleText: {
+    color: "rgba(244,241,234,0.8)",
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
   },
   detailRow: { flexDirection: "row", gap: 6 },
   detailLabel: {
