@@ -5,8 +5,10 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,17 +27,42 @@ import {
 } from "@/lib/calibration";
 import { getOccurrenceById, type Occurrence } from "@/lib/db";
 import {
+  coordFormatLabel,
+  formatCoord,
+  loadCoordFormat,
+  otherFormat,
+  saveCoordFormat,
+  type CoordFormat,
+} from "@/lib/coordFormat";
+import {
   bearingDegrees,
   distanceMeters,
   formatBearing,
   formatDistance,
-  formatDMS,
 } from "@/lib/geo";
+
+// The dial is the one element on this screen that can give ground. Everything
+// below it is text meant to be read at arm's length in the field, so shrinking
+// that is the wrong trade. Instead the readout lays out at its natural height,
+// the dial takes whatever is left, and a screen too short for even the floor
+// scrolls rather than running off the bottom — which is what a 300px dial plus
+// a 380px readout did on a 640dp-tall Android phone.
+const DIAL_MAX = 300;
+const DIAL_MIN = 160;
+// CompassDial draws 18px of padding and a 4px border on every side, so its box
+// is this much larger than the `size` it is handed.
+const DIAL_CHROME = 44;
 
 export default function CompassScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { width: winWidth, height: winHeight } = useWindowDimensions();
+  // Once the status bar and the "Navigate" header come out of a 640-720dp
+  // screen there is no room for the spacing this was drawn with. Tighten the
+  // rhythm rather than let it overflow.
+  const compact = winHeight < 720;
+  const sp = (n: number) => (compact ? Math.round(n * 0.65) : n);
   // The compass is the premium feature itself. Gating here — not only at the
   // buttons that navigate here — means a future call site that forgets to
   // check can't hand it out for free.
@@ -49,12 +76,20 @@ export default function CompassScreen() {
   const [headingSource, setHeadingSource] = useState<"true" | "magnetic" | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
 
+  // DMS vs decimal degrees for the position readout. Loaded once on mount,
+  // persisted on change.
+  const [coordFormat, setCoordFormat] = useState<CoordFormat>("dms");
+
   // Calibration offset (degrees). Loaded once on mount, persisted on change.
   const [offset, setOffset] = useState<number>(0);
   // Local magnetic declination derived from the latest sensor reading
   // (trueHeading - magneticHeading). null until we get a reading with both.
   const [declination, setDeclination] = useState<number | null>(null);
   const [showCalibration, setShowCalibration] = useState(false);
+  // Measured, not estimated: the dial's share of the screen depends on how tall
+  // the readout below it turned out, which depends on the user's font scale and
+  // on how many lines the hint wraps to.
+  const [dialBox, setDialBox] = useState<{ w: number; h: number } | null>(null);
   // True once we have at least one valid sensor reading. Used to disable
   // the Set button so users can't store a calibration offset against the
   // default 0° before the magnetometer has actually reported anything.
@@ -184,6 +219,11 @@ export default function CompassScreen() {
       if (!cancelled) setOffset(o);
     });
 
+    // Load persisted coordinate format (DMS vs decimal degrees).
+    loadCoordFormat().then((f) => {
+      if (!cancelled) setCoordFormat(f);
+    });
+
     return () => {
       // Flip the closure flag first so any in-flight async callbacks bail
       // out before calling setState on an unmounted component.
@@ -308,89 +348,156 @@ export default function CompassScreen() {
     );
   }
 
+  // Fits both axes: a 300px dial is 344px wide with its chrome, which already
+  // overflowed a 360dp screen sideways before it ran off the bottom. The window
+  // width gives the first paint a sane size; the measured box then refines it
+  // against the height actually left over.
+  const dialCeiling = Math.min(DIAL_MAX, winWidth - 40 - DIAL_CHROME);
+  const dialSize = Math.max(
+    DIAL_MIN,
+    dialBox
+      ? Math.min(dialCeiling, Math.min(dialBox.w, dialBox.h) - DIAL_CHROME)
+      : dialCeiling,
+  );
+
   return (
-    <View
-      style={[
-        styles.root,
-        { backgroundColor: colors.navyDeep, paddingBottom: insets.bottom + 16 },
-      ]}
-    >
-      <View style={styles.dialWrap}>
-        <CompassDial size={300} heading={displayedHeading} bearing={bearing} />
-        <Pressable
-          onPress={() => setShowCalibration(true)}
-          accessibilityLabel={
-            calibrated ? "Compass calibrated. Tap to recalibrate." : "Calibrate compass"
-          }
-          hitSlop={12}
-          style={({ pressed }) => [
-            styles.cogBtn,
-            {
-              backgroundColor: calibrated
-                ? "rgba(252,186,25,0.18)"
-                : "rgba(20,30,48,0.85)",
-              borderColor: calibrated ? "#FCBA19" : "rgba(244,241,234,0.22)",
-              opacity: pressed ? 0.6 : 1,
-            },
-          ]}
+    <View style={[styles.root, { backgroundColor: colors.navyDeep }]}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: sp(12), paddingBottom: insets.bottom + sp(16) },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View
+          style={[styles.dialFlex, { minHeight: DIAL_MIN + DIAL_CHROME }]}
+          onLayout={(e) => {
+            const { width: w, height: h } = e.nativeEvent.layout;
+            // Ignore sub-pixel churn, so a measurement can never feed a re-render
+            // loop back into itself.
+            setDialBox((prev) =>
+              prev && Math.abs(prev.w - w) < 1 && Math.abs(prev.h - h) < 1
+                ? prev
+                : { w, h },
+            );
+          }}
         >
-          <Feather
-            name="settings"
-            size={18}
-            color={calibrated ? "#FCBA19" : "#F4F1EA"}
+          <View style={styles.dialWrap}>
+            <CompassDial size={dialSize} heading={displayedHeading} bearing={bearing} />
+            <Pressable
+              onPress={() => setShowCalibration(true)}
+              accessibilityLabel={
+                calibrated ? "Compass calibrated. Tap to recalibrate." : "Calibrate compass"
+              }
+              hitSlop={12}
+              style={({ pressed }) => [
+                styles.cogBtn,
+                {
+                  backgroundColor: calibrated
+                    ? "rgba(252,186,25,0.18)"
+                    : "rgba(20,30,48,0.85)",
+                  borderColor: calibrated ? "#FCBA19" : "rgba(244,241,234,0.22)",
+                  opacity: pressed ? 0.6 : 1,
+                },
+              ]}
+            >
+              <Feather
+                name="settings"
+                size={18}
+                color={calibrated ? "#FCBA19" : "#F4F1EA"}
+              />
+              {calibrated && <View style={styles.cogDot} />}
+            </Pressable>
+          </View>
+        </View>
+
+        <Text style={[styles.targetMinfilno, { marginTop: sp(16) }]}>
+          {target.MINFILNO?.trim()}
+        </Text>
+
+        <Text style={styles.targetName} numberOfLines={1}>
+          {target.NAME1 || "Unnamed"}
+        </Text>
+
+        <View style={[styles.metricsBig, { marginTop: sp(14) }]}>
+          <Metric label="Distance" value={distance != null ? formatDistance(distance) : "—"} />
+          <View style={styles.metricsDivider} />
+          <Metric label="Bearing" value={formatBearing(bearing)} />
+        </View>
+
+        <View style={[styles.detailsBlock, { marginTop: sp(18) }]}>
+          <DetailRow
+            label="Compass Direction"
+            value={`${Math.round(displayedHeading)}° ${
+              headingSource === "true"
+                ? "True"
+                : headingSource === "magnetic"
+                  ? "Magnetic"
+                  : ""
+            }${calibrated ? " · calibrated" : ""}`.trim()}
           />
-          {calibrated && <View style={styles.cogDot} />}
-        </Pressable>
-      </View>
-
-      <Text style={styles.targetMinfilno}>
-        {target.MINFILNO?.trim()}
-      </Text>
-
-      <Text style={styles.targetName} numberOfLines={1}>
-        {target.NAME1 || "Unnamed"}
-      </Text>
-
-      <View style={styles.metricsBig}>
-        <Metric label="Distance" value={distance != null ? formatDistance(distance) : "—"} />
-        <View style={styles.metricsDivider} />
-        <Metric label="Bearing" value={formatBearing(bearing)} />
-      </View>
-
-      <View style={styles.detailsBlock}>
-        <DetailRow
-          label="Compass Direction"
-          value={`${Math.round(displayedHeading)}° ${
-            headingSource === "true"
-              ? "True"
-              : headingSource === "magnetic"
-                ? "Magnetic"
-                : ""
-          }${calibrated ? " · calibrated" : ""}`.trim()}
-        />
-        <DetailRow
-          label="Your Latitude"
-          value={
-            coords ? formatDMS(coords.latitude, true) : "Locating…"
-          }
-        />
-        <DetailRow
-          label="Your Longitude"
-          value={
-            coords ? formatDMS(coords.longitude, false) : "Locating…"
-          }
-        />
-        <DetailRow
-          label="Accuracy"
-          value={
-            permissionDenied
-              ? "Permission denied"
-              : accuracy != null
-                ? `${Math.round(accuracy)}m`
+          <DetailRow
+            label="Your Latitude"
+            value={
+              coords
+                ? formatCoord(coords.latitude, true, coordFormat)
                 : "Locating…"
-          }
-        />
-      </View>
+            }
+          />
+          <DetailRow
+            label="Your Longitude"
+            value={
+              coords
+                ? formatCoord(coords.longitude, false, coordFormat)
+                : "Locating…"
+            }
+          />
+          <DetailRow
+            label="Accuracy"
+            value={
+              permissionDenied
+                ? "Permission denied"
+                : accuracy != null
+                  ? `${Math.round(accuracy)}m`
+                  : "Locating…"
+            }
+          />
+          <Pressable
+            onPress={() => {
+              const next = otherFormat(coordFormat);
+              setCoordFormat(next);
+              saveCoordFormat(next);
+            }}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={`Switch coordinates to ${coordFormatLabel(
+              otherFormat(coordFormat),
+            )}`}
+            style={({ pressed }) => [
+              styles.formatToggle,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Feather
+              name="arrow-left-right"
+              size={11}
+              color="rgba(244,241,234,0.8)"
+            />
+            <Text style={styles.formatToggleText}>
+              {coordFormatLabel(otherFormat(coordFormat))}
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={[styles.hintBox, { marginTop: sp(20) }]}>
+          <Feather name="info" size={14} color="rgba(244,241,234,0.65)" />
+          <Text style={styles.hintText}>
+            If the needle seems off, hold the phone flat and trace a figure-8 in
+            the air a few times to recalibrate the compass. Keep away from metal
+            objects and vehicles for best accuracy.
+          </Text>
+        </View>
+      </ScrollView>
 
       <CalibrationModal
         visible={showCalibration}
@@ -412,15 +519,6 @@ export default function CompassScreen() {
         }}
         onClose={() => setShowCalibration(false)}
       />
-
-      <View style={styles.hintBox}>
-        <Feather name="info" size={14} color="rgba(244,241,234,0.65)" />
-        <Text style={styles.hintText}>
-          If the needle seems off, hold the phone flat and trace a figure-8 in
-          the air a few times to recalibrate the compass. Keep away from metal
-          objects and vehicles for best accuracy.
-        </Text>
-      </View>
     </View>
   );
 }
@@ -444,11 +542,21 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
+  root: { flex: 1 },
+  // flexGrow rather than flex: the content fills the screen when it fits and
+  // grows past it — scrolling — when it doesn't.
+  content: {
+    flexGrow: 1,
     paddingHorizontal: 20,
-    paddingTop: 12,
     alignItems: "center",
+  },
+  // Absorbs whatever height the readout below didn't need, and hands it to the
+  // dial. minHeight keeps it from collapsing to nothing on a very short screen.
+  dialFlex: {
+    flex: 1,
+    alignSelf: "stretch",
+    alignItems: "center",
+    justifyContent: "center",
   },
   loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
   errorWrap: {
@@ -477,7 +585,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   unlockBtnText: { fontFamily: "Inter_700Bold", fontSize: 15 },
-  dialWrap: { marginTop: 8, alignItems: "center", position: "relative" },
+  // Hugs the dial so the absolutely-positioned cog still lands on its corner
+  // rather than the screen's.
+  dialWrap: { alignItems: "center", position: "relative" },
   // Floating cog overlay in the top-right of the dial body.
   cogBtn: {
     position: "absolute",
@@ -506,7 +616,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#FCBA19",
   },
   targetMinfilno: {
-    marginTop: 16,
     color: "#F4F1EA",
     fontFamily: "Inter_700Bold",
     fontSize: 22,
@@ -523,7 +632,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 14,
     gap: 16,
   },
   metricBig: { alignItems: "center", minWidth: 110 },
@@ -546,9 +654,24 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(244,241,234,0.18)",
   },
   detailsBlock: {
-    marginTop: 18,
     alignItems: "center",
-    gap: 4,
+    gap: 8,
+  },
+  formatToggle: {
+    marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(244,241,234,0.25)",
+  },
+  formatToggleText: {
+    color: "rgba(244,241,234,0.8)",
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
   },
   detailRow: { flexDirection: "row", gap: 6 },
   detailLabel: {
@@ -562,7 +685,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   hintBox: {
-    marginTop: 20,
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,

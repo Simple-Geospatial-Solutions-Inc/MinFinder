@@ -26,11 +26,20 @@ function LockBadge() {
  */
 export function QuickInfoCard({
   occurrence,
+  matchedName,
   onClose,
   onExpand,
   bottomOffset,
 }: {
   occurrence: Occurrence | null;
+  /**
+   * The name that put this occurrence in the committed search, when that is not
+   * its primary name. Most MINFILE occurrences carry several names, so searching
+   * "CAMP CREEK" surfaces pins called JUNIPER, WOODCOCK and THORN — tapping one
+   * of those and reading only "JUNIPER" gives no clue why it is on the map.
+   * Null when no search is committed, or when the query matched the primary name.
+   */
+  matchedName?: string | null;
   onClose: () => void;
   onExpand: () => void;
   bottomOffset: number;
@@ -61,11 +70,14 @@ export function QuickInfoCard({
     >
       <View style={styles.row}>
         <View style={styles.titleCol}>
+          {/* Lead with the matched name, as the search dropdown does. The
+              primary name then has to stay visible below it — "CAMP CREEK" alone
+              would read as the occurrence's name, which is the opposite error. */}
           <Text
             style={[styles.title, { color: colors.foreground }]}
             numberOfLines={1}
           >
-            {occurrence.NAME1 || "Unnamed"}
+            {matchedName || occurrence.NAME1 || "Unnamed"}
           </Text>
           <View style={styles.metaRow}>
             <StatusBadge code={occurrence.STATUS_C} size="sm" />
@@ -73,7 +85,9 @@ export function QuickInfoCard({
               style={[styles.minfilno, { color: colors.mutedForeground }]}
               numberOfLines={1}
             >
-              {occurrence.MINFILNO?.trim() || "—"}
+              {matchedName
+                ? `${occurrence.NAME1?.trim() || "Unnamed"} · ${occurrence.MINFILNO?.trim() || "—"}`
+                : occurrence.MINFILNO?.trim() || "—"}
             </Text>
           </View>
         </View>

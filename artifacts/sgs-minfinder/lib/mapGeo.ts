@@ -191,3 +191,27 @@ export function occurrencesToFeatureCollection(
   }
   return { type: "FeatureCollection", features };
 }
+
+/**
+ * Bounding box enclosing a set of occurrences, or null when none of them have
+ * coordinates. Every other bounds helper here goes the other way (box to
+ * center/span/name), so this is the one direction the file was missing.
+ *
+ * Pass the result through `normalizeBounds` before handing it to `fitBounds`: a
+ * single occurrence yields a zero-span box, which snaps the camera to maximum
+ * zoom. Assumes west < east, like the rest of this file.
+ */
+export function occurrencesToBounds(rows: Occurrence[]): Bounds | null {
+  let w = Infinity;
+  let s = Infinity;
+  let e = -Infinity;
+  let n = -Infinity;
+  for (const r of rows) {
+    if (r.LATITUDE == null || r.LONGITUDE == null) continue;
+    if (r.LONGITUDE < w) w = r.LONGITUDE;
+    if (r.LONGITUDE > e) e = r.LONGITUDE;
+    if (r.LATITUDE < s) s = r.LATITUDE;
+    if (r.LATITUDE > n) n = r.LATITUDE;
+  }
+  return Number.isFinite(w) ? [w, s, e, n] : null;
+}

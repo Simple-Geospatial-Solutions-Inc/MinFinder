@@ -1,8 +1,9 @@
 import { Feather } from "@/components/Icon";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
+  LayoutAnimation,
   Modal,
   Pressable,
   ScrollView,
@@ -12,7 +13,7 @@ import {
 } from "react-native";
 
 import { StatusBadge } from "@/components/StatusBadge";
-import type { Occurrence } from "@/lib/db";
+import { getNamesForOccurrence, type Occurrence, type OccurrenceName } from "@/lib/db";
 import { formatDMS } from "@/lib/geo";
 import { useColors } from "@/hooks/useColors";
 import { useEntitlement } from "@/hooks/useEntitlement";
@@ -48,10 +49,18 @@ function Row({
 
 export function DetailsSheet({
   occurrence,
+  matchedName,
   onClose,
   onRequestUpgrade,
 }: {
   occurrence: Occurrence | null;
+  /**
+   * The name that put this occurrence in the committed search, when it is not
+   * the primary name. Nearly half of all MINFILE names are rank 3 or lower, so
+   * the reason a record is on screen is usually inside the collapsed disclosure
+   * below — this opens it and marks the name rather than making the user hunt.
+   */
+  matchedName?: string | null;
   onClose: () => void;
   /**
    * Called when a free user taps a gated action. The parent owns the paywall
@@ -63,6 +72,47 @@ export function DetailsSheet({
   const colors = useColors();
   const { isPaid } = useEntitlement();
   const visible = !!occurrence;
+
+  // MINFILE records up to 20 names per occurrence. The title and subtitle above
+  // cover the first two; the rest are worth having (a prospector may only know
+  // an occurrence by an old claim name) but would swamp the header, so they sit
+  // behind a disclosure. Loaded per-occurrence rather than shipped in every row
+  // of the map's in-memory dataset.
+  const [names, setNames] = useState<OccurrenceName[]>([]);
+  const [namesOpen, setNamesOpen] = useState(false);
+  const id = occurrence?.id ?? null;
+
+  useEffect(() => {
+    if (id == null) return;
+    let cancelled = false;
+    setNames([]);
+    setNamesOpen(false);
+    getNamesForOccurrence(id)
+      .then((rows) => {
+        if (cancelled) return;
+        setNames(rows);
+        // Open the disclosure unprompted when the matched name is hiding in it,
+        // so arriving here from a search never buries the reason why.
+        if (
+          matchedName &&
+          rows.some((r) => r.rank > 2 && r.name === matchedName)
+        ) {
+          setNamesOpen(true);
+        }
+      })
+      .catch((err) => console.warn("load names error", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [id, matchedName]);
+
+  const toggleNames = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setNamesOpen((prev) => !prev);
+  }, []);
+
+  // Ranks 1 and 2 are already the title and subtitle.
+  const otherNames = names.filter((n) => n.rank > 2);
 
   const officialUrl = occurrence?.MINFILNO
     ? `https://minfile.gov.bc.ca/Summary.aspx?minfilno=${encodeURIComponent(
@@ -128,6 +178,66 @@ export function DetailsSheet({
                   </Text>
                 </View>
               </View>
+
+              {otherNames.length > 0 && (
+                <View>
+                  <Pressable
+                    onPress={toggleNames}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: namesOpen }}
+                    accessibilityHint={
+                      namesOpen
+                        ? "Hide the other names for this occurrence"
+                        : "Show the other names for this occurrence"
+                    }
+                    style={({ pressed }) => [
+                      styles.moreNamesRow,
+                      { opacity: pressed ? 0.7 : 1 },
+                    ]}
+                  >
+                    <Feather
+                      name="chevron-down"
+                      size={14}
+                      color={colors.mutedForeground}
+                      style={namesOpen ? styles.chevronOpen : undefined}
+                    />
+                    <Text
+                      style={[
+                        styles.moreNamesLabel,
+                        { color: colors.mutedForeground },
+                      ]}
+                    >
+                      +{otherNames.length} more{" "}
+                      {otherNames.length === 1 ? "name" : "names"}
+                    </Text>
+                  </Pressable>
+                  {namesOpen && (
+                    <Text
+                      style={[
+                        styles.moreNamesList,
+                        { color: colors.foreground },
+                      ]}
+                      selectable
+                    >
+                      {otherNames.map((n, i) => (
+                        // Nested Text so the matched name can be picked out of a
+                        // flowing list without breaking it into rows.
+                        <Text
+                          key={n.rank}
+                          style={
+                            n.name === matchedName
+                              ? [styles.matchedName, { color: colors.primary }]
+                              : undefined
+                          }
+                        >
+                          {i > 0 ? " · " : ""}
+                          {n.name}
+                        </Text>
+                      ))}
+                    </Text>
+                  )}
+                </View>
+              )}
 
               <View style={styles.actions}>
                 <Pressable
@@ -325,6 +435,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Inter_500Medium",
   },
+  moreNamesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    // Undo the content container's 16px gap: the disclosure belongs to the
+    // badge row above it, not to the section below.
+    marginTop: -8,
+  },
+  moreNamesLabel: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  matchedName: { fontFamily: "Inter_700Bold" },
+  moreNamesList: {
+    marginTop: 6,
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 19,
+    // Aligns with the label: 14px chevron + 6px row gap.
+    paddingLeft: 20,
+  },
+  chevronOpen: { transform: [{ rotate: "180deg" }] },
   closeBtn: {
     width: 32,
     height: 32,

@@ -3,6 +3,7 @@ import { View, type StyleProp, type ViewStyle } from "react-native";
 import {
   AlertCircle,
   AlertTriangle,
+  ArrowLeftRight,
   ChevronDown,
   Download,
   DownloadCloud,
@@ -27,6 +28,7 @@ import {
 const ICONS = {
   "alert-circle": AlertCircle,
   "alert-triangle": AlertTriangle,
+  "arrow-left-right": ArrowLeftRight,
   "chevron-down": ChevronDown,
   download: Download,
   "download-cloud": DownloadCloud,
