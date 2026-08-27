@@ -54,19 +54,34 @@
 #   /{tileset}.json               ->  TileJSON
 
 tiles.sgss.ca {
-	# ---- Rate limiting: NOT ENABLED ------------------------------------
-	# Deliberately omitted. `rate_limit` is not in stock Caddy — it needs a
-	# custom build (xcaddy --with github.com/mholt/caddy-ratelimit), and
-	# swapping the Caddy binary on a box already serving sgss.ca risks the
-	# company website to protect a tile server. Bad trade.
+	# ---- Rate limiting: NOT IN CADDY, AND NO EDGE IN FRONT ---------------
+	# `rate_limit` is not in stock Caddy — it needs a custom build (xcaddy
+	# --with github.com/mholt/caddy-ratelimit), and swapping the Caddy binary
+	# on a box already serving sgss.ca risks the company website to protect a
+	# tile server. Rejected.
 	#
-	# The plan was for Cloudflare to do this at the edge instead. CHECK BEFORE
-	# RELYING ON THAT: as of 2026-08-27 it is NOT proxying. tiles.sgss.ca
-	# resolves straight to the OVH address and responses carry no cf-ray, so
-	# every tile request reaches this box. Verify with:
-	#     nslookup tiles.sgss.ca      # Cloudflare IPs, not 51.222.206.236?
-	#     curl -sI https://tiles.sgss.ca/style.json | grep -i cf-ray
-	# Until the orange cloud is on, this server has no burst protection at all.
+	# This site was designed assuming Cloudflare would absorb bursts at the
+	# edge. It never did and it will not: WHC's client-area Cloudflare CDN
+	# provisions the zone in THEIR partner account and proxies only the apex
+	# and www — subdomains cannot be orange-clouded there (confirmed twice by
+	# WHC support, and by asking amir/bella.ns.cloudflare.com directly: the
+	# apex answers with Cloudflare IPs, `tiles` answers with the OVH origin
+	# 51.222.206.236). SGS owns no Cloudflare account, and moving a zone that
+	# carries the company's email under p=quarantine was judged too
+	# destructive. Settled 2026-08-27. Every tile request reaches this box.
+	#
+	# What protects the origin instead (all in this directory):
+	#   * the box itself: 8 vCores / 24 GB, the 9.6 GiB archive set lives in
+	#     page cache, and OVH traffic is unmetered — the only real failure
+	#     mode is saturating the link shared with sgss.ca;
+	#   * tile-stats.sh   — measures real per-IP burst rates from the log
+	#                       below, so nothing is tuned blind;
+	#   * tile-guard.sh   — periodic aggregate-and-ban of abusive IPs via
+	#                       nftables, thresholds taken from tile-stats;
+	#   * nginx-tiles.conf.example — optional per-IP request *delay* sidecar,
+	#                       only if measurement shows the link at risk;
+	#   * the app (app/offline.tsx) treats download errors as transient and
+	#     rides out blips, so a throttle no longer costs a customer a pack.
 	#
 	# TENSION worth recording for whoever revisits this: the app's offline
 	# downloader legitimately fetches up to ~57,000 tiles in one burst when a
@@ -74,8 +89,8 @@ tiles.sgss.ca {
 	# 400 MB pack budget; it was ~15,000 under the old raster basemap and the
 	# figure moves whenever a source or zoom range changes). Any per-IP limit
 	# tight enough to stop a scraper is also tight enough to break that core
-	# paid feature. Read the access log below for real burst rates before
-	# imposing any limit.
+	# paid feature. Every threshold must sit well above one full pack, and
+	# must come from tile-stats.sh output, not from a guess.
 
 	# ---- Static assets: style, glyphs, sprites -------------------------
 	# go-pmtiles only serves tiles/TileJSON, so these come straight off disk.
@@ -130,8 +145,9 @@ tiles.sgss.ca {
 		}
 	}
 
-	# Compact access log; useful for judging real burst rates before
-	# tightening the rate limit.
+	# Access log. No `format` is set, so entries are Caddy's JSON (one object
+	# per line: .ts, .request.remote_ip, .request.uri, .status, .size ...).
+	# tile-stats.sh and tile-guard.sh both parse this file; keep it JSON.
 	log {
 		output file /var/log/caddy/tiles.log {
 			roll_size 100MiB

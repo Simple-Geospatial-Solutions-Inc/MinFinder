@@ -103,11 +103,23 @@ One-time VPS setup (as root; full commands in the file headers):
 1. Install the pinned **go-pmtiles** binary and the systemd unit — follow the
    `Install` steps at the top of `serve/pmtiles.service`. Edit `--public-url`
    in the unit to the real hostname first.
-2. Install **Caddy built with the rate-limit plugin**
-   (`xcaddy build --with github.com/mholt/caddy-ratelimit`, or the
-   caddyserver.com download builder). Copy `serve/Caddyfile.example` to
-   `/etc/caddy/Caddyfile`, replace `tiles.sgss.ca` and the ops email,
-   then `systemctl reload caddy`.
+2. Install the tile site block into the **shared, stock Caddy** — do not
+   replace the binary (the `caddy-ratelimit` plugin was rejected: swapping the
+   binary on a box that also serves sgss.ca risks the website to protect a
+   tile server) and do **not** touch `/etc/caddy/Caddyfile`, which the
+   `sgs-website` repo overwrites on every deploy. The file goes in `conf.d`:
+
+   ```sh
+   sudo mkdir -p /etc/caddy/conf.d
+   sudo install -m 644 serve/Caddyfile.example /etc/caddy/conf.d/tiles.caddy
+   sudo caddy validate --config /etc/caddy/Caddyfile   # must pass first
+   sudo systemctl reload caddy                         # reload, never restart
+   ```
+
+   Replace `tiles.sgss.ca` if the hostname differs. The ACME `email` is not
+   in this file — it lives in the website repo's global options block. The
+   full story (including the outage this layout prevents and the tmpfiles
+   rule for the log file) is in the header of `serve/Caddyfile.example`.
 3. Create the deploy user: an ssh account (default name `deploy`) that may run
    `sudo systemctl restart pmtiles` and `sudo systemctl is-active pmtiles`
    without a password (a one-line sudoers entry), plus write access to
@@ -135,9 +147,19 @@ data-only deploy never removes the live style.
 - The real public hostname (replaces `tiles.sgss.ca` in `config.env`
   → `BASEMAP_HOST`, in `serve/Caddyfile.example`, and in `--public-url` in
   `serve/pmtiles.service`), plus a DNS A/AAAA record pointing it at the VPS.
-- The VPS itself. Modest specs suffice — go-pmtiles is a small read-only Go
-  server and Caddy terminates TLS: 2 vCPU, 2–4 GB RAM, and disk ≥ 2× the
-  deployed `out/` size (≥ 40 GB is safe) on any systemd Linux (Ubuntu LTS).
+- The VPS itself — already provisioned: an **OVH VPS-3 2026** in BHS
+  (Beauharnois), **8 vCores / 24 GB RAM / 200 GB NVMe**, Ubuntu LTS, shared
+  with the sgss.ca website. Traffic on OVH VPS is unmetered (the panel has no
+  quota or counter for it), so a scraper costs nothing in money — the only
+  harm it can do is fill the link that sgss.ca also depends on. The whole
+  deployed archive set is 9.62 GiB, so it sits entirely in page cache with
+  ~14 GB to spare: this box will not run out of CPU, memory or disk I/O
+  serving tiles; network is the one resource worth watching. Public
+  bandwidth: OVH's comparison page (checked 2026-08-27) now lists the
+  2027 range only, where the 8 vCore / 24 GB / 200 GB tier appears as VPS-4
+  with "3 Gbps public bandwidth" and the tier below it at 2 Gbps. The exact
+  figure for the 2026 VPS-3 is not on that page — read it off the panel's
+  network tab and record it here.
 - The ops email for Let's Encrypt expiry notices (in the Caddyfile).
 - The deploy ssh user / sudoers entry from step 3 above.
 
@@ -255,11 +277,17 @@ authoring environment). Tick these off the first time each stage runs for real:
   `sudo systemctl restart pmtiles` for the ssh user (override with
   `DEPLOY_SUDO=""` if the user may systemctl directly).
 - [ ] **Caddy end-to-end**: TLS issuance and real behaviour under a
-  15k-tile offline-download burst are verified against docs only; watch
-  `/var/log/caddy/tiles.log` during the first real region download. No
-  `rate_limit` directive is present (stock Caddy lacks the plugin, and
-  replacing the shared Caddy binary would risk sgss.ca) — Cloudflare handles
-  burst absorption at the edge instead.
+  57k-request offline-download burst are verified against docs only. There is
+  no edge in front of this box and none is coming: WHC's client-area
+  Cloudflare proxies the apex and `www` only (confirmed by their support and
+  by querying the zone's nameservers directly — `tiles` returns the OVH
+  origin), no SGS-owned Cloudflare account exists, and moving a zone that
+  carries company email under `p=quarantine` was rejected. Every request
+  therefore lands on the origin, and no `rate_limit` directive is present
+  (stock Caddy lacks the plugin; replacing the shared binary would risk
+  sgss.ca). Measure before protecting: run `sh serve/tile-stats.sh` against
+  `/var/log/caddy/tiles.log` after the first real region download to get
+  actual per-IP burst rates, then size `serve/tile-guard.sh` from them.
 - [ ] **tar-over-ssh fallback in `deploy.sh`**: POSIX sh has no pipefail, so a
   failure of the *sending* side of the pipe is not detected. Prefer a host
   with rsync; after a tar deploy, trust the smoke test, not the exit status.

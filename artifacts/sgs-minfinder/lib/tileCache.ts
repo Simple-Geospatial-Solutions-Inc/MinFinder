@@ -108,12 +108,16 @@ const REFERENCE_SOURCE_ID = "openmaptiles";
  * the area, for the same download.
  *
  * OPERATIONAL CONSEQUENCE: a maximum-size pack is now a ~57,000-request,
- * ~400 MB burst, up from ~15,000 requests. VERIFIED 2026-08-27 that this lands
- * directly on the origin VPS: tiles.sgss.ca resolves to the OVH address with no
- * CDN in front (no cf-ray, Server: Caddy). The design assumed Cloudflare would
- * absorb it at the edge and it currently does not, so the tile server has no
- * burst protection of any kind — see the rate-limiting note in
- * basemap/serve/Caddyfile.example.
+ * ~400 MB burst, up from ~15,000 requests, and it lands directly on the origin
+ * VPS: tiles.sgss.ca has no CDN in front and none is coming (the hosting
+ * provider's Cloudflare proxies the apex and www only; settled 2026-08-27). What
+ * absorbs the burst instead is the box itself — 8 vCores / 24 GB with the whole
+ * archive set in page cache, on an unmetered link — plus the measurement and
+ * per-IP abuse guard in basemap/serve/ (tile-stats.sh, tile-guard.sh), whose
+ * thresholds must sit well above this figure. Any control there must throttle
+ * or delay rather than reject: app/offline.tsx rides out transient errors, but
+ * every rejected tile still costs a retry round-trip on rural LTE. If this
+ * number changes, re-measure with tile-stats.sh before trusting the thresholds.
  */
 export const PACK_BYTE_BUDGET = 400 * 1024 * 1024;
 
