@@ -53,6 +53,30 @@
 #   /{tileset}/{z}/{x}/{y}.{ext}  ->  tiles   (basemap/.mvt, terrain/.png, contours/.mvt)
 #   /{tileset}.json               ->  TileJSON
 
+# Upstream connection pool for the Caddy -> go-pmtiles loopback hop, shared by
+# both reverse_proxy blocks in the site below. Caddy's defaults keep only 32 idle
+# connections per upstream, so under a 57k-request burst every request beyond
+# that opens and closes a fresh loopback connection: each one parks an
+# ephemeral port in TIME_WAIT for 60 s, and the default ~28k-port range is
+# gone in well under a minute — Caddy then fails to connect and answers 502
+# mid-download. Keeping a few hundred connections open makes the hop
+# effectively free; sysctl-tiles.conf widens the port range as a backstop.
+# go-pmtiles is a Go net/http server with no idle timeout, so it will hold
+# these open for as long as Caddy does.
+#
+# Defined ABOVE the site block on purpose: the Caddyfile adapter records a
+# snippet when it reaches it and resolves `import` in token order, so a
+# snippet used before its definition is treated as a file path and fails
+# validation. The name carries a tiles_ prefix because snippet names are
+# global across the whole assembled Caddyfile, including the website's.
+(tiles_pmtiles_upstream) {
+	transport http {
+		keepalive 2m
+		keepalive_idle_conns 512
+		keepalive_idle_conns_per_host 512
+	}
+}
+
 tiles.sgss.ca {
 	# ---- Rate limiting: NOT IN CADDY, AND NO EDGE IN FRONT ---------------
 	# `rate_limit` is not in stock Caddy — it needs a custom build (xcaddy
@@ -125,6 +149,7 @@ tiles.sgss.ca {
 	@tilejson path /basemap.json /terrain.json /contours.json
 	handle @tilejson {
 		reverse_proxy 127.0.0.1:8081 {
+			import tiles_pmtiles_upstream
 			header_down Cache-Control "public, max-age=3600"
 		}
 	}
@@ -137,6 +162,7 @@ tiles.sgss.ca {
 	# browsers will reject the duplicated header.
 	handle {
 		reverse_proxy 127.0.0.1:8081 {
+			import tiles_pmtiles_upstream
 			# Tiles at a given URL only change on a basemap rebuild
 			# (~monthly at most); 30 days cuts repeat traffic while a
 			# rebuild still propagates within a month. The offline
@@ -148,10 +174,18 @@ tiles.sgss.ca {
 	# Access log. No `format` is set, so entries are Caddy's JSON (one object
 	# per line: .ts, .request.remote_ip, .request.uri, .status, .size ...).
 	# tile-stats.sh and tile-guard.sh both parse this file; keep it JSON.
+	#
+	# Rotation is sized for analysis, not just tidiness: tile-stats.sh needs
+	# a window that contains several complete pack downloads to give honest
+	# per-IP figures, and tile-guard.sh reads the live file. One JSON entry
+	# is ~1 KB with headers, so a 57k-request pack is ~50–60 MB of log; at
+	# 100MiB x 5 the window was roughly a fortnight and one busy day could
+	# roll a whole download out of it. 500MiB x 10 keeps ~5 GB at most
+	# (rotated files are gzipped, so far less on disk) on a 200 GB drive.
 	log {
 		output file /var/log/caddy/tiles.log {
-			roll_size 100MiB
-			roll_keep 5
+			roll_size 500MiB
+			roll_keep 10
 		}
 	}
 }

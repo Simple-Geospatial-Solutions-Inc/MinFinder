@@ -32,8 +32,9 @@ User=pmtiles
 Group=pmtiles
 WorkingDirectory=/srv/basemap
 
-# --interface 127.0.0.1: only Caddy (same host) may reach it; TLS, CORS for
-#   static assets, and rate limiting all live in Caddy.
+# --interface 127.0.0.1: only Caddy (same host) may reach it; TLS and CORS for
+#   static assets live in Caddy. (Abuse protection is NOT in Caddy — see
+#   tile-guard.sh and Caddyfile.example for what does it.)
 # --cors=*: go-pmtiles adds Access-Control-Allow-Origin on tile + TileJSON
 #   responses itself; the map is fetched from app origins we don't enumerate,
 #   and tiles are public data, so * is appropriate. Caddy must NOT add a
@@ -42,14 +43,18 @@ WorkingDirectory=/srv/basemap
 #   snippet in /etc/caddy/Caddyfile proxies to 127.0.0.1:8080, and that service
 #   binds *:8080 (all interfaces). A loopback-only `ss | grep 127.0.0.1` does
 #   not show wildcard binds, so check the Caddyfile too before reusing a port.
-# --cache-size 256: MB of LRU for pmtiles headers/directories (default 64);
-#   256 keeps all three archives' directories hot during 15k-tile bursts.
+# --cache-size 1024: MB of LRU for pmtiles headers and directories (default
+#   64). This cache holds directory entries only, never tile data — tile bytes
+#   come off disk via the page cache, and the whole 9.6 GiB archive set fits
+#   there on this 24 GB box. 256 was sized against a 2–4 GB VPS and was
+#   probably already enough; 1024 is free margin that guarantees every leaf
+#   directory of all five archives stays hot through a 57k-request burst.
 # --public-url: browser-facing base URL, embedded in TileJSON tile URLs.
 #   MUST match BASEMAP_HOST in basemap/config.env — edit before installing.
 ExecStart=/usr/local/bin/pmtiles serve /srv/basemap \
     --interface 127.0.0.1 \
     --port 8081 \
-    --cache-size 256 \
+    --cache-size 1024 \
     --cors=* \
     --public-url https://tiles.sgss.ca
 
