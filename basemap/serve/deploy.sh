@@ -40,6 +40,18 @@ DEPLOY_DIR="${DEPLOY_DIR:-/srv/basemap}"
 DEPLOY_SUDO="${DEPLOY_SUDO-sudo}"
 DEPLOY_SSH_KEY="${DEPLOY_SSH_KEY:-$HOME/.ssh/minfinder_tiles}"
 
+# Every ssh below passes the key explicitly instead of relying on the
+# operator's ~/.ssh/config. DEPLOY_SSH is deliberately an ADDRESS, not the
+# public tile hostname (a CDN-proxied name does not answer on port 22), and a
+# `Host tiles.example.ca` block then stops matching -- so the identity silently
+# stops being supplied and every command fails with
+# "Permission denied (publickey)" against a box you can ssh to by hand.
+# The containerised rsync below already passes -i for exactly this reason;
+# these calls need to agree with it.
+ssh_vps() {
+  ssh -i "$DEPLOY_SSH_KEY" -o StrictHostKeyChecking=accept-new "$DEPLOY_SSH" "$@"
+}
+
 if [ ! -f "$BASEMAP_OUT_DIR/basemap.pmtiles" ]; then
   echo "deploy: ERROR: $BASEMAP_OUT_DIR/basemap.pmtiles not found — run the build first." >&2
   exit 1
@@ -59,7 +71,7 @@ done
 cp ./preview.html "$BASEMAP_OUT_DIR/preview.html"
 
 echo "==> Deploying $BASEMAP_OUT_DIR -> $DEPLOY_SSH:$DEPLOY_DIR"
-ssh "$DEPLOY_SSH" "mkdir -p '$DEPLOY_DIR'"
+ssh_vps "mkdir -p '$DEPLOY_DIR'"
 
 # Transfer. rsync is strongly preferred: the payload is ~10 GB, and rsync is
 # both incremental (a re-deploy after a monthly basemap rebuild re-sends only
@@ -97,7 +109,7 @@ else
   # is invisible here -- verify with the smoke test below, never the exit status.
   echo "    WARNING: no rsync and no podman; falling back to tar over ssh."
   echo "    This is a full re-upload and cannot detect send-side failure."
-  ( cd "$BASEMAP_OUT_DIR" && tar -cf - . ) | ssh "$DEPLOY_SSH" "tar -xf - -C '$DEPLOY_DIR'"
+  ( cd "$BASEMAP_OUT_DIR" && tar -cf - . ) | ssh_vps "tar -xf - -C '$DEPLOY_DIR'"
 fi
 
 # --- Ownership/permissions -------------------------------------------------
@@ -113,13 +125,13 @@ fi
 # working, which is a confusing way to fail. The content is public map data
 # served to the internet anyway, so world-readable costs nothing.
 echo "==> Fixing ownership for the pmtiles service user"
-ssh "$DEPLOY_SSH" "$DEPLOY_SUDO chown -R ubuntu:pmtiles '$DEPLOY_DIR' && $DEPLOY_SUDO chmod 755 '$DEPLOY_DIR'"
+ssh_vps "$DEPLOY_SUDO chown -R ubuntu:pmtiles '$DEPLOY_DIR' && $DEPLOY_SUDO chmod 755 '$DEPLOY_DIR'"
 
 echo "==> Restarting pmtiles service"
 # Restart (not reload): go-pmtiles must reopen the replaced .pmtiles files.
 # Brief (<1s) tile outage; clients retry and cached tiles keep maps alive.
-ssh "$DEPLOY_SSH" "$DEPLOY_SUDO systemctl restart pmtiles"
-ssh "$DEPLOY_SSH" "$DEPLOY_SUDO systemctl is-active pmtiles" || {
+ssh_vps "$DEPLOY_SUDO systemctl restart pmtiles"
+ssh_vps "$DEPLOY_SUDO systemctl is-active pmtiles" || {
   echo "deploy: ERROR: pmtiles service failed to come back — check: ssh $DEPLOY_SSH journalctl -u pmtiles -n 50" >&2
   exit 1
 }

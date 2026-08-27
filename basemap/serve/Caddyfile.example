@@ -47,7 +47,7 @@ tiles.sgss.ca {
 	# Until the orange cloud is on, this server has no burst protection at all.
 	#
 	# TENSION worth recording for whoever revisits this: the app's offline
-	# downloader legitimately fetches up to ~51,000 tiles in one burst when a
+	# downloader legitimately fetches up to ~57,000 tiles in one burst when a
 	# user saves a maximum-size region (measured through lib/tileCache.ts at a
 	# 400 MB pack budget; it was ~15,000 under the old raster basemap and the
 	# figure moves whenever a source or zoom range changes). Any per-IP limit

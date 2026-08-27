@@ -35,7 +35,7 @@ function sourceZoomRange(
 
 // Expected bytes per tile POSITION — empty tiles counted as zero, because a
 // source that returns 204 for two thirds of its tiles costs far less than its
-// non-empty average suggests. MEASURED against the live server on 2026-08-26 by
+// non-empty average suggests. MEASURED against the live server on 2026-08-27 by
 // basemap/tools/measure-tiles.py, sampling 24 tiles per source per zoom across
 // two deliberately contrasting regions: Smithers (mountainous, contour- and
 // terrain-heavy) and Fort St John (flat northeast, oil and gas roads, little
@@ -46,12 +46,18 @@ function sourceZoomRange(
 // are served gzipped straight out of the archive and pass through Caddy as-is.
 //
 // The shape worth knowing: terrain PNGs are ~250-420 KB against 1-30 KB for a
-// vector tile, so hillshade alone is ~60% of an offline pack even though it
+// vector tile, so hillshade alone is ~62% of an offline pack even though it
 // stops at z11 and is only 1.6% of the tiles.
+//
+// These numbers dropped when the elevation source moved to MRDEM-30 bare
+// earth: contour tiles fell ~30% and terrain ~10%. Contours were previously
+// cut on the forest canopy, so they spent vertices tracing tree clumps rather
+// than ground. A pack costs 35.38 KB per deepest-zoom tile now, against 40.48
+// before, so the same budget buys ~14% more area.
 const BYTES_PER_TILE: Record<string, Record<number, number>> = {
   openmaptiles: { 8: 35098, 9: 26214, 10: 11202, 11: 5879, 12: 3580, 13: 2435 },
-  contours: { 12: 17205, 13: 5067 },
-  terrain: { 8: 397097, 9: 366878, 10: 328799, 11: 287238 },
+  contours: { 12: 11685, 13: 3648 },
+  terrain: { 8: 394558, 9: 360136, 10: 310377, 11: 253549 },
   bcroads: { 9: 25561, 10: 9373, 11: 3734, 12: 1593, 13: 438 },
   bccontext: { 8: 19792, 9: 7946, 10: 4142, 11: 2146, 12: 1540, 13: 1214 },
 };
@@ -95,13 +101,13 @@ const REFERENCE_SOURCE_ID = "openmaptiles";
  * plan actually pay, and they stay meaningful whatever the style contains.
  *
  * 400 MB is deliberate parity with what the tile cap already permitted (~380 MB
- * of Esri raster). Measured, the same ground area now costs ~111 MB, so holding
+ * of Esri raster). Measured, the same ground area now costs ~97 MB, so holding
  * the download size steady buys area rather than shrinking it. Checked through
- * this code at Smithers latitude: a 400 MB budget allows a 272 km square
- * (51,048 tiles), against 146 km for a 15,000-tile cap — 1.9x the span, 3.5x
+ * this code at Smithers latitude: a 400 MB budget allows a 288 km square
+ * (57,128 tiles), against 146 km for a 15,000-tile cap — 2.0x the span, 3.9x
  * the area, for the same download.
  *
- * OPERATIONAL CONSEQUENCE: a maximum-size pack is now a ~51,000-request,
+ * OPERATIONAL CONSEQUENCE: a maximum-size pack is now a ~57,000-request,
  * ~400 MB burst, up from ~15,000 requests. VERIFIED 2026-08-27 that this lands
  * directly on the origin VPS: tiles.sgss.ca resolves to the OVH address with no
  * CDN in front (no cf-ray, Server: Caddy). The design assumed Cloudflare would

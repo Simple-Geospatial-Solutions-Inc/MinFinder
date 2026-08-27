@@ -18,14 +18,14 @@
       "url": "https://tiles.sgss.ca/basemap.json",
       "minzoom": 0,
       "maxzoom": 14,
-      "attribution": "© OpenStreetMap contributors, © OpenMapTiles, Contains modified Copernicus DEM data, Contains information licensed under the Open Government Licence – British Columbia"
+      "attribution": "© OpenStreetMap contributors, © OpenMapTiles, Contains modified Copernicus DEM data, Contains information licensed under the Open Government Licence – Canada and the Open Government Licence – British Columbia"
     },
     "contours": {
       "type": "vector",
       "url": "https://tiles.sgss.ca/contours.json",
       "minzoom": 12,
       "maxzoom": 14,
-      "attribution": "© OpenStreetMap contributors, © OpenMapTiles, Contains modified Copernicus DEM data, Contains information licensed under the Open Government Licence – British Columbia"
+      "attribution": "© OpenStreetMap contributors, © OpenMapTiles, Contains modified Copernicus DEM data, Contains information licensed under the Open Government Licence – Canada and the Open Government Licence – British Columbia"
     },
     "terrain": {
       "type": "raster-dem",
@@ -34,21 +34,21 @@
       "tileSize": 512,
       "minzoom": 0,
       "maxzoom": 11,
-      "attribution": "© OpenStreetMap contributors, © OpenMapTiles, Contains modified Copernicus DEM data, Contains information licensed under the Open Government Licence – British Columbia"
+      "attribution": "© OpenStreetMap contributors, © OpenMapTiles, Contains modified Copernicus DEM data, Contains information licensed under the Open Government Licence – Canada and the Open Government Licence – British Columbia"
     },
     "bcroads": {
       "type": "vector",
       "url": "https://tiles.sgss.ca/roads.json",
       "minzoom": 9,
       "maxzoom": 14,
-      "attribution": "© OpenStreetMap contributors, © OpenMapTiles, Contains modified Copernicus DEM data, Contains information licensed under the Open Government Licence – British Columbia"
+      "attribution": "© OpenStreetMap contributors, © OpenMapTiles, Contains modified Copernicus DEM data, Contains information licensed under the Open Government Licence – Canada and the Open Government Licence – British Columbia"
     },
     "bccontext": {
       "type": "vector",
       "url": "https://tiles.sgss.ca/context.json",
       "minzoom": 5,
       "maxzoom": 14,
-      "attribution": "© OpenStreetMap contributors, © OpenMapTiles, Contains modified Copernicus DEM data, Contains information licensed under the Open Government Licence – British Columbia"
+      "attribution": "© OpenStreetMap contributors, © OpenMapTiles, Contains modified Copernicus DEM data, Contains information licensed under the Open Government Licence – Canada and the Open Government Licence – British Columbia"
     }
   },
   "sprite": "https://tiles.sgss.ca/sprite",

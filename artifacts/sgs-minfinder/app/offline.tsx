@@ -570,7 +570,7 @@ export default function OfflineScreen() {
             <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
               Pre-download map tiles so the basemap works without a data
               connection. MINFILE occurrence data is always available offline.
-              One region can cover up to about 270 km across.
+              One region can cover up to about 285 km across.
             </Text>
           </View>
         </View>
