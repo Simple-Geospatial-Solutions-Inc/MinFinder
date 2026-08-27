@@ -2,7 +2,13 @@ import { Feather } from "@/components/Icon";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -29,10 +35,7 @@ import { useColors } from "@/hooks/useColors";
 import { countOccurrencesInBbox, queryOccurrences } from "@/lib/db";
 import { formatBytes, formatShortDate } from "@/lib/format";
 import { setPendingFocusRegion } from "@/lib/mapFocus";
-import {
-  markPackResetNoticeSeen,
-  packResetNoticeSeen,
-} from "@/lib/packReset";
+import { markPackResetNoticeSeen, packResetNoticeSeen } from "@/lib/packReset";
 import {
   BASEMAP_STYLE_JSON,
   BASEMAP_STYLE_URL,
@@ -205,13 +208,19 @@ export default function OfflineScreen() {
   const [loading, setLoading] = useState(true);
   // Real on-disk size and download progress live behind an async native call,
   // so they're fetched per refresh into maps the rows can read synchronously.
-  const [statuses, setStatuses] = useState<Record<string, OfflinePackStatus>>({});
+  const [statuses, setStatuses] = useState<Record<string, OfflinePackStatus>>(
+    {},
+  );
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [userLoc, setUserLoc] = useState<Location.LocationObjectCoords | null>(null);
+  const [userLoc, setUserLoc] = useState<Location.LocationObjectCoords | null>(
+    null,
+  );
 
   const [showAdd, setShowAdd] = useState(false);
   // Current picker viewport [west, south, east, north]; updated as the map moves.
-  const [viewBounds, setViewBounds] = useState<Bounds>(regionToBounds(BC_REGION));
+  const [viewBounds, setViewBounds] = useState<Bounds>(
+    regionToBounds(BC_REGION),
+  );
   const [mapSize, setMapSize] = useState<{ w: number; h: number } | null>(null);
   const [nameInput, setNameInput] = useState("");
   const [nameEdited, setNameEdited] = useState(false);
@@ -476,7 +485,10 @@ export default function OfflineScreen() {
       return;
     }
     if (Platform.OS === "web") {
-      Alert.alert("Not supported", "Offline map download requires the mobile app.");
+      Alert.alert(
+        "Not supported",
+        "Offline map download requires the mobile app.",
+      );
       return;
     }
 
@@ -491,7 +503,9 @@ export default function OfflineScreen() {
       place = suggestion.place;
     }
     const existing = new Set(
-      packs.map((p) => ((p.metadata ?? {}) as PackMeta).name?.trim()).filter(Boolean),
+      packs
+        .map((p) => ((p.metadata ?? {}) as PackMeta).name?.trim())
+        .filter(Boolean),
     );
     let name = base;
     for (let i = 2; existing.has(name); i++) name = `${base} (${i})`;
@@ -558,7 +572,15 @@ export default function OfflineScreen() {
       Alert.alert("Download failed", String(err));
       setDownloading(null);
     }
-  }, [selectionBounds, tileCount, estBytes, tooLarge, nameInput, packs, refresh]);
+  }, [
+    selectionBounds,
+    tileCount,
+    estBytes,
+    tooLarge,
+    nameInput,
+    packs,
+    refresh,
+  ]);
 
   const cancelDownload = useCallback(async () => {
     const pack = activePack.current;
@@ -603,7 +625,10 @@ export default function OfflineScreen() {
     <View
       style={[
         styles.root,
-        { backgroundColor: colors.background, paddingBottom: insets.bottom + 16 },
+        {
+          backgroundColor: colors.background,
+          paddingBottom: insets.bottom + 16,
+        },
       ]}
     >
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -637,7 +662,9 @@ export default function OfflineScreen() {
           ]}
         >
           <Feather name="plus" size={18} color={colors.primaryForeground} />
-          <Text style={[styles.primaryBtnText, { color: colors.primaryForeground }]}>
+          <Text
+            style={[styles.primaryBtnText, { color: colors.primaryForeground }]}
+          >
             Download a new region
           </Text>
         </Pressable>
@@ -653,7 +680,8 @@ export default function OfflineScreen() {
               No offline regions yet
             </Text>
             <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
-              Tap "Download a new region" to cache the map of an area for offline use.
+              Tap "Download a new region" to cache the map of an area for
+              offline use.
             </Text>
           </View>
         ) : (
@@ -720,7 +748,12 @@ export default function OfflineScreen() {
                     {answer}
                   </Text>
 
-                  <Text style={[styles.regionMeta, { color: colors.mutedForeground }]}>
+                  <Text
+                    style={[
+                      styles.regionMeta,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
                     {formatSpanKm(bounds)}
                     {occCount != null
                       ? occCount === 0
@@ -729,7 +762,12 @@ export default function OfflineScreen() {
                       : ""}
                   </Text>
 
-                  <Text style={[styles.regionMeta, { color: colors.mutedForeground }]}>
+                  <Text
+                    style={[
+                      styles.regionMeta,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
                     {st
                       ? formatBytes(st.completedTileSize)
                       : formatBytes(meta.estBytes ?? 0)}{" "}
@@ -737,7 +775,12 @@ export default function OfflineScreen() {
                   </Text>
 
                   {saved ? (
-                    <Text style={[styles.regionMeta, { color: colors.mutedForeground }]}>
+                    <Text
+                      style={[
+                        styles.regionMeta,
+                        { color: colors.mutedForeground },
+                      ]}
+                    >
                       Downloaded {saved}
                     </Text>
                   ) : null}
@@ -763,7 +806,10 @@ export default function OfflineScreen() {
                       style={({ pressed }) => [
                         styles.actionBtn,
                         styles.actionIcon,
-                        { borderColor: colors.gold, opacity: pressed ? 0.6 : 1 },
+                        {
+                          borderColor: colors.gold,
+                          opacity: pressed ? 0.6 : 1,
+                        },
                       ]}
                     >
                       <Feather name="play" size={18} color={colors.goldDim} />
@@ -778,10 +824,17 @@ export default function OfflineScreen() {
                     style={({ pressed }) => [
                       styles.actionBtn,
                       styles.actionIcon,
-                      { borderColor: colors.destructive, opacity: pressed ? 0.6 : 1 },
+                      {
+                        borderColor: colors.destructive,
+                        opacity: pressed ? 0.6 : 1,
+                      },
                     ]}
                   >
-                    <Feather name="trash-2" size={18} color={colors.destructive} />
+                    <Feather
+                      name="trash-2"
+                      size={18}
+                      color={colors.destructive}
+                    />
                   </Pressable>
                 </View>
               </Pressable>
@@ -835,8 +888,14 @@ export default function OfflineScreen() {
         </Text>
       </ScrollView>
 
-      <Modal visible={showAdd} animationType="slide" onRequestClose={() => setShowAdd(false)}>
-        <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
+      <Modal
+        visible={showAdd}
+        animationType="slide"
+        onRequestClose={() => setShowAdd(false)}
+      >
+        <View
+          style={[styles.modalRoot, { backgroundColor: colors.background }]}
+        >
           <View
             style={[
               styles.modalHeader,
@@ -846,7 +905,11 @@ export default function OfflineScreen() {
               },
             ]}
           >
-            <Pressable onPress={() => setShowAdd(false)} hitSlop={8} disabled={!!downloading}>
+            <Pressable
+              onPress={() => setShowAdd(false)}
+              hitSlop={8}
+              disabled={!!downloading}
+            >
               <Feather name="x" size={22} color="#F4F1EA" />
             </Pressable>
             <Text style={styles.modalTitle}>Select a region</Text>
@@ -895,7 +958,12 @@ export default function OfflineScreen() {
             ]}
           >
             <View>
-              <Text style={[styles.modalInfoLabel, { color: colors.mutedForeground }]}>
+              <Text
+                style={[
+                  styles.modalInfoLabel,
+                  { color: colors.mutedForeground },
+                ]}
+              >
                 Name this region
               </Text>
               <TextInput
@@ -921,36 +989,57 @@ export default function OfflineScreen() {
 
             <View style={styles.tileInfoRow}>
               <View>
-                <Text style={[styles.modalInfoLabel, { color: colors.mutedForeground }]}>
+                <Text
+                  style={[
+                    styles.modalInfoLabel,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
                   Estimated size
                 </Text>
                 <Text
                   style={[
                     styles.modalInfoValue,
-                    { color: tooLarge ? colors.destructive : colors.foreground },
+                    {
+                      color: tooLarge ? colors.destructive : colors.foreground,
+                    },
                   ]}
                 >
                   {formatBytes(estBytes)}
                 </Text>
               </View>
               <View>
-                <Text style={[styles.modalInfoLabel, { color: colors.mutedForeground }]}>
+                <Text
+                  style={[
+                    styles.modalInfoLabel,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
                   Area
                 </Text>
                 <Text
                   style={[
                     styles.modalInfoValue,
-                    { color: tooLarge ? colors.destructive : colors.foreground },
+                    {
+                      color: tooLarge ? colors.destructive : colors.foreground,
+                    },
                   ]}
                 >
                   {formatSpanKm(selectionBounds)}
                 </Text>
               </View>
               <View>
-                <Text style={[styles.modalInfoLabel, { color: colors.mutedForeground }]}>
+                <Text
+                  style={[
+                    styles.modalInfoLabel,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
                   Zoom levels
                 </Text>
-                <Text style={[styles.modalInfoValue, { color: colors.foreground }]}>
+                <Text
+                  style={[styles.modalInfoValue, { color: colors.foreground }]}
+                >
                   {MIN_ZOOM_DEFAULT}–{MAX_ZOOM_DEFAULT}
                 </Text>
               </View>
@@ -972,7 +1061,9 @@ export default function OfflineScreen() {
                     }}
                   />
                 </View>
-                <Text style={[styles.progressText, { color: colors.foreground }]}>
+                <Text
+                  style={[styles.progressText, { color: colors.foreground }]}
+                >
                   {Math.round(downloading.percentage)}% ·{" "}
                   {downloading.tiles.toLocaleString()} tiles
                 </Text>
@@ -983,7 +1074,9 @@ export default function OfflineScreen() {
                     { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
                   ]}
                 >
-                  <Text style={[styles.cancelBtnText, { color: colors.foreground }]}>
+                  <Text
+                    style={[styles.cancelBtnText, { color: colors.foreground }]}
+                  >
                     Cancel
                   </Text>
                 </Pressable>
@@ -1003,7 +1096,9 @@ export default function OfflineScreen() {
                 <Feather
                   name="download"
                   size={18}
-                  color={tooLarge ? colors.mutedForeground : colors.primaryForeground}
+                  color={
+                    tooLarge ? colors.mutedForeground : colors.primaryForeground
+                  }
                 />
                 <Text
                   style={[
