@@ -186,6 +186,32 @@ Copernicus statement on the app's attribution screen. The single string all of
 this collapses to lives in `build/06-style.sh` as `ATTR`, and is mirrored in the
 app — keep the two in step.
 
+## The tile server shares Caddy with the company website
+
+`/etc/caddy/Caddyfile` on the VPS is **owned by the `sgs-website` repo**, not
+this one. Its `deploy/deploy.sh` installs `deploy/Caddyfile.production` over
+that file on every deploy where the two differ, and does `git reset --hard
+origin/main` first — so neither the deployed file nor the checkout is a place
+to keep anything.
+
+The tile server's config therefore lives in `/etc/caddy/conf.d/tiles.caddy`,
+pulled in by one line in `Caddyfile.production`:
+
+```
+import /etc/caddy/conf.d/*.caddy
+```
+
+**If tiles.sgss.ca goes dark right after someone ships the website, check that
+line first.** Losing it removes the site block, and Caddy then answers TLS with
+alert 80 and no certificate — which shows up in the app as a blank map, not as
+an obvious server error. That is exactly how it failed on 2026-08-27.
+
+```sh
+curl -sI https://tiles.sgss.ca/style.json          # dead? then:
+ssh <vps> 'grep -n "^import /etc/caddy/conf.d" /etc/caddy/Caddyfile'
+ssh <vps> 'ls -l /etc/caddy/conf.d/'
+```
+
 ## UNVERIFIED — check on the first real run
 
 Everything below is consistent with upstream documentation/source but could

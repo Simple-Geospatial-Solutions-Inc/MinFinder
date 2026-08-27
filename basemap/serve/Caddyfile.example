@@ -1,23 +1,45 @@
 # Caddyfile.example — the MinFinder tile-server SITE BLOCK.
 #
-# !! DO NOT copy this file over /etc/caddy/Caddyfile. !!
-# The VPS runs a single shared Caddy that already terminates sgss.ca and
-# www.sgss.ca (and possibly more). Replacing the file takes those sites down.
-# APPEND the `tiles.sgss.ca { ... }` block below to the existing Caddyfile:
+# INSTALL IT AS ITS OWN FILE, NOT INTO /etc/caddy/Caddyfile:
 #
-#   sudo cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date -u +%Y%m%dT%H%M%SZ)
-#   sudo tee -a /etc/caddy/Caddyfile < this-block
+#   sudo mkdir -p /etc/caddy/conf.d
+#   sudo install -m 644 this-file /etc/caddy/conf.d/tiles.caddy
 #   sudo caddy validate --config /etc/caddy/Caddyfile   # MUST pass first
 #   sudo systemctl reload caddy                         # reload, NEVER restart
 #
+# WHY, learned the hard way on 2026-08-27. The VPS runs one shared Caddy that
+# also terminates sgss.ca, and that config is OWNED BY ANOTHER REPO: the
+# sgs-website deploy script installs its own deploy/Caddyfile.production over
+# /etc/caddy/Caddyfile whenever the two differ. An earlier revision of this
+# file told you to APPEND the block below to /etc/caddy/Caddyfile. A routine
+# website deploy then silently removed it, Caddy was left with no site for
+# tiles.sgss.ca, and it answered TLS with alert 80 and no certificate — the
+# tile server was down and the app's map rendered blank. The certificates were
+# valid the whole time; only the config was gone.
+#
+# sgs-website's Caddyfile.production now carries a single line:
+#     import /etc/caddy/conf.d/*.caddy
+# so anything in conf.d survives its deploys and this file never has to touch
+# shared config again. If the tile server ever goes dark right after someone
+# ships the website, check that line still exists before anything else.
+#
 # `reload` keeps in-flight connections; `restart` drops them for every site on
-# the box. If `validate` fails, restore the .bak and stop — an invalid
-# Caddyfile takes down every site, not just this one.
+# the box. If `validate` fails, fix it and stop — an invalid Caddyfile takes
+# down every site, not just this one.
+#
+# THE LOG FILE MUST EXIST AND BE caddy-OWNED before the website deploy runs.
+# That script runs `caddy validate` as root, and validation provisions log
+# writers — so if /var/log/caddy/tiles.log is missing, root creates it, the
+# caddy user cannot open it, and THEIR reload fails because of our config.
+# A tmpfiles rule keeps it correct across rotation and reboots:
+#     /etc/tmpfiles.d/caddy-tiles.conf:
+#     f /var/log/caddy/tiles.log 0640 caddy caddy -
 #
 # The GLOBAL OPTIONS block (the bare `{ ... }` at the top of a Caddyfile) is
-# deliberately NOT included here. A Caddyfile may contain exactly one, and the
-# existing file almost certainly has it already. Adding a second is a parse
-# error. If an `email` is not already set there, add it to the existing block.
+# deliberately NOT included here. A Caddyfile may contain exactly one, it lives
+# in the website repo's Caddyfile.production, and adding a second anywhere —
+# including in an imported file — is a parse error. If an `email` is not set
+# there, add it to that block rather than here.
 #
 # Layout on the VPS (rsync'd by serve/deploy.sh):
 #   /srv/basemap/basemap.pmtiles     \
