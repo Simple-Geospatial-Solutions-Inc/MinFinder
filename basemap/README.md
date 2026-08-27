@@ -234,6 +234,42 @@ ssh <vps> 'grep -n "^import /etc/caddy/conf.d" /etc/caddy/Caddyfile'
 ssh <vps> 'ls -l /etc/caddy/conf.d/'
 ```
 
+## Load: what protects the origin
+
+There is no CDN in front of `tiles.sgss.ca` and none is coming (the header of
+`serve/Caddyfile.example` records why). Every request lands on the VPS, and
+the VPS is more than big enough for that — the one thing it can run out of is
+the network link it shares with sgss.ca. The controls below are layered from
+always-on to optional; every threshold in them comes from measurement, and
+every one of them **throttles or delays rather than rejects**, because a
+rejected tile still costs a rural-LTE round-trip even though the app now rides
+errors out.
+
+| Layer | File | When |
+|---|---|---|
+| Kernel network tuning (backlogs, ephemeral ports) | `serve/sysctl-tiles.conf` | install once |
+| Caddy → go-pmtiles connection pool | snippet `tiles_pmtiles_upstream` in `serve/Caddyfile.example` | part of the site block |
+| Measurement: peak req/s and bytes/s, per-IP, repeat share | `serve/tile-stats.sh` | after the first real region download, and after any change to pack size |
+| Per-address abuse ban via nftables | `serve/tile-guard.sh` + `.service` + `.timer` | enable any time — report-only until thresholds are set from tile-stats |
+| Per-address request-rate *delay* (nginx sidecar) | `serve/nginx-tiles.conf.example` | only if measurement shows the link at risk |
+| Client rides out blips and deploys (native retry + stall watchdog) | `artifacts/sgs-minfinder/app/offline.tsx` | ships with the app |
+
+Bringing it up, in order:
+
+1. `sh serve/tile-stats.sh` against a copied-down `tiles.log` — confirm it
+   parses (the log is JSON) and the numbers are sane. Then download a real
+   region from the app and run it again to capture actual burst rates.
+2. `caddy validate --config /etc/caddy/Caddyfile` **must** pass before any
+   reload, and use `systemctl reload caddy`, never `restart` — an invalid
+   Caddyfile takes sgss.ca down with the tiles.
+3. `sysctl -p /etc/sysctl.d/60-tiles.conf`, confirm the values took, then
+   re-run a download and watch `ss -s` for `timewait` growth.
+4. `tile-guard.sh --dry-run` against real log data **during** a legitimate pack
+   download; it must ban nothing. Only then set thresholds and enable the timer.
+5. From the app: start a pack download, `systemctl restart pmtiles`
+   mid-download (what every `deploy.sh` run does), and confirm the download
+   recovers instead of alerting "Download failed".
+
 ## UNVERIFIED — check on the first real run
 
 Everything below is consistent with upstream documentation/source but could
@@ -293,5 +329,6 @@ authoring environment). Tick these off the first time each stage runs for real:
   with rsync; after a tar deploy, trust the smoke test, not the exit status.
 - [ ] **Executable bits on fresh checkouts**: this repo is authored on Windows
   (`core.filemode=false`), so `+x` must be recorded at commit time:
-  `git update-index --chmod=+x basemap/build/*.sh basemap/serve/deploy.sh`.
-  `build/all.sh` invokes each step via `sh` so it works either way.
+  `git update-index --chmod=+x basemap/build/*.sh basemap/serve/*.sh`.
+  `build/all.sh` invokes each step via `sh` so it works either way, and
+  `tile-guard.service` runs its script by absolute path from `install -m 755`.

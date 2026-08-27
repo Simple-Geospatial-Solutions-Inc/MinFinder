@@ -1,0 +1,38 @@
+# tile-guard.service — one run of tile-guard.sh; driven by tile-guard.timer.
+#
+# Install steps are in the header of tile-guard.sh. Thresholds and the
+# allow-list come from /etc/default/tile-guard (shell VAR=value lines); with
+# no thresholds set every run is report-only, so enabling the timer before
+# tile-stats.sh has produced real numbers is safe.
+
+[Unit]
+Description=Ban abusive tile clients (MinFinder tile server)
+Documentation=file:/usr/local/sbin/tile-guard.sh
+After=network-online.target nftables.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/tile-guard
+ExecStart=/usr/local/sbin/tile-guard.sh
+
+# Runs as root because nft needs CAP_NET_ADMIN and the log is 0640 caddy:caddy,
+# but it only reads one file and talks to netfilter, so everything else is
+# locked down. CAP_DAC_READ_SEARCH is what lets root read the caddy-owned log
+# once CAP_DAC_OVERRIDE is gone.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_READ_SEARCH
