@@ -30,6 +30,10 @@ import { countOccurrencesInBbox, queryOccurrences } from "@/lib/db";
 import { formatBytes, formatShortDate } from "@/lib/format";
 import { setPendingFocusRegion } from "@/lib/mapFocus";
 import {
+  markPackResetNoticeSeen,
+  packResetNoticeSeen,
+} from "@/lib/packReset";
+import {
   BASEMAP_STYLE_JSON,
   BASEMAP_STYLE_URL,
   PACK_STYLE_VERSION,
@@ -106,6 +110,31 @@ async function styleUrlIsUsable(url: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Tell the user their saved regions are about to be removed, and wait for them
+ * to acknowledge it before anything is deleted.
+ *
+ * Deliberately blocking rather than a toast: this is the only warning they get
+ * that a region they may be relying on for a trip is gone and has to be
+ * re-downloaded while they still have a connection. `cancelable: false` plus an
+ * onDismiss resolver covers both platforms — Android can dismiss an alert by
+ * tapping outside, and a promise that never settles would hang refresh() and
+ * leave the screen empty forever.
+ */
+function confirmPackReset(count: number): Promise<void> {
+  const regions = count === 1 ? "1 saved region" : `${count} saved regions`;
+  return new Promise((resolve) => {
+    Alert.alert(
+      "Offline maps need re-downloading",
+      `MinFinder now uses its own basemap, with shaded relief, contours and BC resource roads. ` +
+        `Your ${regions} came from the old map and can't be used with it, so ${count === 1 ? "it" : "they"} will be removed.` +
+        `\n\nRe-download before you head out — that needs a connection.`,
+      [{ text: "OK", onPress: () => resolve() }],
+      { cancelable: false, onDismiss: () => resolve() },
+    );
+  });
 }
 
 function formatKm(km: number): string {
@@ -194,9 +223,31 @@ export default function OfflineScreen() {
     tiles: number;
   } | null>(null);
 
+  const resetNoticeInFlight = useRef(false);
+
   const refresh = useCallback(async () => {
     try {
       const all = await OfflineManager.getPacks();
+
+      // Warn BEFORE deleting, once per PACK_STYLE_VERSION. Packs from an older
+      // version hold tiles this build never requests, so they have to go — but
+      // going silently is what makes it a bad experience rather than a
+      // necessary one.
+      const stale = all.filter(
+        (p) =>
+          ((p.metadata ?? {}) as PackMeta).styleVersion !== PACK_STYLE_VERSION,
+      );
+      if (stale.length > 0 && !resetNoticeInFlight.current) {
+        resetNoticeInFlight.current = true;
+        try {
+          if (!(await packResetNoticeSeen())) {
+            await confirmPackReset(stale.length);
+            await markPackResetNoticeSeen();
+          }
+        } finally {
+          resetNoticeInFlight.current = false;
+        }
+      }
 
       // Drop packs from an older PACK_STYLE_VERSION: they hold tiles this build
       // never requests, so listing one would wrongly promise offline coverage.
