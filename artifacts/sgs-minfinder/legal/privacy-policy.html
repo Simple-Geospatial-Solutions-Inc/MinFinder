@@ -168,7 +168,7 @@
       <li>The mineral-occurrence records, downloaded map tiles, and app settings live <strong>on your device</strong>. There is no MinFinder account and no automatic cloud backup.</li>
       <li>Your <strong>location is used on your device</strong> to center the map and point you toward an occurrence — it is not sent to us.</li>
       <li>We <strong>do not sell</strong> your personal information, and we do not use advertising networks or analytics/tracking SDKs.</li>
-      <li>Maps are drawn with Google Maps and Esri topographic tiles, and in-app purchases are handled by the app store and RevenueCat.</li>
+      <li>Map tiles come from <strong>our own tile server</strong> (tiles.sgss.ca), so viewing the map sends the map area you are looking at to us; in-app purchases are handled by the app store and RevenueCat.</li>
       <li>You can remove all app data at any time by uninstalling the app.</li>
     </ul>
   </div>
@@ -212,13 +212,13 @@
         <tr>
           <td>Map view</td>
           <td>The map area you are viewing (which reflects the location you are looking at)</td>
-          <td>Google Maps (map engine) and Esri / ArcGIS (topographic tiles)</td>
-          <td>To render the basemap beneath the occurrence pins</td>
+          <td>Simple Geospatial Solutions (tiles.sgss.ca, delivered through Cloudflare)</td>
+          <td>To render the basemap beneath the occurrence pins. Our server keeps standard web access logs, which include IP addresses and the tiles requested; we use them only to operate the service and do not link them to any person.</td>
         </tr>
         <tr>
           <td>Offline map download</td>
           <td>The region and zoom levels you choose to save</td>
-          <td>Esri / ArcGIS</td>
+          <td>Simple Geospatial Solutions (tiles.sgss.ca, delivered through Cloudflare)</td>
           <td>To fetch the map tiles so they are available offline later</td>
         </tr>
         <tr>
@@ -229,8 +229,8 @@
         </tr>
         <tr>
           <td>Opening a reference link</td>
-          <td>A standard web request when you tap an external link (e.g. the MINFILE or Esri source pages)</td>
-          <td>minfile.gov.bc.ca / esri.com</td>
+          <td>A standard web request when you tap an external link (e.g. the MINFILE or map data source pages)</td>
+          <td>minfile.gov.bc.ca / openstreetmap.org / www2.gov.bc.ca</td>
           <td>To open the source website you chose to view</td>
         </tr>
       </tbody>
@@ -248,7 +248,7 @@
   <p>The app relies on the following services. Their handling of any data they receive is governed by their own privacy policies:</p>
   <ul>
     <li>Google Maps — <a href="https://policies.google.com/privacy" rel="noopener">policies.google.com/privacy</a></li>
-    <li>Esri / ArcGIS (basemap tiles) — <a href="https://www.esri.com/en-us/privacy/privacy-statements/privacy-statement" rel="noopener">esri.com privacy statement</a></li>
+    <li>Cloudflare (content delivery for our tile server) — <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">cloudflare.com privacy policy</a></li>
     <li>RevenueCat — <a href="https://www.revenuecat.com/privacy" rel="noopener">revenuecat.com/privacy</a></li>
     <li>Apple App Store / Google Play — payment processing for in-app purchases</li>
   </ul>
@@ -326,9 +326,11 @@
   <div class="footer">
     <p>
       © 2026 Simple Geospatial Solutions Inc. MINFILE data © Province of British Columbia (Ministry of
-      Energy, Mines and Low Carbon Innovation). Basemap tiles © Esri, HERE, Garmin, FAO, NOAA, USGS,
-      © OpenStreetMap contributors, and the GIS User Community. Google and Google Maps are trademarks of
-      Google LLC; use of these marks does not imply endorsement.
+      Energy, Mines and Low Carbon Innovation). Basemap © OpenStreetMap contributors, © OpenMapTiles;
+      elevation from MRDEM-30 (Natural Resources Canada) and modified Copernicus DEM data; contains
+      information licensed under the Open Government Licence – Canada and the Open Government
+      Licence – British Columbia. Google and Google Maps are trademarks of Google LLC; use of these
+      marks does not imply endorsement.
     </p>
   </div>
 

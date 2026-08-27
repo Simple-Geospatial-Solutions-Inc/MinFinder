@@ -90,7 +90,7 @@ BUILT FOR THE FIELD
 - Map every occurrence across BC, clustered so the big picture is instantly clear.
 - Filter by status - Producer, Past Producer, Developed Prospect, Prospect, Showing, Anomaly - each colour-coded on the map.
 - Search by name or MINFILE number and fly straight to any site.
-- Real topographic basemaps from Esri so terrain, contours, and access roads are right there.
+- Real topographic basemaps with shaded relief, 20 m contours, and BC resource roads, so terrain and access are right there.
 
 THE FULL GEOLOGICAL RECORD
 Tap any occurrence for the official details: status, host rock, deposit class, elevation, latitude/longitude (decimal and DMS), and UTM coordinates in both NAD27 and NAD83. One tap opens the official BC MINFILE record online.
@@ -105,7 +105,7 @@ PREMIUM
 A one-time or subscription purchase unlocks compass navigation and the full expanded occurrence details. The map, search, filtering, and offline region downloads are free.
 
 DATA SOURCES
-Mineral data: BC Ministry of Energy, Mines and Low Carbon Innovation (MINFILE), https://minfile.gov.bc.ca/. Basemap: Esri World Topographic Map.
+Mineral data: BC Ministry of Energy, Mines and Low Carbon Innovation (MINFILE), https://minfile.gov.bc.ca/. Basemap: © OpenStreetMap contributors, © OpenMapTiles; elevation from MRDEM-30 (Natural Resources Canada) and modified Copernicus DEM data; contains information licensed under the Open Government Licence – Canada and the Open Government Licence – British Columbia.
 
 SGS MinFinder is an independent, third-party app. It is not affiliated with, endorsed by, or operated by the Government of British Columbia or any government agency.
 
@@ -182,6 +182,6 @@ npx eas-cli@latest env:update --environment production --name EXPO_PUBLIC_REVENU
 
 ## 6. Notes
 
-- **Data:** BC Ministry of Energy, Mines and Low Carbon Innovation (MINFILE). Basemap: Esri World Topographic Map. Attribution is in the description.
+- **Data:** BC Ministry of Energy, Mines and Low Carbon Innovation (MINFILE). Basemap: OpenStreetMap / OpenMapTiles, MRDEM-30 and Copernicus DEM under the Open Government Licence – Canada, and BC government layers under the Open Government Licence – British Columbia. Attribution is in the description.
 - **Accuracy:** build ships 16,259 records; advertise "16,000+". Do **not** use "100,000+".
 - **RevenueCat** entitlement id used in code is `SGS MinFinder Pro` (see `lib/revenuecat.tsx`). The app unlocks Pro when this entitlement is active, so every product must map to it in the RevenueCat dashboard.

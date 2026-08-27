@@ -29,7 +29,11 @@ import { useColors } from "@/hooks/useColors";
 import { countOccurrencesInBbox, queryOccurrences } from "@/lib/db";
 import { formatBytes, formatShortDate } from "@/lib/format";
 import { setPendingFocusRegion } from "@/lib/mapFocus";
-import { ESRI_STYLE_JSON, ESRI_STYLE_URL, PACK_STYLE_VERSION } from "@/lib/mapStyle";
+import {
+  BASEMAP_STYLE_JSON,
+  BASEMAP_STYLE_URL,
+  PACK_STYLE_VERSION,
+} from "@/lib/mapStyle";
 import {
   boundsCenter,
   boundsToPlaceName,
@@ -41,7 +45,12 @@ import {
   type Region,
 } from "@/lib/mapGeo";
 import { distanceMeters } from "@/lib/geo";
-import { countTilesInRegion, metersPerPixelAt } from "@/lib/tileCache";
+import {
+  countTilesInRegion,
+  estimatePackBytes,
+  metersPerPixelAt,
+  PACK_BYTE_BUDGET,
+} from "@/lib/tileCache";
 
 const BC_REGION: Region = {
   latitude: 54.5,
@@ -52,18 +61,13 @@ const BC_REGION: Region = {
 
 const MIN_ZOOM_DEFAULT = 8;
 const MAX_ZOOM_DEFAULT = 13;
-// Was 4,000 while countTilesInRegion under-counted by ~4x, so it really allowed
-// ~15,400 tiles. Raised to keep the selectable area the same now that the count
-// is honest, rather than silently cutting it to a quarter. Lower this if the cap
-// should mean what it says (4,000 tiles is roughly 100 MB, 15,000 roughly 380).
-const TILE_LIMIT = 15000;
 // Inset of the gold selection frame inside the picker map, in points. Shared by
 // the frame's style and the bounds math so the two cannot drift apart.
 const SELECTION_INSET = 24;
-// Ground resolution of the deepest cached level, at BC latitudes. Shown so users
-// aren't surprised when the basemap blurs past this. Derived rather than fixed:
-// a 256px source caches one XYZ level deeper than MAX_ZOOM_DEFAULT implies, so
-// the detail is twice as fine as the hardcoded 12 m/px used to claim.
+// Ground resolution of the deepest cached level, at BC latitudes. With vector
+// tiles this is where the map stops gaining DETAIL, not where it blurs — it
+// overzooms cleanly past this, unlike the raster basemap it replaced, so the
+// copy beside it says "detail to" rather than warning about pixelation.
 const MAX_DETAIL_M_PER_PX = Math.round(
   metersPerPixelAt(BC_REGION.latitude, MAX_ZOOM_DEFAULT),
 );
@@ -75,6 +79,8 @@ interface PackMeta {
   minZoom?: number;
   maxZoom?: number;
   estTiles?: number;
+  /** Pre-download size estimate in bytes; shown until real status arrives. */
+  estBytes?: number;
   createdAt?: number;
   /** Reverse-geocoded place name, resolved at download time while online. */
   place?: string;
@@ -192,8 +198,8 @@ export default function OfflineScreen() {
     try {
       const all = await OfflineManager.getPacks();
 
-      // Drop packs from before the style-URL fix: they contain no Esri tiles,
-      // so listing one would wrongly promise that its area works offline.
+      // Drop packs from an older PACK_STYLE_VERSION: they hold tiles this build
+      // never requests, so listing one would wrongly promise offline coverage.
       const list: OfflinePack[] = [];
       for (const p of all) {
         const meta = (p.metadata ?? {}) as PackMeta;
@@ -337,7 +343,22 @@ export default function OfflineScreen() {
     [west, south, east, north],
   );
 
-  const tooLarge = tileCount > TILE_LIMIT;
+  // Bytes, not tiles, decide whether a region is allowed: that is what fills
+  // the phone and what the download actually costs on a rural connection.
+  const estBytes = useMemo(
+    () =>
+      estimatePackBytes(
+        south,
+        north,
+        west,
+        east,
+        MIN_ZOOM_DEFAULT,
+        MAX_ZOOM_DEFAULT,
+      ),
+    [west, south, east, north],
+  );
+
+  const tooLarge = estBytes > PACK_BYTE_BUDGET;
 
   // Nudge when the selection crosses the cap — the button greying out is easy
   // to miss while panning.
@@ -399,7 +420,7 @@ export default function OfflineScreen() {
     if (tooLarge) {
       Alert.alert(
         "Region too large",
-        `Selected area requires ${tileCount.toLocaleString()} tiles. Zoom in further (limit ${TILE_LIMIT.toLocaleString()}).`,
+        `Selected area is about ${formatBytes(estBytes)}. Zoom in further (limit ${formatBytes(PACK_BYTE_BUDGET)}).`,
       );
       return;
     }
@@ -425,7 +446,7 @@ export default function OfflineScreen() {
     for (let i = 2; existing.has(name); i++) name = `${base} (${i})`;
 
     setDownloading({ percentage: 0, tiles: 0 });
-    if (!(await styleUrlIsUsable(ESRI_STYLE_URL))) {
+    if (!(await styleUrlIsUsable(BASEMAP_STYLE_URL))) {
       setDownloading(null);
       Alert.alert(
         "Download unavailable",
@@ -436,8 +457,9 @@ export default function OfflineScreen() {
     try {
       const pack = await OfflineManager.createPack(
         {
-          // Must be a URL, not ESRI_STYLE_JSON — see ESRI_STYLE_URL in lib/mapStyle.ts.
-          mapStyle: ESRI_STYLE_URL,
+          // Must be a URL, not BASEMAP_STYLE_JSON — see BASEMAP_STYLE_URL in
+          // lib/mapStyle.ts.
+          mapStyle: BASEMAP_STYLE_URL,
           bounds: selectionBounds,
           minZoom: MIN_ZOOM_DEFAULT,
           maxZoom: MAX_ZOOM_DEFAULT,
@@ -446,6 +468,7 @@ export default function OfflineScreen() {
             minZoom: MIN_ZOOM_DEFAULT,
             maxZoom: MAX_ZOOM_DEFAULT,
             estTiles: tileCount,
+            estBytes,
             createdAt: Date.now(),
             place,
             styleVersion: PACK_STYLE_VERSION,
@@ -484,7 +507,7 @@ export default function OfflineScreen() {
       Alert.alert("Download failed", String(err));
       setDownloading(null);
     }
-  }, [selectionBounds, tileCount, tooLarge, nameInput, packs, refresh]);
+  }, [selectionBounds, tileCount, estBytes, tooLarge, nameInput, packs, refresh]);
 
   const cancelDownload = useCallback(async () => {
     const pack = activePack.current;
@@ -547,7 +570,7 @@ export default function OfflineScreen() {
             <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
               Pre-download map tiles so the basemap works without a data
               connection. MINFILE occurrence data is always available offline.
-              One region can cover up to about 165 km across.
+              One region can cover up to about 270 km across.
             </Text>
           </View>
         </View>
@@ -656,9 +679,10 @@ export default function OfflineScreen() {
                   </Text>
 
                   <Text style={[styles.regionMeta, { color: colors.mutedForeground }]}>
-                    {st ? formatBytes(st.completedTileSize) : "…"} ·{" "}
-                    {(st?.completedTileCount ?? meta.estTiles ?? 0).toLocaleString()}{" "}
-                    tiles · detail to ~{MAX_DETAIL_M_PER_PX} m/pixel
+                    {st
+                      ? formatBytes(st.completedTileSize)
+                      : formatBytes(meta.estBytes ?? 0)}{" "}
+                    · detail to ~{MAX_DETAIL_M_PER_PX} m/pixel
                   </Text>
 
                   {saved ? (
@@ -755,7 +779,8 @@ export default function OfflineScreen() {
           Offline maps are stored on this device by MapLibre.
         </Text>
         <Text style={[styles.footer, { color: colors.mutedForeground }]}>
-          Tiles © Esri, USGS, NOAA and the GIS User Community.
+          © OpenStreetMap contributors, © OpenMapTiles, MRDEM-30 and Copernicus
+          DEM, and the Province of British Columbia (OGL-Canada, OGL-BC).
         </Text>
       </ScrollView>
 
@@ -788,7 +813,7 @@ export default function OfflineScreen() {
           >
             <MapLibreMap
               style={StyleSheet.absoluteFill}
-              mapStyle={ESRI_STYLE_JSON}
+              mapStyle={BASEMAP_STYLE_JSON}
               attribution={false}
               touchRotate={false}
               touchPitch={false}
@@ -846,7 +871,7 @@ export default function OfflineScreen() {
             <View style={styles.tileInfoRow}>
               <View>
                 <Text style={[styles.modalInfoLabel, { color: colors.mutedForeground }]}>
-                  Estimated tiles
+                  Estimated size
                 </Text>
                 <Text
                   style={[
@@ -854,7 +879,7 @@ export default function OfflineScreen() {
                     { color: tooLarge ? colors.destructive : colors.foreground },
                   ]}
                 >
-                  {tileCount.toLocaleString()}
+                  {formatBytes(estBytes)}
                 </Text>
               </View>
               <View>
@@ -940,7 +965,7 @@ export default function OfflineScreen() {
                   ]}
                 >
                   {tooLarge
-                    ? `Too large (max ${TILE_LIMIT.toLocaleString()} tiles)`
+                    ? `Too large (max ${formatBytes(PACK_BYTE_BUDGET)})`
                     : "Download this region"}
                 </Text>
               </Pressable>

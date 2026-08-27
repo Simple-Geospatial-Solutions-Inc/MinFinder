@@ -49,7 +49,11 @@ import {
   type SearchHit,
 } from "@/lib/db";
 import { takePendingFocusRegion, type FocusRegion } from "@/lib/mapFocus";
-import { ESRI_STYLE_JSON, LABEL_FONT, PACK_STYLE_VERSION } from "@/lib/mapStyle";
+import {
+  BASEMAP_STYLE_JSON,
+  LABEL_FONT,
+  PACK_STYLE_VERSION,
+} from "@/lib/mapStyle";
 import {
   boundsCenter,
   deltaToZoom,
@@ -174,14 +178,20 @@ const selectedRingStyle = {
 } as unknown as CircleLayerStyle;
 
 // --- Downloaded offline-region outlines ------------------------------------
-// Colors are hardcoded rather than themed: the Esri topo basemap is the same
-// light raster in both app themes, so these are matched to the basemap, not to
+// Colors are hardcoded rather than themed: the basemap renders the same light
+// cartography in both app themes, so these are matched to the basemap, not to
 // the UI. Gold = the region the user tapped (continuing the app's "this one,
 // right now" signal); navy = other cached regions shown by the coverage toggle.
 //
 // The dark casing under both strokes is not decorative — a bare gold line
 // disappears against sunlit snow, granite and logging slash, which is exactly
 // the terrain these regions cover.
+//
+// NOT YET RE-VERIFIED against the self-hosted basemap that replaced the Esri
+// raster. The new style is lighter and adds shaded relief and orange dashed
+// resource roads, and the resource-road colour (#B5651D) sits uncomfortably
+// close to this gold. Judge it on a device in real terrain before trusting it —
+// a desk comparison is what produced the original need for the casing.
 const REGION_GOLD = "#FCBA19";
 const REGION_NAVY = "#16365C";
 
@@ -610,9 +620,10 @@ export default function MapScreen() {
         try {
           const all = await OfflineManager.getPacks();
           if (cancelled) return;
-          // Packs from before the style-URL fix hold no Esri tiles, so
-          // outlining one would promise offline coverage that doesn't exist.
-          // The Offline screen deletes them, but the map can be opened first.
+          // Packs from an older PACK_STYLE_VERSION hold tiles this build never
+          // requests (or, before v2, no tiles at all), so outlining one would
+          // promise offline coverage that doesn't exist. The Offline screen
+          // deletes them, but the map can be opened first.
           const packs = all.filter(
             (p) =>
               ((p.metadata ?? {}) as { styleVersion?: number }).styleVersion ===
@@ -718,7 +729,7 @@ export default function MapScreen() {
     <View style={[styles.root, { backgroundColor: colors.navyDeep }]}>
       <MapLibreMap
         style={StyleSheet.absoluteFill}
-        mapStyle={ESRI_STYLE_JSON}
+        mapStyle={BASEMAP_STYLE_JSON}
         attribution={false}
         touchRotate={false}
         touchPitch={false}

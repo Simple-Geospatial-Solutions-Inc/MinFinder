@@ -174,22 +174,41 @@ export default function AboutScreen() {
 
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.cardText, { color: colors.foreground }]}>
-          Basemap tiles: Esri World Topographic Map
+          Basemap: SGS MinFinder Topo, built from OpenStreetMap
         </Text>
         <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11 }]}>
-          Sources: Esri, HERE, Garmin, FAO, NOAA, USGS, © OpenStreetMap contributors, and the GIS User Community
+          © OpenStreetMap contributors, © OpenMapTiles. Elevation, shaded relief
+          and contours from MRDEM-30 (Natural Resources Canada) and modified
+          Copernicus DEM data. Contains information licensed under the Open
+          Government Licence – Canada, and under the Open Government Licence –
+          British Columbia: forest tenure and oil & gas road segments,
+          recreation lines, parks and ecological reserves, and bedrock geology.
         </Text>
         <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11, marginTop: 6 }]}>
-          Map engine: MapLibre, an open-source map renderer. The Esri
-          topographic tiles are drawn on the MapLibre map view.
+          Map engine: MapLibre, an open-source map renderer. Tiles are
+          self-hosted by Simple Geospatial Solutions, so downloaded regions
+          keep working with no connection.
+        </Text>
+        <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11, marginTop: 6 }]}>
+          Resource roads are shown from tenure records. An active tenure means a
+          road was permitted and built — not that it is currently passable.
         </Text>
         <Pressable
-          onPress={() => WebBrowser.openBrowserAsync("https://www.esri.com/en-us/legal/terms/data-attributions")}
+          onPress={() => WebBrowser.openBrowserAsync("https://www.openstreetmap.org/copyright")}
           style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
         >
           <Feather name="external-link" size={14} color={colors.primary} />
           <Text style={[styles.linkText, { color: colors.primary }]}>
-            Esri data attributions
+            OpenStreetMap copyright
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => WebBrowser.openBrowserAsync("https://www2.gov.bc.ca/gov/content/data/open-data/open-government-licence-bc")}
+          style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
+        >
+          <Feather name="external-link" size={14} color={colors.primary} />
+          <Text style={[styles.linkText, { color: colors.primary }]}>
+            Open Government Licence – British Columbia
           </Text>
         </Pressable>
       </View>
