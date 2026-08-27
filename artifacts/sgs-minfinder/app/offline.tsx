@@ -68,6 +68,28 @@ const BC_REGION: Region = {
 
 const MIN_ZOOM_DEFAULT = 8;
 const MAX_ZOOM_DEFAULT = 13;
+
+// The native downloader retries failed requests on its own — 5xx after 1 s
+// (three times, then exponential), connection failures with exponential
+// backoff from 1 s, 429 after Retry-After — and reports EVERY failure through
+// the error listener while it does so (maplibre-native: src/mln/util/
+// http_timeout.cpp, platform/default/src/mln/storage/offline_download.cpp;
+// the RN module's onError only emits, it never pauses). An error event is
+// therefore advisory, not terminal: a pmtiles restart during a deploy is a
+// burst of 502s that native has already re-queued. What IS terminal is a
+// download that stops making progress — a non-retryable status such as 403
+// leaves its request pending forever, and a long outage pushes native backoff
+// out to minutes. So after an error the watchdog waits STALL_TIMEOUT_MS for any
+// resource to land; if none does it pauses and resumes the pack, which cancels
+// the pending requests and re-walks the region with fresh 1 s retries
+// (already-stored resources replay from the database, no network), doubling
+// the wait each time. Only after MAX_STALL_KICKS with no progress does the
+// user see "Download failed".
+const STALL_TIMEOUT_MS = 45_000;
+// 45 s + 90 s + 180 s + 360 s: about eleven minutes without a single new
+// resource before giving up — long enough for an LTE dead spot on a logging
+// road, short enough that a genuinely dead server is not an indefinite spinner.
+const MAX_STALL_KICKS = 4;
 // Inset of the gold selection frame inside the picker map, in points. Shared by
 // the frame's style and the bounds math so the two cannot drift apart.
 const SELECTION_INSET = 24;
@@ -230,7 +252,28 @@ export default function OfflineScreen() {
   const [downloading, setDownloading] = useState<{
     percentage: number;
     tiles: number;
+    /** An error arrived and the watchdog is waiting for progress. */
+    retrying: boolean;
   } | null>(null);
+
+  // Stall watchdog for the active download — see STALL_TIMEOUT_MS. `completed`
+  // is the high-water mark of completedResourceCount: after a pause/resume the
+  // count replays from zero back up to where it was, so only a value above the
+  // mark counts as progress.
+  const stall = useRef<{
+    timer: ReturnType<typeof setTimeout> | null;
+    kicks: number;
+    completed: number;
+    lastError: string;
+  }>({ timer: null, kicks: 0, completed: 0, lastError: "" });
+
+  const clearStallTimer = useCallback(() => {
+    const s = stall.current;
+    if (s.timer) {
+      clearTimeout(s.timer);
+      s.timer = null;
+    }
+  }, []);
 
   const resetNoticeInFlight = useRef(false);
 
@@ -351,10 +394,11 @@ export default function OfflineScreen() {
   // library only unsubscribes on its own once a pack reports "complete".
   useEffect(() => {
     return () => {
+      clearStallTimer();
       const pack = activePack.current;
       if (pack) OfflineManager.removeListener(pack.id);
     };
-  }, []);
+  }, [clearStallTimer]);
 
   // Centre the picker on the user when the modal opens.
   useEffect(() => {
@@ -510,7 +554,9 @@ export default function OfflineScreen() {
     let name = base;
     for (let i = 2; existing.has(name); i++) name = `${base} (${i})`;
 
-    setDownloading({ percentage: 0, tiles: 0 });
+    setDownloading({ percentage: 0, tiles: 0, retrying: false });
+    clearStallTimer();
+    stall.current = { timer: null, kicks: 0, completed: 0, lastError: "" };
     if (!(await styleUrlIsUsable(BASEMAP_STYLE_URL))) {
       setDownloading(null);
       Alert.alert(
@@ -519,6 +565,75 @@ export default function OfflineScreen() {
       );
       return;
     }
+
+    // Native has stopped making progress despite its own retries. Pause and
+    // resume: pause cancels every pending request (and its backed-off timer),
+    // resume re-walks the region — stored resources replay from the database
+    // and only the missing ones go to the network, with fresh 1 s retries.
+    const giveUp = async (pack: OfflinePack, reason: string) => {
+      OfflineManager.removeListener(pack.id);
+      activePack.current = null;
+      setDownloading(null);
+      // Leave the pack PAUSED, not deleted and not silently retrying in the
+      // background: the list then shows it as paused with its Resume button,
+      // so everything already fetched is kept and recovery is the path that
+      // already exists.
+      try {
+        await pack.pause();
+      } catch (err) {
+        console.warn("pause after stall error", err);
+      }
+      setShowAdd(false);
+      refresh();
+      Alert.alert(
+        "Download failed",
+        `Couldn't reach the map server for several minutes (${reason}). ` +
+          "What was downloaded so far is kept — tap Resume on the region once you're back online.",
+      );
+    };
+    const armWatchdog = (pack: OfflinePack) => {
+      const s = stall.current;
+      s.timer = setTimeout(
+        async () => {
+          // Cancelled (or a different download started) while we waited.
+          if (activePack.current?.id !== pack.id) {
+            s.timer = null;
+            return;
+          }
+          if (s.kicks >= MAX_STALL_KICKS) {
+            s.timer = null;
+            await giveUp(pack, s.lastError || "no response");
+            return;
+          }
+          s.kicks += 1;
+          const completedBefore = s.completed;
+          console.warn(
+            `offline pack stalled; kick ${s.kicks}/${MAX_STALL_KICKS}`,
+          );
+          // s.timer deliberately still holds the fired handle while we kick, so
+          // an error arriving mid-kick cannot arm a second watchdog.
+          try {
+            await pack.pause();
+            await pack.resume();
+          } catch (err) {
+            // Not fatal on its own: the native download may still be alive and
+            // retrying. It costs one kick, and the next timer decides.
+            console.warn("pause/resume kick error", err);
+          }
+          // Progress or a cancel during the kick already cleared the watchdog;
+          // otherwise wait again, twice as long.
+          if (
+            activePack.current?.id !== pack.id ||
+            s.completed > completedBefore
+          ) {
+            return;
+          }
+          armWatchdog(pack);
+        },
+        STALL_TIMEOUT_MS * 2 ** s.kicks,
+      );
+    };
+
     try {
       const pack = await OfflineManager.createPack(
         {
@@ -540,11 +655,31 @@ export default function OfflineScreen() {
           } satisfies PackMeta,
         },
         (_pack, status) => {
-          setDownloading({
-            percentage: status.percentage,
-            tiles: status.completedTileCount,
-          });
+          const s = stall.current;
+          if (status.completedResourceCount > s.completed) {
+            // Genuine progress: a resource this pack never had before landed.
+            // Whatever errors came in, native worked through them.
+            s.completed = status.completedResourceCount;
+            s.kicks = 0;
+            clearStallTimer();
+          }
+          const retrying = s.timer != null;
+          // While the watchdog is armed the count may be replaying after a
+          // kick; hold the bar at its high-water mark rather than let it
+          // visibly rewind for a second.
+          setDownloading((prev) => ({
+            percentage:
+              retrying && prev
+                ? Math.max(prev.percentage, status.percentage)
+                : status.percentage,
+            tiles:
+              retrying && prev
+                ? Math.max(prev.tiles, status.completedTileCount)
+                : status.completedTileCount,
+            retrying,
+          }));
           if (status.state === "complete") {
+            clearStallTimer();
             activePack.current = null;
             setDownloading(null);
             // Downloads take minutes on rural LTE, by which point the phone is
@@ -557,13 +692,21 @@ export default function OfflineScreen() {
           }
         },
         (pack, error) => {
+          // Advisory, not terminal — native has already re-queued the request
+          // (see STALL_TIMEOUT_MS). One error per outage arms the watchdog;
+          // the rest of the burst just updates the message we would show.
           console.warn("offline pack error", error);
+          // A 404 is reported too, but native drops that resource and moves
+          // on — it can never be the cause of a stall, so don't flash
+          // "retrying" over a tile that simply doesn't exist.
+          if (/\b404\b/.test(error.message)) return;
+          const s = stall.current;
+          s.lastError = error.message;
+          if (s.timer) return;
+          setDownloading((prev) => (prev ? { ...prev, retrying: true } : prev));
           // Use the pack handed to the callback: activePack may not be assigned
           // yet if this fires before createPack's promise resolves.
-          OfflineManager.removeListener(pack.id);
-          Alert.alert("Download failed", error.message);
-          activePack.current = null;
-          setDownloading(null);
+          armWatchdog(pack);
         },
       );
       activePack.current = pack;
@@ -580,9 +723,11 @@ export default function OfflineScreen() {
     nameInput,
     packs,
     refresh,
+    clearStallTimer,
   ]);
 
   const cancelDownload = useCallback(async () => {
+    clearStallTimer();
     const pack = activePack.current;
     activePack.current = null;
     setDownloading(null);
@@ -594,7 +739,7 @@ export default function OfflineScreen() {
         console.warn("cancel/delete pack error", err);
       }
     }
-  }, []);
+  }, [clearStallTimer]);
 
   const removePack = useCallback(
     (p: OfflinePack) => {
@@ -1067,6 +1212,16 @@ export default function OfflineScreen() {
                   {Math.round(downloading.percentage)}% ·{" "}
                   {downloading.tiles.toLocaleString()} tiles
                 </Text>
+                {downloading.retrying ? (
+                  <Text
+                    style={[
+                      styles.progressText,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
+                    Connection trouble — retrying, nothing lost
+                  </Text>
+                ) : null}
                 <Pressable
                   onPress={cancelDownload}
                   style={({ pressed }) => [
