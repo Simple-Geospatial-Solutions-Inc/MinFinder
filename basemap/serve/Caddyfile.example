@@ -1,0 +1,119 @@
+# Caddyfile.example — the MinFinder tile-server SITE BLOCK.
+#
+# !! DO NOT copy this file over /etc/caddy/Caddyfile. !!
+# The VPS runs a single shared Caddy that already terminates sgss.ca and
+# www.sgss.ca (and possibly more). Replacing the file takes those sites down.
+# APPEND the `tiles.sgss.ca { ... }` block below to the existing Caddyfile:
+#
+#   sudo cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date -u +%Y%m%dT%H%M%SZ)
+#   sudo tee -a /etc/caddy/Caddyfile < this-block
+#   sudo caddy validate --config /etc/caddy/Caddyfile   # MUST pass first
+#   sudo systemctl reload caddy                         # reload, NEVER restart
+#
+# `reload` keeps in-flight connections; `restart` drops them for every site on
+# the box. If `validate` fails, restore the .bak and stop — an invalid
+# Caddyfile takes down every site, not just this one.
+#
+# The GLOBAL OPTIONS block (the bare `{ ... }` at the top of a Caddyfile) is
+# deliberately NOT included here. A Caddyfile may contain exactly one, and the
+# existing file almost certainly has it already. Adding a second is a parse
+# error. If an `email` is not already set there, add it to the existing block.
+#
+# Layout on the VPS (rsync'd by serve/deploy.sh):
+#   /srv/basemap/basemap.pmtiles     \
+#   /srv/basemap/terrain.pmtiles      > served as Z/X/Y by go-pmtiles :8081
+#   /srv/basemap/contours.pmtiles    /
+#   /srv/basemap/glyphs/...          \
+#   /srv/basemap/sprite*.{json,png}   > served as static files by Caddy
+#   /srv/basemap/style.json          /
+#
+# go-pmtiles (v1.31.2) URL shape, which this file must match exactly:
+#   /{tileset}/{z}/{x}/{y}.{ext}  ->  tiles   (basemap/.mvt, terrain/.png, contours/.mvt)
+#   /{tileset}.json               ->  TileJSON
+
+tiles.sgss.ca {
+	# ---- Rate limiting: NOT ENABLED ------------------------------------
+	# Deliberately omitted. `rate_limit` is not in stock Caddy — it needs a
+	# custom build (xcaddy --with github.com/mholt/caddy-ratelimit), and
+	# swapping the Caddy binary on a box already serving sgss.ca risks the
+	# company website to protect a tile server. Bad trade.
+	#
+	# The plan was for Cloudflare to do this at the edge instead. CHECK BEFORE
+	# RELYING ON THAT: as of 2026-08-27 it is NOT proxying. tiles.sgss.ca
+	# resolves straight to the OVH address and responses carry no cf-ray, so
+	# every tile request reaches this box. Verify with:
+	#     nslookup tiles.sgss.ca      # Cloudflare IPs, not 51.222.206.236?
+	#     curl -sI https://tiles.sgss.ca/style.json | grep -i cf-ray
+	# Until the orange cloud is on, this server has no burst protection at all.
+	#
+	# TENSION worth recording for whoever revisits this: the app's offline
+	# downloader legitimately fetches up to ~51,000 tiles in one burst when a
+	# user saves a maximum-size region (measured through lib/tileCache.ts at a
+	# 400 MB pack budget; it was ~15,000 under the old raster basemap and the
+	# figure moves whenever a source or zoom range changes). Any per-IP limit
+	# tight enough to stop a scraper is also tight enough to break that core
+	# paid feature. Read the access log below for real burst rates before
+	# imposing any limit.
+
+	# ---- Static assets: style, glyphs, sprites -------------------------
+	# go-pmtiles only serves tiles/TileJSON, so these come straight off disk.
+
+	# style.json is the entry point clients re-fetch to pick up map changes —
+	# keep its cache short, unlike the immutable assets below.
+	handle /style.json {
+		root * /srv/basemap
+		header Access-Control-Allow-Origin "*"
+		header Cache-Control "public, max-age=300"
+		encode gzip zstd
+		file_server
+	}
+
+	@static path /sprite.json /sprite.png /sprite@2x.json /sprite@2x.png /glyphs/*
+	handle @static {
+		root * /srv/basemap
+		header Access-Control-Allow-Origin "*"
+		# Glyph PBFs and sprites only change when we regenerate and redeploy
+		# them, which is rare; a year with immutable is fine because a font
+		# or sprite change would ship with a new style anyway.
+		header Cache-Control "public, max-age=31536000, immutable"
+		# Glyph PBFs compress ~2x; tiles are NOT routed here (pmtiles vector
+		# tiles are stored gzip-compressed and pass through as-is).
+		encode gzip zstd
+		file_server
+	}
+
+	# ---- TileJSON ------------------------------------------------------
+	# Shorter cache than tiles: it is the pointer clients re-read to notice
+	# min/max zoom or attribution changes after a redeploy.
+	@tilejson path /basemap.json /terrain.json /contours.json
+	handle @tilejson {
+		reverse_proxy 127.0.0.1:8081 {
+			header_down Cache-Control "public, max-age=3600"
+		}
+	}
+
+	# ---- Tiles ---------------------------------------------------------
+	# Everything else is /{tileset}/{z}/{x}/{y}.{ext}, proxied verbatim —
+	# go-pmtiles' path shape already matches our public URLs 1:1.
+	# CORS on these responses comes from go-pmtiles (--cors=* in
+	# pmtiles.service); do NOT add Access-Control-Allow-Origin here or
+	# browsers will reject the duplicated header.
+	handle {
+		reverse_proxy 127.0.0.1:8081 {
+			# Tiles at a given URL only change on a basemap rebuild
+			# (~monthly at most); 30 days cuts repeat traffic while a
+			# rebuild still propagates within a month. The offline
+			# downloader stores tiles itself so it is unaffected.
+			header_down Cache-Control "public, max-age=2592000"
+		}
+	}
+
+	# Compact access log; useful for judging real burst rates before
+	# tightening the rate limit.
+	log {
+		output file /var/log/caddy/tiles.log {
+			roll_size 100MiB
+			roll_keep 5
+		}
+	}
+}

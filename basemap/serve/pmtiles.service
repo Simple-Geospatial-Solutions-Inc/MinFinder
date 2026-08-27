@@ -1,0 +1,87 @@
+# pmtiles.service — go-pmtiles tile server for the MinFinder basemap.
+#
+# Serves Z/X/Y tiles out of the .pmtiles archives in /srv/basemap
+# (the rsync'd $BASEMAP_OUT_DIR). URL shape exposed (verified against
+# go-pmtiles v1.31.2 docs/source):
+#   /{tileset}/{z}/{x}/{y}.{ext}   e.g. /basemap/5/10/11.mvt, /terrain/8/40/87.png
+#   /{tileset}.json                TileJSON (requires --public-url)
+# It does NOT serve arbitrary files — glyphs, sprites and style.json are
+# served by Caddy directly (see Caddyfile.example).
+#
+# Install (as root):
+#   1. Download the pinned go-pmtiles binary (check for newer releases at
+#      https://github.com/protomaps/go-pmtiles/releases):
+#        curl -fsSL -o /tmp/pmtiles.tar.gz \
+#          https://github.com/protomaps/go-pmtiles/releases/download/v1.31.2/go-pmtiles_1.31.2_Linux_x86_64.tar.gz
+#        tar -xzf /tmp/pmtiles.tar.gz -C /usr/local/bin pmtiles
+#   2. useradd --system --home /srv/basemap --shell /usr/sbin/nologin pmtiles
+#   3. mkdir -p /srv/basemap && chown pmtiles:pmtiles /srv/basemap
+#   4. Edit --public-url below to the real https://$BASEMAP_HOST
+#   5. cp pmtiles.service /etc/systemd/system/ && systemctl daemon-reload
+#      systemctl enable --now pmtiles
+
+[Unit]
+Description=go-pmtiles tile server (MinFinder basemap)
+Documentation=https://docs.protomaps.com/pmtiles/cli
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pmtiles
+Group=pmtiles
+WorkingDirectory=/srv/basemap
+
+# --interface 127.0.0.1: only Caddy (same host) may reach it; TLS, CORS for
+#   static assets, and rate limiting all live in Caddy.
+# --cors=*: go-pmtiles adds Access-Control-Allow-Origin on tile + TileJSON
+#   responses itself; the map is fetched from app origins we don't enumerate,
+#   and tiles are public data, so * is appropriate. Caddy must NOT add a
+#   second CORS header on proxied responses (duplicates break CORS).
+# --port 8081: 8080 is NOT free on this box. The sgss.ca site's api_proxy
+#   snippet in /etc/caddy/Caddyfile proxies to 127.0.0.1:8080, and that service
+#   binds *:8080 (all interfaces). A loopback-only `ss | grep 127.0.0.1` does
+#   not show wildcard binds, so check the Caddyfile too before reusing a port.
+# --cache-size 256: MB of LRU for pmtiles headers/directories (default 64);
+#   256 keeps all three archives' directories hot during 15k-tile bursts.
+# --public-url: browser-facing base URL, embedded in TileJSON tile URLs.
+#   MUST match BASEMAP_HOST in basemap/config.env — edit before installing.
+ExecStart=/usr/local/bin/pmtiles serve /srv/basemap \
+    --interface 127.0.0.1 \
+    --port 8081 \
+    --cache-size 256 \
+    --cors=* \
+    --public-url https://tiles.sgss.ca
+
+Restart=on-failure
+RestartSec=5
+
+# Hardening: the process only needs to read /srv/basemap and listen on a
+# localhost TCP port, so lock everything else down.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+# Plenty of file descriptors for burst tile fetches from the offline downloader.
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
