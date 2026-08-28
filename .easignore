@@ -27,6 +27,17 @@ basemap/out/
 basemap/config.env
 basemap/serve/.deploy-run.sh
 
+# --- scratch and local build inputs -----------------------------------------
+# Screenshots, a stray 12 MB PNG, a HEIC photo and a compass zip that nothing
+# references, alongside the two files scripts/build-db.mjs reads:
+# minfile_occurrences_*.sql and minfile_names.csv. That script is a manual
+# local step — no npm script, postinstall or EAS build hook invokes it — and
+# its output, artifacts/sgs-minfinder/assets/db/minfile.db, is committed and
+# ships on its own. So nothing in here is read during an EAS build. Measured:
+# 19.8 MB of a 32 MB archive. Keep the directory in git; the SQL dump and CSV
+# are how minfile.db gets rebuilt.
+attached_assets/
+
 # --- build output and caches ------------------------------------------------
 dist/
 .expo/
