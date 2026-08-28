@@ -15,7 +15,7 @@ App Store + Google Play. Internal handoff: listing copy, screenshots, and outsta
 |---|---|
 | App name | SGS MinFinder |
 | Slug | sgs-minfinder |
-| Version | 1.0.1 (bumped from 1.0.0 — the next production build is the first to carry `expo-updates`; see §5) |
+| Version | 1.1.0 (satellite view; 1.0.1 was the first build to carry `expo-updates`, see §5) |
 | iOS bundle identifier | `ca.sgss.minfinder` |
 | Android package | `ca.sgss.minfinder` |
 | **App Store Connect SKU** | `sgs-minfinder` (private, internal, permanent) |
