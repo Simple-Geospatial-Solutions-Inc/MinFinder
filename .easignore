@@ -13,7 +13,15 @@
 # The app payload is ~33 MB.
 
 # --- version control and dependencies --------------------------------------
-.git/
+# No trailing slash on .git, and that matters. eas-cli deletes .git from the
+# shallow clone only when ignore().add(<this file>).ignores('.git') is true
+# (vcs/clients/git.js, makeShallowCopyAsync) — a check that tests the bare
+# name, with none of the default rules applied. The pattern `.git/` does not
+# match `.git`, so the rule silently does nothing and the whole history ships.
+# Measured on Windows: a 32.5 MB upload that should have been ~10 MB, 28 MB of
+# it git objects. The trailing slashes elsewhere in this file are harmless —
+# exclusion there is decided per file, and every file inside still matches.
+.git
 node_modules/
 
 # --- the basemap pipeline ---------------------------------------------------
