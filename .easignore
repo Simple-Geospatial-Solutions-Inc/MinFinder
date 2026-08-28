@@ -21,6 +21,11 @@ node_modules/
 # reference); the data they produce and consume never ships in an app build.
 basemap/data/
 basemap/out/
+# Per-operator deploy config (names the real host) and the transient copy
+# deploy.sh runs from — both hidden by basemap/.gitignore, which EAS never
+# reads, so they have to be repeated here.
+basemap/config.env
+basemap/serve/.deploy-run.sh
 
 # --- build output and caches ------------------------------------------------
 dist/
