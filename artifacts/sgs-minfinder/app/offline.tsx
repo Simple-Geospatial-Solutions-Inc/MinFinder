@@ -120,20 +120,76 @@ interface PackMeta {
 // response that isn't valid style JSON — a Pages outage, a captive portal, a
 // hijacked DNS answer — terminates the process instead of failing the download.
 // Checking here turns that class of fatal crash into an alert.
-async function styleUrlIsUsable(url: string): Promise<boolean> {
+type StyleProbe = "ok" | "unreachable" | "foreign-source";
+
+/** Host part of an http(s) URL, or null. Hand-rolled: RN's URL is partial. */
+function hostOf(url: string): string | null {
+  const m = /^https?:\/\/([^/?#]+)/i.exec(url);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
+ * Every URL a pack download could follow, from a fetched style body.
+ * Source `url` (TileJSON) and `tiles` templates, plus glyphs and sprite.
+ */
+function styleResourceUrls(style: {
+  sources?: Record<string, { url?: unknown; tiles?: unknown }>;
+  glyphs?: unknown;
+  sprite?: unknown;
+}): string[] {
+  const out: string[] = [];
+  for (const src of Object.values(style.sources ?? {})) {
+    if (typeof src.url === "string") out.push(src.url);
+    if (Array.isArray(src.tiles)) {
+      for (const t of src.tiles) if (typeof t === "string") out.push(t);
+    }
+  }
+  if (typeof style.glyphs === "string") out.push(style.glyphs);
+  if (typeof style.sprite === "string") out.push(style.sprite);
+  return out;
+}
+
+/**
+ * Fetch the style createPack is about to be handed and check it is both
+ * parseable and entirely self-hosted.
+ *
+ * The second check is a licensing guard, not a health check. createPack
+ * downloads every resource the style at `url` references, so the only way a
+ * third-party tile (e.g. the online-only Esri imagery in lib/satellite.ts,
+ * whose terms forbid bulk download) could ever end up in a pack is for it to
+ * appear in the published style. That style is generated (basemap/build/
+ * 06-style.sh) and should never contain one — this refuses to download if it
+ * somehow does, so a build or deploy mistake fails loudly here instead of
+ * silently caching imagery we are not allowed to store.
+ */
+async function probeStyleUrl(url: string): Promise<StyleProbe> {
   try {
     const res = await fetch(url);
-    if (!res.ok) return false;
+    if (!res.ok) return "unreachable";
     const body: unknown = JSON.parse(await res.text());
-    if (typeof body !== "object" || body === null) return false;
-    const style = body as { version?: unknown; sources?: unknown };
-    return (
-      typeof style.version === "number" &&
-      typeof style.sources === "object" &&
-      style.sources !== null
-    );
+    if (typeof body !== "object" || body === null) return "unreachable";
+    const style = body as {
+      version?: unknown;
+      sources?: Record<string, { url?: unknown; tiles?: unknown }>;
+      glyphs?: unknown;
+      sprite?: unknown;
+    };
+    if (
+      typeof style.version !== "number" ||
+      typeof style.sources !== "object" ||
+      style.sources === null
+    ) {
+      return "unreachable";
+    }
+    const home = hostOf(url);
+    const foreign = styleResourceUrls(style).filter((u) => hostOf(u) !== home);
+    if (foreign.length > 0) {
+      console.warn("refusing to pack: style references off-host resources", foreign);
+      return "foreign-source";
+    }
+    return "ok";
   } catch {
-    return false;
+    return "unreachable";
   }
 }
 
@@ -557,11 +613,14 @@ export default function OfflineScreen() {
     setDownloading({ percentage: 0, tiles: 0, retrying: false });
     clearStallTimer();
     stall.current = { timer: null, kicks: 0, completed: 0, lastError: "" };
-    if (!(await styleUrlIsUsable(BASEMAP_STYLE_URL))) {
+    const probe = await probeStyleUrl(BASEMAP_STYLE_URL);
+    if (probe !== "ok") {
       setDownloading(null);
       Alert.alert(
         "Download unavailable",
-        "Couldn't reach the map style needed to download this region. Check your connection and try again.",
+        probe === "foreign-source"
+          ? "The map style currently points at tiles that can't be stored offline, so this region wasn't downloaded. Please update the app or try again later."
+          : "Couldn't reach the map style needed to download this region. Check your connection and try again.",
       );
       return;
     }

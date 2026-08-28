@@ -208,6 +208,20 @@ Copernicus statement on the app's attribution screen. The single string all of
 this collapses to lives in `build/06-style.sh` as `ATTR`, and is mirrored in the
 app — keep the two in step.
 
+## Optional online-only satellite layer
+
+The app can overlay Esri World Imagery under the topo style's contours, roads
+and labels. It is deliberately **not** in `out/style.json` / the app's
+`basemap-style.json`: `createPack` downloads every source in the style and
+`lib/tileCache.ts` prices every source in it, so imagery in the style would be
+bulk-cached into every offline pack — the exact thing Esri's terms forbid and
+the reason this pipeline exists. Instead the app mounts it at runtime as a
+`RasterSource` (`artifacts/sgs-minfinder/lib/satellite.ts`), where packs and
+the estimator never see it. Offline, its tiles simply fail to draw and the topo
+underneath shows through. The Esri credit string lives in that file and is
+shown on the map only while imagery is; nothing in this directory serves or
+measures it.
+
 ## The tile server shares Caddy with the company website
 
 `/etc/caddy/Caddyfile` on the VPS is **owned by the `sgs-website` repo**, not

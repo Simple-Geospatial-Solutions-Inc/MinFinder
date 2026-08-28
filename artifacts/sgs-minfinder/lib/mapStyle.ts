@@ -61,9 +61,11 @@ export const BASEMAP_STYLE_URL = `${BASEMAP_STYLE.glyphs.replace(
 // Bumped when a pack's contents stop being comparable to older ones. Packs
 // written before v2 were created by passing inline style JSON to createPack,
 // which MapLibre silently rejected in favour of its own demo style. v2 packs
-// hold Esri raster tiles keyed to server.arcgisonline.com, which this build no
-// longer requests at all — so they are dead weight that would wrongly promise
-// offline coverage. Both are deleted on sight rather than shown.
+// hold Esri raster tiles keyed to server.arcgisonline.com, which the basemap no
+// longer requests — so they are dead weight that would wrongly promise offline
+// coverage. Both are deleted on sight rather than shown. (The optional satellite
+// layer in lib/satellite.ts streams from a different host and is never part of
+// a pack, so it cannot revive those keys.)
 //
 // Lives here rather than in a screen because two surfaces have to agree on it:
 // the Offline list (which deletes stale packs) and the map's offline-coverage

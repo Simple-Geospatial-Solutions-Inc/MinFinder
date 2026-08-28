@@ -21,6 +21,7 @@ import {
   Layer,
   Map as MapLibreMap,
   OfflineManager,
+  RasterSource,
   UserLocation,
   type CameraRef,
   type CircleLayerStyle,
@@ -35,6 +36,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DetailsSheet } from "@/components/DetailsSheet";
 import { OfflineRegionPill } from "@/components/OfflineRegionPill";
 import { PaywallSheet } from "@/components/PaywallSheet";
+import { SatelliteCredit } from "@/components/SatelliteCredit";
 import { QuickInfoCard } from "@/components/QuickInfoCard";
 import { SearchMatchesPill } from "@/components/SearchMatchesPill";
 import { STATUS_MAP, STATUS_ORDER, getStatusInfo } from "@/constants/status";
@@ -66,6 +68,18 @@ import {
   type Region,
   type RegionOutline,
 } from "@/lib/mapGeo";
+import {
+  DEFAULT_BASEMAP,
+  SATELLITE_ANCHOR_LAYER,
+  SATELLITE_ATTRIBUTION,
+  SATELLITE_MAX_ZOOM,
+  SATELLITE_TILES,
+  SATELLITE_TILE_SIZE,
+  loadBasemap,
+  otherBasemap,
+  saveBasemap,
+  type Basemap,
+} from "@/lib/satellite";
 
 const BC_REGION: Region = {
   latitude: 54.5,
@@ -278,6 +292,18 @@ export default function MapScreen() {
   const [focusRegion, setFocusRegion] = useState<FocusRegion | null>(null);
   const [packRegions, setPackRegions] = useState<RegionOutline[]>([]);
   const [showCoverage, setShowCoverage] = useState(false);
+  // Topo vs satellite. Starts on topo and catches up with the persisted choice,
+  // so a cold start never waits on storage to draw the map.
+  const [basemap, setBasemap] = useState<Basemap>(DEFAULT_BASEMAP);
+  useEffect(() => {
+    let cancelled = false;
+    loadBasemap().then((b) => {
+      if (!cancelled) setBasemap(b);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // Mirrored so the focus effect can reconcile against the current focus
   // without listing it as a dependency (which would resubscribe on every change).
   const focusIdRef = useRef<string | null>(null);
@@ -710,6 +736,15 @@ export default function MapScreen() {
     setShowCoverage((prev) => !prev);
   }, []);
 
+  const toggleBasemap = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+    setBasemap((prev) => {
+      const next = otherBasemap(prev);
+      void saveBasemap(next);
+      return next;
+    });
+  }, []);
+
   // What the outline layers draw: every cached region when coverage is on,
   // otherwise just the focused one. Rendered as null when there is nothing to
   // show, because GeoJSONSource requires `data`.
@@ -739,6 +774,31 @@ export default function MapScreen() {
           ref={cameraRef}
           initialViewState={{ bounds: regionToBounds(BC_REGION) }}
         />
+
+        {/*
+          Online-only satellite imagery, slotted into the topo style below the
+          contours so roads, boundaries and labels stay on top (see
+          SATELLITE_ANCHOR_LAYER). Permanently mounted and toggled through
+          `visibility` rather than conditionally rendered — a remounted layer
+          is appended to the top of the style (the trap noted on `occ-overlay`
+          below), and a hidden layer costs nothing: MapLibre requests no tiles
+          for a source none of whose layers are visible. Offline, failed tiles
+          draw nothing and the topo underneath shows through.
+        */}
+        <RasterSource
+          id="satellite"
+          tiles={SATELLITE_TILES}
+          tileSize={SATELLITE_TILE_SIZE}
+          maxzoom={SATELLITE_MAX_ZOOM}
+          attribution={SATELLITE_ATTRIBUTION}
+        >
+          <Layer
+            id="satellite"
+            type="raster"
+            beforeId={SATELLITE_ANCHOR_LAYER}
+            layout={{ visibility: basemap === "satellite" ? "visible" : "none" }}
+          />
+        </RasterSource>
 
         {/*
           Outlines of downloaded offline regions. `beforeId="clusters"` is
@@ -1009,6 +1069,34 @@ export default function MapScreen() {
       )}
 
       <View style={[styles.fabStack, { bottom: insets.bottom + 24 }]}>
+        {Platform.OS !== "web" && (
+          <Pressable
+            onPress={toggleBasemap}
+            accessibilityRole="button"
+            accessibilityState={{ selected: basemap === "satellite" }}
+            accessibilityLabel={
+              basemap === "satellite" ? "Show topographic map" : "Show satellite imagery"
+            }
+            accessibilityHint={
+              "Imagery needs a connection; the topo map shows wherever it is unavailable"
+            }
+            style={({ pressed }) => [
+              styles.fab,
+              {
+                backgroundColor:
+                  basemap === "satellite" ? colors.gold : "rgba(14,36,68,0.92)",
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+          >
+            <Feather
+              name="satellite"
+              size={20}
+              color={basemap === "satellite" ? colors.navyDeep : "#F4F1EA"}
+            />
+          </Pressable>
+        )}
+
         {/* Offline coverage. Hidden with no downloads so the control is never
             dead, and it doubles as the thumb-reachable way to clear the
             region outline (the pill's Hide sits at the top of the screen). */}
@@ -1046,6 +1134,11 @@ export default function MapScreen() {
           <Feather name="navigation" size={20} color={colors.navyDeep} />
         </Pressable>
       </View>
+
+      {/* Esri requires its credit on the map while imagery is showing, and the
+          map's own attribution control is off. Collapsed to a small pill;
+          tapping it shows the full credit plus the online-only hint. */}
+      {basemap === "satellite" && <SatelliteCredit bottom={insets.bottom + 12} />}
 
       {loadingDb && (
         <View style={styles.dbOverlay}>

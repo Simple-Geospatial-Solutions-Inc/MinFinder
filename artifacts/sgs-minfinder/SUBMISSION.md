@@ -105,7 +105,7 @@ PREMIUM
 A one-time or subscription purchase unlocks compass navigation and the full expanded occurrence details. The map, search, filtering, and offline region downloads are free.
 
 DATA SOURCES
-Mineral data: BC Ministry of Energy, Mines and Low Carbon Innovation (MINFILE), https://minfile.gov.bc.ca/. Basemap: © OpenStreetMap contributors, © OpenMapTiles; elevation from MRDEM-30 (Natural Resources Canada) and modified Copernicus DEM data; contains information licensed under the Open Government Licence – Canada and the Open Government Licence – British Columbia.
+Mineral data: BC Ministry of Energy, Mines and Low Carbon Innovation (MINFILE), https://minfile.gov.bc.ca/. Basemap: © OpenStreetMap contributors, © OpenMapTiles; elevation from MRDEM-30 (Natural Resources Canada) and modified Copernicus DEM data; contains information licensed under the Open Government Licence – Canada and the Open Government Licence – British Columbia. Satellite view imagery: Esri, Vantor, Earthstar Geographics, and the GIS User Community.
 
 SGS MinFinder is an independent, third-party app. It is not affiliated with, endorsed by, or operated by the Government of British Columbia or any government agency.
 
@@ -182,6 +182,6 @@ npx eas-cli@latest env:update --environment production --name EXPO_PUBLIC_REVENU
 
 ## 6. Notes
 
-- **Data:** BC Ministry of Energy, Mines and Low Carbon Innovation (MINFILE). Basemap: OpenStreetMap / OpenMapTiles, MRDEM-30 and Copernicus DEM under the Open Government Licence – Canada, and BC government layers under the Open Government Licence – British Columbia. Attribution is in the description.
+- **Data:** BC Ministry of Energy, Mines and Low Carbon Innovation (MINFILE). Basemap: OpenStreetMap / OpenMapTiles, MRDEM-30 and Copernicus DEM under the Open Government Licence – Canada, and BC government layers under the Open Government Licence – British Columbia. The optional satellite view streams Esri World Imagery online only and is never stored in offline downloads; credited on the map as "Imagery: Esri, Vantor, Earthstar Geographics, and the GIS User Community". Attribution is in the description.
 - **Accuracy:** build ships 16,259 records; advertise "16,000+". Do **not** use "100,000+".
 - **RevenueCat** entitlement id used in code is `SGS MinFinder Pro` (see `lib/revenuecat.tsx`). The app unlocks Pro when this entitlement is active, so every product must map to it in the RevenueCat dashboard.

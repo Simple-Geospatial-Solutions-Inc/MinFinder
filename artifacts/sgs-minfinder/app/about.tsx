@@ -17,6 +17,7 @@ import {
 import { STATUS_MAP, STATUS_ORDER } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
 import { useSubscription } from "@/lib/revenuecat";
+import { SATELLITE_ATTRIBUTION, SATELLITE_TERMS_URL } from "@/lib/satellite";
 
 /**
  * Where the manual "Check for updates" button is in its cycle. `ready` means a
@@ -193,6 +194,12 @@ export default function AboutScreen() {
           Resource roads are shown from tenure records. An active tenure means a
           road was permitted and built — not that it is currently passable.
         </Text>
+        <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11, marginTop: 6 }]}>
+          Satellite view (optional, online only) — {SATELLITE_ATTRIBUTION}.
+          Imagery is streamed while you look at it and is never stored in
+          downloaded regions; where there is no connection the topo map shows
+          instead.
+        </Text>
         <Pressable
           onPress={() => WebBrowser.openBrowserAsync("https://www.openstreetmap.org/copyright")}
           style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
@@ -209,6 +216,15 @@ export default function AboutScreen() {
           <Feather name="external-link" size={14} color={colors.primary} />
           <Text style={[styles.linkText, { color: colors.primary }]}>
             Open Government Licence – British Columbia
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => WebBrowser.openBrowserAsync(SATELLITE_TERMS_URL)}
+          style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
+        >
+          <Feather name="external-link" size={14} color={colors.primary} />
+          <Text style={[styles.linkText, { color: colors.primary }]}>
+            Esri imagery attribution
           </Text>
         </Pressable>
       </View>
