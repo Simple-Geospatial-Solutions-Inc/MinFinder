@@ -98,6 +98,12 @@ every step, including re-downloading ~6 GB of DEM tiles.
 
 ## Deploying to the VPS
 
+> **Changing anything on the box?** Read
+> [docs/vps-changes.md](docs/vps-changes.md) first — who owns which file, which
+> ports are taken, the recipe for adding a tileset/route/service/timer, and the
+> list of ways this box fails silently. Written for an agent picking the work up
+> cold.
+
 One-time VPS setup (as root; full commands in the file headers):
 
 1. Install the pinned **go-pmtiles** binary and the systemd unit — follow the

@@ -317,7 +317,12 @@ export default function MapScreen() {
     let watcher: Location.LocationSubscription | undefined;
     (async () => {
       try {
-        const rows = await queryOccurrences({ limit: 100_000 });
+        // Every occurrence with coordinates, deliberately unbounded. A numeric
+        // cap here would quietly return an arbitrary subset once the table
+        // outgrew it — queryOccurrences has no ORDER BY — and the load would
+        // still look complete, which is the same class of failure as the
+        // "0 of 0" the check below exists to catch.
+        const rows = await queryOccurrences();
         if (rows.length === 0) {
           // The bundled DB always has rows, so an empty result means it opened
           // but has no usable data (wrong/corrupt copy, missing table).
