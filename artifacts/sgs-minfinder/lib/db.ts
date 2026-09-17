@@ -12,9 +12,6 @@ export interface Occurrence {
   STATUS_D: string | null;
   LATITUDE: number | null;
   LONGITUDE: number | null;
-  UTM_ZONE: string | null;
-  UTM_NORT: string | null;
-  UTM_EAST: string | null;
   ELEV: string | null;
   HOSTROCK: string | null;
   DEPOSIT_CLASS: string | null;
