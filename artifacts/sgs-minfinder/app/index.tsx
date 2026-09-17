@@ -80,6 +80,7 @@ import {
   saveBasemap,
   type Basemap,
 } from "@/lib/satellite";
+import { loadStatuses, saveStatuses } from "@/lib/statusFilter";
 
 const BC_REGION: Region = {
   latitude: 54.5,
@@ -253,7 +254,22 @@ export default function MapScreen() {
   // a broken build shipped unnoticed. Surface it instead.
   const [dbError, setDbError] = useState(false);
 
+  // Starts with every status on and catches up with the persisted selection,
+  // so a cold start never waits on storage to draw the pins.
   const [statuses, setStatuses] = useState<string[]>([...STATUS_ORDER]);
+  const statusesLoaded = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    loadStatuses().then((s) => {
+      // A toggle that landed before storage answered wins — otherwise the
+      // stored value would silently undo it.
+      if (!cancelled && !statusesLoaded.current) setStatuses(s);
+      statusesLoaded.current = true;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [search, setSearch] = useState("");
   const [searchActive, setSearchActive] = useState(false);
 
@@ -554,9 +570,14 @@ export default function MapScreen() {
   }, [userLoc, flyToUser]);
 
   const toggleStatus = useCallback((code: string) => {
-    setStatuses((prev) =>
-      prev.includes(code) ? prev.filter((s) => s !== code) : [...prev, code],
-    );
+    statusesLoaded.current = true;
+    setStatuses((prev) => {
+      const next = prev.includes(code)
+        ? prev.filter((s) => s !== code)
+        : [...prev, code];
+      void saveStatuses(next);
+      return next;
+    });
   }, []);
 
   const clearHighlight = useCallback(() => setHighlight(null), []);

@@ -355,14 +355,6 @@ export function DetailsSheet({
                   }
                 />
                 <Row
-                  label="UTM (NAD27)"
-                  value={
-                    occurrence.UTM_ZONE
-                      ? `Zone ${occurrence.UTM_ZONE} · E ${occurrence.UTM_EAST} · N ${occurrence.UTM_NORT}`
-                      : null
-                  }
-                />
-                <Row
                   label="UTM (NAD83)"
                   value={
                     occurrence.N83_ZONE
