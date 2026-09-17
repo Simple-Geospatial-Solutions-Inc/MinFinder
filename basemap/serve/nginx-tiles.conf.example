@@ -1,0 +1,130 @@
+# nginx-tiles.conf.example — OPTIONAL per-IP request-rate sidecar for tiles.
+#
+# NOT INSTALLED BY DEFAULT, AND NOT TO BE INSTALLED ON A GUESS. Put it in only
+# if tile-stats.sh shows tile egress approaching the link ceiling recorded in
+# the README, or a pattern of many mid-rate scrapers that tile-guard.sh's
+# per-address ban cannot catch. Until then the box (8 vCores / 24 GB, archives
+# in page cache, unmetered link) and tile-guard.sh are the protection.
+#
+# Topology once installed — Caddy keeps TLS, logging and the static files;
+# only the two `reverse_proxy` blocks in /etc/caddy/conf.d/tiles.caddy move
+# from 8081 to 8082:
+#
+#   client -> Caddy :443 -> nginx 127.0.0.1:8082 -> go-pmtiles 127.0.0.1:8081
+#
+# WHAT IT DOES. `limit_req` in DELAY mode (no `nodelay`): each client address
+# may fetch RATE requests per second; anything faster is QUEUED and released at
+# that rate, up to BURST requests waiting per address. That is a throttle —
+# the byte stream slows, the connection stays open, no status code is sent.
+# A 429 is emitted only when a single address has more than BURST requests
+# waiting at once. MapLibre's downloader keeps at most 20 requests in flight
+# (mln DEFAULT_MAXIMUM_CONCURRENT_REQUESTS), so one app instance can never
+# queue more than 20 and never sees a 429; a NATed office of N phones queues
+# at most 20N. Size BURST from that and from tile-stats.sh's Peak/IP figure.
+#
+# WHY NOT `limit_rate`. An earlier design put a limit_rate sidecar here. It
+# does not work for this traffic: limit_rate is per REQUEST, and nginx sends
+# the first `limit_rate` bytes of every response immediately, only pacing what
+# follows. The average tile is ~7 KB (400 MB / 57k). At any limit_rate above
+# ~8k every tile leaves in one go and nothing is throttled; at any value below
+# it EVERY tile is slowed, including the ones a user panning the live map is
+# waiting to see. It is the right tool for a few large downloads and the wrong
+# one for tens of thousands of small ones. Request-rate delay is what shapes
+# this traffic.
+#
+# WHY A 429 IS SURVIVABLE NOW (and still to be avoided). Until 2026-08-27 any
+# error during a pack download made the app alert "Download failed" and stop
+# listening, so a single 429 in 57,000 requests cost the customer the whole
+# 400 MB pack. Two facts changed that: MapLibre's own downloader retries 429
+# after Retry-After (default 5 s; mln/util/http_timeout.cpp) and 5xx with
+# backoff, and app/offline.tsx now treats error events as transient and only
+# gives up after minutes with no progress. So a 429 here is a retry, not a
+# failure — but every one still costs a rural-LTE round-trip, which is why the
+# design is delay-first and the reject threshold sits far above real clients.
+# Do not add `nodelay`: it turns every over-rate request into an immediate 429
+# and puts the old failure mode back.
+#
+# Install (as root):
+#   apt install nginx            # nginx -V 2>&1 | grep -o 'http_realip_module' must print
+#   rm -f /etc/nginx/sites-enabled/default
+#         # ^ MANDATORY. The default site listens on :80, which Caddy owns
+#         #   for ACME challenges and redirects; nginx would either fail to
+#         #   start or break certificate renewal for every site on the box.
+#   install -m 644 nginx-tiles.conf.example /etc/nginx/conf.d/tiles.conf
+#   # Edit RATE and BURST below from tile-stats.sh output first.
+#   # In /etc/nginx/nginx.conf, raise `worker_connections` (Ubuntu default
+#   # 768) to 4096: each proxied request holds two connections and Caddy
+#   # keeps up to 512 idle ones open to us.
+#   nginx -t && systemctl enable --now nginx     # or: systemctl reload nginx
+#   curl -sI http://127.0.0.1:8082/basemap.json   # 200 before touching Caddy
+#
+# Then in /etc/caddy/conf.d/tiles.caddy, in BOTH reverse_proxy blocks:
+#   reverse_proxy 127.0.0.1:8082 {
+#       import tiles_pmtiles_upstream
+#       header_up X-Forwarded-For {remote_host}
+#       ...
+#   }
+#   sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+#
+# The header_up line matters: it makes the forwarded address exactly the TCP
+# peer Caddy saw, so a client cannot send its own X-Forwarded-For and land in
+# someone else's bucket (or a fresh one per request). Caddy ≥ 2.5 already
+# strips X-Forwarded-* from untrusted clients, so this is belt-and-braces —
+# but it is the belt the rate-limit key hangs on, so it stays explicit.
+
+# One 10 MB zone tracks ~160,000 distinct addresses; the state per address is
+# a few dozen bytes. RATE is per address. For scale: a maximum-size pack is
+# 57,000 requests, so at 200r/s a lone phone on a fast link finishes it in
+# ~5 min instead of ~1, and the live map (a few dozen tiles per pan) never
+# notices. Set it from tile-stats.sh's Peak/IP, not from this example.
+limit_req_zone $binary_remote_addr zone=tiles_per_ip:10m rate=200r/s;
+limit_req_status 429;
+# Only excess requests are logged, at notice level; keep it out of the error
+# log's noise floor but visible when someone is being delayed a lot.
+limit_req_log_level notice;
+
+upstream pmtiles {
+    server 127.0.0.1:8081;
+    # Match Caddy's pool: hold connections to go-pmtiles open rather than
+    # paying a loopback handshake per tile (see sysctl-tiles.conf).
+    keepalive 256;
+}
+
+server {
+    listen 127.0.0.1:8082;
+    server_name _;
+
+    # Caddy already logs every request to /var/log/caddy/tiles.log with the
+    # real client address; a second copy here would double the log I/O.
+    access_log off;
+
+    # Trust X-Forwarded-For from Caddy only (it is the only thing that can
+    # reach this loopback listener), and take the LAST address in it — the one
+    # Caddy appended — never an earlier one a client could have supplied.
+    set_real_ip_from 127.0.0.1;
+    real_ip_header X-Forwarded-For;
+    real_ip_recursive off;
+
+    location / {
+        # Delay mode. BURST is the per-address queue depth before a 429; one
+        # app instance can hold at most 20, so 2000 tolerates ~100 phones
+        # behind one NAT before anyone is refused rather than slowed.
+        limit_req zone=tiles_per_ip burst=2000;
+
+        proxy_pass http://pmtiles;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        # go-pmtiles sets CORS itself (--cors=* in pmtiles.service); pass its
+        # headers through untouched, add none.
+    }
+
+    # When a 429 does happen, tell the client exactly when to come back.
+    # MapLibre parses Retry-After and waits that long instead of its 5 s
+    # default; Caddy passes the header through unchanged.
+    error_page 429 @rate_limited;
+    location @rate_limited {
+        add_header Retry-After 2 always;
+        return 429;
+    }
+}

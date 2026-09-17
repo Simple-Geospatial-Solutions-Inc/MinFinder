@@ -1,0 +1,16 @@
+# Build inputs and outputs. Currently ~50 GB combined — never commit these.
+# Everything here is reproducible from the scripts in build/:
+#   data/  DEM tiles, the MRDEM window, contour GeoPackages, WFS downloads,
+#          tippecanoe scratch — intermediates only.
+#   out/   the deployable tileset (basemap/terrain/contours/roads/context
+#          .pmtiles, glyphs, sprites) plus the generated style.json.
+data/
+out/
+
+# Local deployment config. config.env.example is the committed template; the
+# real file names a specific host and is per-operator.
+config.env
+
+# Transient copy deploy.sh runs from, so the original can be edited safely
+# while a multi-GB transfer is in flight.
+serve/.deploy-run.sh

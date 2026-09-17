@@ -1,0 +1,22 @@
+# tile-guard.timer — run tile-guard.service every five minutes.
+#
+# Five minutes against a ten-minute judging window (TILE_GUARD_WINDOW) means
+# every address is judged on a rolling window twice before it can age out,
+# and an abusive client is cut off within five minutes of crossing the line.
+# A pack download that is still legitimately in flight when the run happens
+# is judged only on what it has fetched so far, which is why the thresholds
+# must sit above a whole pack, not a fraction of one.
+#
+#   systemctl daemon-reload && systemctl enable --now tile-guard.timer
+#   systemctl list-timers tile-guard.timer
+
+[Unit]
+Description=Run tile-guard every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

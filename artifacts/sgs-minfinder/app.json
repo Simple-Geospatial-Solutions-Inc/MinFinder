@@ -3,7 +3,7 @@
     "name": "SGS MinFinder",
     "slug": "sgs-minfinder",
     "owner": "simple-geospatial-solutions",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon-square.png",
     "scheme": "sgs-minfinder",

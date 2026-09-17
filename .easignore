@@ -1,0 +1,67 @@
+# What NOT to upload to EAS Build.
+#
+# READ THIS BEFORE EDITING: when .easignore exists, EAS uses it INSTEAD OF
+# .gitignore — not in addition to it. Anything omitted here gets uploaded even
+# if git ignores it, so this file has to be self-sufficient.
+#
+# Why it exists. basemap/data and basemap/out hold ~50 GB of DEM tiles and
+# PMTiles archives. They are ignored by basemap/.gitignore, and git honours
+# nested ignore files — but EAS walks the filesystem with root-level rules only,
+# so it did not see that file and archived the lot. Measured: three abandoned
+# tarballs of 42 GB, 39 GB and 16 GB in the EAS temp directory, 204 GB total,
+# with a build sitting at "Compressing files" for the better part of an hour.
+# The app payload is ~33 MB.
+
+# --- version control and dependencies --------------------------------------
+# No trailing slash on .git, and that matters. eas-cli deletes .git from the
+# shallow clone only when ignore().add(<this file>).ignores('.git') is true
+# (vcs/clients/git.js, makeShallowCopyAsync) — a check that tests the bare
+# name, with none of the default rules applied. The pattern `.git/` does not
+# match `.git`, so the rule silently does nothing and the whole history ships.
+# Measured on Windows: a 32.5 MB upload that should have been ~10 MB, 28 MB of
+# it git objects. The trailing slashes elsewhere in this file are harmless —
+# exclusion there is decided per file, and every file inside still matches.
+.git
+node_modules/
+
+# --- the basemap pipeline ---------------------------------------------------
+# Source scripts stay (they are small and worth having in the archive for
+# reference); the data they produce and consume never ships in an app build.
+basemap/data/
+basemap/out/
+# Per-operator deploy config (names the real host) and the transient copy
+# deploy.sh runs from — both hidden by basemap/.gitignore, which EAS never
+# reads, so they have to be repeated here.
+basemap/config.env
+basemap/serve/.deploy-run.sh
+
+# --- scratch and local build inputs -----------------------------------------
+# Screenshots, a stray 12 MB PNG, a HEIC photo and a compass zip that nothing
+# references, alongside the two files scripts/build-db.mjs reads:
+# minfile_occurrences_*.sql and minfile_names.csv. That script is a manual
+# local step — no npm script, postinstall or EAS build hook invokes it — and
+# its output, artifacts/sgs-minfinder/assets/db/minfile.db, is committed and
+# ships on its own. So nothing in here is read during an EAS build. Measured:
+# 19.8 MB of a 32 MB archive. Keep the directory in git; the SQL dump and CSV
+# are how minfile.db gets rebuilt.
+attached_assets/
+
+# --- build output and caches ------------------------------------------------
+dist/
+.expo/
+.expo-shared/
+android/
+ios/
+*.tsbuildinfo
+out-tsc/
+
+# --- local env and secrets --------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- editor and OS noise ----------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

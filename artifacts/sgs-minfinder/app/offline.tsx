@@ -2,7 +2,13 @@ import { Feather } from "@/components/Icon";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -29,7 +35,12 @@ import { useColors } from "@/hooks/useColors";
 import { countOccurrencesInBbox, queryOccurrences } from "@/lib/db";
 import { formatBytes, formatShortDate } from "@/lib/format";
 import { setPendingFocusRegion } from "@/lib/mapFocus";
-import { ESRI_STYLE_JSON, ESRI_STYLE_URL, PACK_STYLE_VERSION } from "@/lib/mapStyle";
+import { markPackResetNoticeSeen, packResetNoticeSeen } from "@/lib/packReset";
+import {
+  BASEMAP_STYLE_JSON,
+  BASEMAP_STYLE_URL,
+  PACK_STYLE_VERSION,
+} from "@/lib/mapStyle";
 import {
   boundsCenter,
   boundsToPlaceName,
@@ -41,7 +52,12 @@ import {
   type Region,
 } from "@/lib/mapGeo";
 import { distanceMeters } from "@/lib/geo";
-import { countTilesInRegion, metersPerPixelAt } from "@/lib/tileCache";
+import {
+  countTilesInRegion,
+  estimatePackBytes,
+  metersPerPixelAt,
+  PACK_BYTE_BUDGET,
+} from "@/lib/tileCache";
 
 const BC_REGION: Region = {
   latitude: 54.5,
@@ -52,18 +68,35 @@ const BC_REGION: Region = {
 
 const MIN_ZOOM_DEFAULT = 8;
 const MAX_ZOOM_DEFAULT = 13;
-// Was 4,000 while countTilesInRegion under-counted by ~4x, so it really allowed
-// ~15,400 tiles. Raised to keep the selectable area the same now that the count
-// is honest, rather than silently cutting it to a quarter. Lower this if the cap
-// should mean what it says (4,000 tiles is roughly 100 MB, 15,000 roughly 380).
-const TILE_LIMIT = 15000;
+
+// The native downloader retries failed requests on its own — 5xx after 1 s
+// (three times, then exponential), connection failures with exponential
+// backoff from 1 s, 429 after Retry-After — and reports EVERY failure through
+// the error listener while it does so (maplibre-native: src/mln/util/
+// http_timeout.cpp, platform/default/src/mln/storage/offline_download.cpp;
+// the RN module's onError only emits, it never pauses). An error event is
+// therefore advisory, not terminal: a pmtiles restart during a deploy is a
+// burst of 502s that native has already re-queued. What IS terminal is a
+// download that stops making progress — a non-retryable status such as 403
+// leaves its request pending forever, and a long outage pushes native backoff
+// out to minutes. So after an error the watchdog waits STALL_TIMEOUT_MS for any
+// resource to land; if none does it pauses and resumes the pack, which cancels
+// the pending requests and re-walks the region with fresh 1 s retries
+// (already-stored resources replay from the database, no network), doubling
+// the wait each time. Only after MAX_STALL_KICKS with no progress does the
+// user see "Download failed".
+const STALL_TIMEOUT_MS = 45_000;
+// 45 s + 90 s + 180 s + 360 s: about eleven minutes without a single new
+// resource before giving up — long enough for an LTE dead spot on a logging
+// road, short enough that a genuinely dead server is not an indefinite spinner.
+const MAX_STALL_KICKS = 4;
 // Inset of the gold selection frame inside the picker map, in points. Shared by
 // the frame's style and the bounds math so the two cannot drift apart.
 const SELECTION_INSET = 24;
-// Ground resolution of the deepest cached level, at BC latitudes. Shown so users
-// aren't surprised when the basemap blurs past this. Derived rather than fixed:
-// a 256px source caches one XYZ level deeper than MAX_ZOOM_DEFAULT implies, so
-// the detail is twice as fine as the hardcoded 12 m/px used to claim.
+// Ground resolution of the deepest cached level, at BC latitudes. With vector
+// tiles this is where the map stops gaining DETAIL, not where it blurs — it
+// overzooms cleanly past this, unlike the raster basemap it replaced, so the
+// copy beside it says "detail to" rather than warning about pixelation.
 const MAX_DETAIL_M_PER_PX = Math.round(
   metersPerPixelAt(BC_REGION.latitude, MAX_ZOOM_DEFAULT),
 );
@@ -75,6 +108,8 @@ interface PackMeta {
   minZoom?: number;
   maxZoom?: number;
   estTiles?: number;
+  /** Pre-download size estimate in bytes; shown until real status arrives. */
+  estBytes?: number;
   createdAt?: number;
   /** Reverse-geocoded place name, resolved at download time while online. */
   place?: string;
@@ -85,21 +120,102 @@ interface PackMeta {
 // response that isn't valid style JSON — a Pages outage, a captive portal, a
 // hijacked DNS answer — terminates the process instead of failing the download.
 // Checking here turns that class of fatal crash into an alert.
-async function styleUrlIsUsable(url: string): Promise<boolean> {
+type StyleProbe = "ok" | "unreachable" | "foreign-source";
+
+/** Host part of an http(s) URL, or null. Hand-rolled: RN's URL is partial. */
+function hostOf(url: string): string | null {
+  const m = /^https?:\/\/([^/?#]+)/i.exec(url);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
+ * Every URL a pack download could follow, from a fetched style body.
+ * Source `url` (TileJSON) and `tiles` templates, plus glyphs and sprite.
+ */
+function styleResourceUrls(style: {
+  sources?: Record<string, { url?: unknown; tiles?: unknown }>;
+  glyphs?: unknown;
+  sprite?: unknown;
+}): string[] {
+  const out: string[] = [];
+  for (const src of Object.values(style.sources ?? {})) {
+    if (typeof src.url === "string") out.push(src.url);
+    if (Array.isArray(src.tiles)) {
+      for (const t of src.tiles) if (typeof t === "string") out.push(t);
+    }
+  }
+  if (typeof style.glyphs === "string") out.push(style.glyphs);
+  if (typeof style.sprite === "string") out.push(style.sprite);
+  return out;
+}
+
+/**
+ * Fetch the style createPack is about to be handed and check it is both
+ * parseable and entirely self-hosted.
+ *
+ * The second check is a licensing guard, not a health check. createPack
+ * downloads every resource the style at `url` references, so the only way a
+ * third-party tile (e.g. the online-only Esri imagery in lib/satellite.ts,
+ * whose terms forbid bulk download) could ever end up in a pack is for it to
+ * appear in the published style. That style is generated (basemap/build/
+ * 06-style.sh) and should never contain one — this refuses to download if it
+ * somehow does, so a build or deploy mistake fails loudly here instead of
+ * silently caching imagery we are not allowed to store.
+ */
+async function probeStyleUrl(url: string): Promise<StyleProbe> {
   try {
     const res = await fetch(url);
-    if (!res.ok) return false;
+    if (!res.ok) return "unreachable";
     const body: unknown = JSON.parse(await res.text());
-    if (typeof body !== "object" || body === null) return false;
-    const style = body as { version?: unknown; sources?: unknown };
-    return (
-      typeof style.version === "number" &&
-      typeof style.sources === "object" &&
-      style.sources !== null
-    );
+    if (typeof body !== "object" || body === null) return "unreachable";
+    const style = body as {
+      version?: unknown;
+      sources?: Record<string, { url?: unknown; tiles?: unknown }>;
+      glyphs?: unknown;
+      sprite?: unknown;
+    };
+    if (
+      typeof style.version !== "number" ||
+      typeof style.sources !== "object" ||
+      style.sources === null
+    ) {
+      return "unreachable";
+    }
+    const home = hostOf(url);
+    const foreign = styleResourceUrls(style).filter((u) => hostOf(u) !== home);
+    if (foreign.length > 0) {
+      console.warn("refusing to pack: style references off-host resources", foreign);
+      return "foreign-source";
+    }
+    return "ok";
   } catch {
-    return false;
+    return "unreachable";
   }
+}
+
+/**
+ * Tell the user their saved regions are about to be removed, and wait for them
+ * to acknowledge it before anything is deleted.
+ *
+ * Deliberately blocking rather than a toast: this is the only warning they get
+ * that a region they may be relying on for a trip is gone and has to be
+ * re-downloaded while they still have a connection. `cancelable: false` plus an
+ * onDismiss resolver covers both platforms — Android can dismiss an alert by
+ * tapping outside, and a promise that never settles would hang refresh() and
+ * leave the screen empty forever.
+ */
+function confirmPackReset(count: number): Promise<void> {
+  const regions = count === 1 ? "1 saved region" : `${count} saved regions`;
+  return new Promise((resolve) => {
+    Alert.alert(
+      "Offline maps need re-downloading",
+      `MinFinder now uses its own basemap, with shaded relief, contours and BC resource roads. ` +
+        `Your ${regions} came from the old map and can't be used with it, so ${count === 1 ? "it" : "they"} will be removed.` +
+        `\n\nRe-download before you head out — that needs a connection.`,
+      [{ text: "OK", onPress: () => resolve() }],
+      { cancelable: false, onDismiss: () => resolve() },
+    );
+  });
 }
 
 function formatKm(km: number): string {
@@ -170,13 +286,19 @@ export default function OfflineScreen() {
   const [loading, setLoading] = useState(true);
   // Real on-disk size and download progress live behind an async native call,
   // so they're fetched per refresh into maps the rows can read synchronously.
-  const [statuses, setStatuses] = useState<Record<string, OfflinePackStatus>>({});
+  const [statuses, setStatuses] = useState<Record<string, OfflinePackStatus>>(
+    {},
+  );
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [userLoc, setUserLoc] = useState<Location.LocationObjectCoords | null>(null);
+  const [userLoc, setUserLoc] = useState<Location.LocationObjectCoords | null>(
+    null,
+  );
 
   const [showAdd, setShowAdd] = useState(false);
   // Current picker viewport [west, south, east, north]; updated as the map moves.
-  const [viewBounds, setViewBounds] = useState<Bounds>(regionToBounds(BC_REGION));
+  const [viewBounds, setViewBounds] = useState<Bounds>(
+    regionToBounds(BC_REGION),
+  );
   const [mapSize, setMapSize] = useState<{ w: number; h: number } | null>(null);
   const [nameInput, setNameInput] = useState("");
   const [nameEdited, setNameEdited] = useState(false);
@@ -186,14 +308,57 @@ export default function OfflineScreen() {
   const [downloading, setDownloading] = useState<{
     percentage: number;
     tiles: number;
+    /** An error arrived and the watchdog is waiting for progress. */
+    retrying: boolean;
   } | null>(null);
+
+  // Stall watchdog for the active download — see STALL_TIMEOUT_MS. `completed`
+  // is the high-water mark of completedResourceCount: after a pause/resume the
+  // count replays from zero back up to where it was, so only a value above the
+  // mark counts as progress.
+  const stall = useRef<{
+    timer: ReturnType<typeof setTimeout> | null;
+    kicks: number;
+    completed: number;
+    lastError: string;
+  }>({ timer: null, kicks: 0, completed: 0, lastError: "" });
+
+  const clearStallTimer = useCallback(() => {
+    const s = stall.current;
+    if (s.timer) {
+      clearTimeout(s.timer);
+      s.timer = null;
+    }
+  }, []);
+
+  const resetNoticeInFlight = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
       const all = await OfflineManager.getPacks();
 
-      // Drop packs from before the style-URL fix: they contain no Esri tiles,
-      // so listing one would wrongly promise that its area works offline.
+      // Warn BEFORE deleting, once per PACK_STYLE_VERSION. Packs from an older
+      // version hold tiles this build never requests, so they have to go — but
+      // going silently is what makes it a bad experience rather than a
+      // necessary one.
+      const stale = all.filter(
+        (p) =>
+          ((p.metadata ?? {}) as PackMeta).styleVersion !== PACK_STYLE_VERSION,
+      );
+      if (stale.length > 0 && !resetNoticeInFlight.current) {
+        resetNoticeInFlight.current = true;
+        try {
+          if (!(await packResetNoticeSeen())) {
+            await confirmPackReset(stale.length);
+            await markPackResetNoticeSeen();
+          }
+        } finally {
+          resetNoticeInFlight.current = false;
+        }
+      }
+
+      // Drop packs from an older PACK_STYLE_VERSION: they hold tiles this build
+      // never requests, so listing one would wrongly promise offline coverage.
       const list: OfflinePack[] = [];
       for (const p of all) {
         const meta = (p.metadata ?? {}) as PackMeta;
@@ -285,10 +450,11 @@ export default function OfflineScreen() {
   // library only unsubscribes on its own once a pack reports "complete".
   useEffect(() => {
     return () => {
+      clearStallTimer();
       const pack = activePack.current;
       if (pack) OfflineManager.removeListener(pack.id);
     };
-  }, []);
+  }, [clearStallTimer]);
 
   // Centre the picker on the user when the modal opens.
   useEffect(() => {
@@ -337,7 +503,22 @@ export default function OfflineScreen() {
     [west, south, east, north],
   );
 
-  const tooLarge = tileCount > TILE_LIMIT;
+  // Bytes, not tiles, decide whether a region is allowed: that is what fills
+  // the phone and what the download actually costs on a rural connection.
+  const estBytes = useMemo(
+    () =>
+      estimatePackBytes(
+        south,
+        north,
+        west,
+        east,
+        MIN_ZOOM_DEFAULT,
+        MAX_ZOOM_DEFAULT,
+      ),
+    [west, south, east, north],
+  );
+
+  const tooLarge = estBytes > PACK_BYTE_BUDGET;
 
   // Nudge when the selection crosses the cap — the button greying out is easy
   // to miss while panning.
@@ -399,12 +580,15 @@ export default function OfflineScreen() {
     if (tooLarge) {
       Alert.alert(
         "Region too large",
-        `Selected area requires ${tileCount.toLocaleString()} tiles. Zoom in further (limit ${TILE_LIMIT.toLocaleString()}).`,
+        `Selected area is about ${formatBytes(estBytes)}. Zoom in further (limit ${formatBytes(PACK_BYTE_BUDGET)}).`,
       );
       return;
     }
     if (Platform.OS === "web") {
-      Alert.alert("Not supported", "Offline map download requires the mobile app.");
+      Alert.alert(
+        "Not supported",
+        "Offline map download requires the mobile app.",
+      );
       return;
     }
 
@@ -419,25 +603,102 @@ export default function OfflineScreen() {
       place = suggestion.place;
     }
     const existing = new Set(
-      packs.map((p) => ((p.metadata ?? {}) as PackMeta).name?.trim()).filter(Boolean),
+      packs
+        .map((p) => ((p.metadata ?? {}) as PackMeta).name?.trim())
+        .filter(Boolean),
     );
     let name = base;
     for (let i = 2; existing.has(name); i++) name = `${base} (${i})`;
 
-    setDownloading({ percentage: 0, tiles: 0 });
-    if (!(await styleUrlIsUsable(ESRI_STYLE_URL))) {
+    setDownloading({ percentage: 0, tiles: 0, retrying: false });
+    clearStallTimer();
+    stall.current = { timer: null, kicks: 0, completed: 0, lastError: "" };
+    const probe = await probeStyleUrl(BASEMAP_STYLE_URL);
+    if (probe !== "ok") {
       setDownloading(null);
       Alert.alert(
         "Download unavailable",
-        "Couldn't reach the map style needed to download this region. Check your connection and try again.",
+        probe === "foreign-source"
+          ? "The map style currently points at tiles that can't be stored offline, so this region wasn't downloaded. Please update the app or try again later."
+          : "Couldn't reach the map style needed to download this region. Check your connection and try again.",
       );
       return;
     }
+
+    // Native has stopped making progress despite its own retries. Pause and
+    // resume: pause cancels every pending request (and its backed-off timer),
+    // resume re-walks the region — stored resources replay from the database
+    // and only the missing ones go to the network, with fresh 1 s retries.
+    const giveUp = async (pack: OfflinePack, reason: string) => {
+      OfflineManager.removeListener(pack.id);
+      activePack.current = null;
+      setDownloading(null);
+      // Leave the pack PAUSED, not deleted and not silently retrying in the
+      // background: the list then shows it as paused with its Resume button,
+      // so everything already fetched is kept and recovery is the path that
+      // already exists.
+      try {
+        await pack.pause();
+      } catch (err) {
+        console.warn("pause after stall error", err);
+      }
+      setShowAdd(false);
+      refresh();
+      Alert.alert(
+        "Download failed",
+        `Couldn't reach the map server for several minutes (${reason}). ` +
+          "What was downloaded so far is kept — tap Resume on the region once you're back online.",
+      );
+    };
+    const armWatchdog = (pack: OfflinePack) => {
+      const s = stall.current;
+      s.timer = setTimeout(
+        async () => {
+          // Cancelled (or a different download started) while we waited.
+          if (activePack.current?.id !== pack.id) {
+            s.timer = null;
+            return;
+          }
+          if (s.kicks >= MAX_STALL_KICKS) {
+            s.timer = null;
+            await giveUp(pack, s.lastError || "no response");
+            return;
+          }
+          s.kicks += 1;
+          const completedBefore = s.completed;
+          console.warn(
+            `offline pack stalled; kick ${s.kicks}/${MAX_STALL_KICKS}`,
+          );
+          // s.timer deliberately still holds the fired handle while we kick, so
+          // an error arriving mid-kick cannot arm a second watchdog.
+          try {
+            await pack.pause();
+            await pack.resume();
+          } catch (err) {
+            // Not fatal on its own: the native download may still be alive and
+            // retrying. It costs one kick, and the next timer decides.
+            console.warn("pause/resume kick error", err);
+          }
+          // Progress or a cancel during the kick already cleared the watchdog;
+          // otherwise wait again, twice as long.
+          if (
+            activePack.current?.id !== pack.id ||
+            s.completed > completedBefore
+          ) {
+            return;
+          }
+          armWatchdog(pack);
+        },
+        STALL_TIMEOUT_MS * 2 ** s.kicks,
+      );
+    };
+
     try {
       const pack = await OfflineManager.createPack(
         {
-          // Must be a URL, not ESRI_STYLE_JSON — see ESRI_STYLE_URL in lib/mapStyle.ts.
-          mapStyle: ESRI_STYLE_URL,
+          // Must be a URL, not BASEMAP_STYLE_JSON — see BASEMAP_STYLE_URL in
+          // lib/mapStyle.ts.
+          mapStyle: BASEMAP_STYLE_URL,
           bounds: selectionBounds,
           minZoom: MIN_ZOOM_DEFAULT,
           maxZoom: MAX_ZOOM_DEFAULT,
@@ -446,17 +707,38 @@ export default function OfflineScreen() {
             minZoom: MIN_ZOOM_DEFAULT,
             maxZoom: MAX_ZOOM_DEFAULT,
             estTiles: tileCount,
+            estBytes,
             createdAt: Date.now(),
             place,
             styleVersion: PACK_STYLE_VERSION,
           } satisfies PackMeta,
         },
         (_pack, status) => {
-          setDownloading({
-            percentage: status.percentage,
-            tiles: status.completedTileCount,
-          });
+          const s = stall.current;
+          if (status.completedResourceCount > s.completed) {
+            // Genuine progress: a resource this pack never had before landed.
+            // Whatever errors came in, native worked through them.
+            s.completed = status.completedResourceCount;
+            s.kicks = 0;
+            clearStallTimer();
+          }
+          const retrying = s.timer != null;
+          // While the watchdog is armed the count may be replaying after a
+          // kick; hold the bar at its high-water mark rather than let it
+          // visibly rewind for a second.
+          setDownloading((prev) => ({
+            percentage:
+              retrying && prev
+                ? Math.max(prev.percentage, status.percentage)
+                : status.percentage,
+            tiles:
+              retrying && prev
+                ? Math.max(prev.tiles, status.completedTileCount)
+                : status.completedTileCount,
+            retrying,
+          }));
           if (status.state === "complete") {
+            clearStallTimer();
             activePack.current = null;
             setDownloading(null);
             // Downloads take minutes on rural LTE, by which point the phone is
@@ -469,13 +751,21 @@ export default function OfflineScreen() {
           }
         },
         (pack, error) => {
+          // Advisory, not terminal — native has already re-queued the request
+          // (see STALL_TIMEOUT_MS). One error per outage arms the watchdog;
+          // the rest of the burst just updates the message we would show.
           console.warn("offline pack error", error);
+          // A 404 is reported too, but native drops that resource and moves
+          // on — it can never be the cause of a stall, so don't flash
+          // "retrying" over a tile that simply doesn't exist.
+          if (/\b404\b/.test(error.message)) return;
+          const s = stall.current;
+          s.lastError = error.message;
+          if (s.timer) return;
+          setDownloading((prev) => (prev ? { ...prev, retrying: true } : prev));
           // Use the pack handed to the callback: activePack may not be assigned
           // yet if this fires before createPack's promise resolves.
-          OfflineManager.removeListener(pack.id);
-          Alert.alert("Download failed", error.message);
-          activePack.current = null;
-          setDownloading(null);
+          armWatchdog(pack);
         },
       );
       activePack.current = pack;
@@ -484,9 +774,19 @@ export default function OfflineScreen() {
       Alert.alert("Download failed", String(err));
       setDownloading(null);
     }
-  }, [selectionBounds, tileCount, tooLarge, nameInput, packs, refresh]);
+  }, [
+    selectionBounds,
+    tileCount,
+    estBytes,
+    tooLarge,
+    nameInput,
+    packs,
+    refresh,
+    clearStallTimer,
+  ]);
 
   const cancelDownload = useCallback(async () => {
+    clearStallTimer();
     const pack = activePack.current;
     activePack.current = null;
     setDownloading(null);
@@ -498,7 +798,7 @@ export default function OfflineScreen() {
         console.warn("cancel/delete pack error", err);
       }
     }
-  }, []);
+  }, [clearStallTimer]);
 
   const removePack = useCallback(
     (p: OfflinePack) => {
@@ -529,7 +829,10 @@ export default function OfflineScreen() {
     <View
       style={[
         styles.root,
-        { backgroundColor: colors.background, paddingBottom: insets.bottom + 16 },
+        {
+          backgroundColor: colors.background,
+          paddingBottom: insets.bottom + 16,
+        },
       ]}
     >
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -547,7 +850,7 @@ export default function OfflineScreen() {
             <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
               Pre-download map tiles so the basemap works without a data
               connection. MINFILE occurrence data is always available offline.
-              One region can cover up to about 165 km across.
+              One region can cover up to about 285 km across.
             </Text>
           </View>
         </View>
@@ -563,7 +866,9 @@ export default function OfflineScreen() {
           ]}
         >
           <Feather name="plus" size={18} color={colors.primaryForeground} />
-          <Text style={[styles.primaryBtnText, { color: colors.primaryForeground }]}>
+          <Text
+            style={[styles.primaryBtnText, { color: colors.primaryForeground }]}
+          >
             Download a new region
           </Text>
         </Pressable>
@@ -579,7 +884,8 @@ export default function OfflineScreen() {
               No offline regions yet
             </Text>
             <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
-              Tap "Download a new region" to cache the map of an area for offline use.
+              Tap "Download a new region" to cache the map of an area for
+              offline use.
             </Text>
           </View>
         ) : (
@@ -646,7 +952,12 @@ export default function OfflineScreen() {
                     {answer}
                   </Text>
 
-                  <Text style={[styles.regionMeta, { color: colors.mutedForeground }]}>
+                  <Text
+                    style={[
+                      styles.regionMeta,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
                     {formatSpanKm(bounds)}
                     {occCount != null
                       ? occCount === 0
@@ -655,14 +966,25 @@ export default function OfflineScreen() {
                       : ""}
                   </Text>
 
-                  <Text style={[styles.regionMeta, { color: colors.mutedForeground }]}>
-                    {st ? formatBytes(st.completedTileSize) : "…"} ·{" "}
-                    {(st?.completedTileCount ?? meta.estTiles ?? 0).toLocaleString()}{" "}
-                    tiles · detail to ~{MAX_DETAIL_M_PER_PX} m/pixel
+                  <Text
+                    style={[
+                      styles.regionMeta,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
+                    {st
+                      ? formatBytes(st.completedTileSize)
+                      : formatBytes(meta.estBytes ?? 0)}{" "}
+                    · detail to ~{MAX_DETAIL_M_PER_PX} m/pixel
                   </Text>
 
                   {saved ? (
-                    <Text style={[styles.regionMeta, { color: colors.mutedForeground }]}>
+                    <Text
+                      style={[
+                        styles.regionMeta,
+                        { color: colors.mutedForeground },
+                      ]}
+                    >
                       Downloaded {saved}
                     </Text>
                   ) : null}
@@ -688,7 +1010,10 @@ export default function OfflineScreen() {
                       style={({ pressed }) => [
                         styles.actionBtn,
                         styles.actionIcon,
-                        { borderColor: colors.gold, opacity: pressed ? 0.6 : 1 },
+                        {
+                          borderColor: colors.gold,
+                          opacity: pressed ? 0.6 : 1,
+                        },
                       ]}
                     >
                       <Feather name="play" size={18} color={colors.goldDim} />
@@ -703,10 +1028,17 @@ export default function OfflineScreen() {
                     style={({ pressed }) => [
                       styles.actionBtn,
                       styles.actionIcon,
-                      { borderColor: colors.destructive, opacity: pressed ? 0.6 : 1 },
+                      {
+                        borderColor: colors.destructive,
+                        opacity: pressed ? 0.6 : 1,
+                      },
                     ]}
                   >
-                    <Feather name="trash-2" size={18} color={colors.destructive} />
+                    <Feather
+                      name="trash-2"
+                      size={18}
+                      color={colors.destructive}
+                    />
                   </Pressable>
                 </View>
               </Pressable>
@@ -755,12 +1087,19 @@ export default function OfflineScreen() {
           Offline maps are stored on this device by MapLibre.
         </Text>
         <Text style={[styles.footer, { color: colors.mutedForeground }]}>
-          Tiles © Esri, USGS, NOAA and the GIS User Community.
+          © OpenStreetMap contributors, © OpenMapTiles, MRDEM-30 and Copernicus
+          DEM, and the Province of British Columbia (OGL-Canada, OGL-BC).
         </Text>
       </ScrollView>
 
-      <Modal visible={showAdd} animationType="slide" onRequestClose={() => setShowAdd(false)}>
-        <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
+      <Modal
+        visible={showAdd}
+        animationType="slide"
+        onRequestClose={() => setShowAdd(false)}
+      >
+        <View
+          style={[styles.modalRoot, { backgroundColor: colors.background }]}
+        >
           <View
             style={[
               styles.modalHeader,
@@ -770,7 +1109,11 @@ export default function OfflineScreen() {
               },
             ]}
           >
-            <Pressable onPress={() => setShowAdd(false)} hitSlop={8} disabled={!!downloading}>
+            <Pressable
+              onPress={() => setShowAdd(false)}
+              hitSlop={8}
+              disabled={!!downloading}
+            >
               <Feather name="x" size={22} color="#F4F1EA" />
             </Pressable>
             <Text style={styles.modalTitle}>Select a region</Text>
@@ -788,7 +1131,7 @@ export default function OfflineScreen() {
           >
             <MapLibreMap
               style={StyleSheet.absoluteFill}
-              mapStyle={ESRI_STYLE_JSON}
+              mapStyle={BASEMAP_STYLE_JSON}
               attribution={false}
               touchRotate={false}
               touchPitch={false}
@@ -819,7 +1162,12 @@ export default function OfflineScreen() {
             ]}
           >
             <View>
-              <Text style={[styles.modalInfoLabel, { color: colors.mutedForeground }]}>
+              <Text
+                style={[
+                  styles.modalInfoLabel,
+                  { color: colors.mutedForeground },
+                ]}
+              >
                 Name this region
               </Text>
               <TextInput
@@ -845,36 +1193,57 @@ export default function OfflineScreen() {
 
             <View style={styles.tileInfoRow}>
               <View>
-                <Text style={[styles.modalInfoLabel, { color: colors.mutedForeground }]}>
-                  Estimated tiles
+                <Text
+                  style={[
+                    styles.modalInfoLabel,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  Estimated size
                 </Text>
                 <Text
                   style={[
                     styles.modalInfoValue,
-                    { color: tooLarge ? colors.destructive : colors.foreground },
+                    {
+                      color: tooLarge ? colors.destructive : colors.foreground,
+                    },
                   ]}
                 >
-                  {tileCount.toLocaleString()}
+                  {formatBytes(estBytes)}
                 </Text>
               </View>
               <View>
-                <Text style={[styles.modalInfoLabel, { color: colors.mutedForeground }]}>
+                <Text
+                  style={[
+                    styles.modalInfoLabel,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
                   Area
                 </Text>
                 <Text
                   style={[
                     styles.modalInfoValue,
-                    { color: tooLarge ? colors.destructive : colors.foreground },
+                    {
+                      color: tooLarge ? colors.destructive : colors.foreground,
+                    },
                   ]}
                 >
                   {formatSpanKm(selectionBounds)}
                 </Text>
               </View>
               <View>
-                <Text style={[styles.modalInfoLabel, { color: colors.mutedForeground }]}>
+                <Text
+                  style={[
+                    styles.modalInfoLabel,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
                   Zoom levels
                 </Text>
-                <Text style={[styles.modalInfoValue, { color: colors.foreground }]}>
+                <Text
+                  style={[styles.modalInfoValue, { color: colors.foreground }]}
+                >
                   {MIN_ZOOM_DEFAULT}–{MAX_ZOOM_DEFAULT}
                 </Text>
               </View>
@@ -896,10 +1265,22 @@ export default function OfflineScreen() {
                     }}
                   />
                 </View>
-                <Text style={[styles.progressText, { color: colors.foreground }]}>
+                <Text
+                  style={[styles.progressText, { color: colors.foreground }]}
+                >
                   {Math.round(downloading.percentage)}% ·{" "}
                   {downloading.tiles.toLocaleString()} tiles
                 </Text>
+                {downloading.retrying ? (
+                  <Text
+                    style={[
+                      styles.progressText,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
+                    Connection trouble — retrying, nothing lost
+                  </Text>
+                ) : null}
                 <Pressable
                   onPress={cancelDownload}
                   style={({ pressed }) => [
@@ -907,7 +1288,9 @@ export default function OfflineScreen() {
                     { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
                   ]}
                 >
-                  <Text style={[styles.cancelBtnText, { color: colors.foreground }]}>
+                  <Text
+                    style={[styles.cancelBtnText, { color: colors.foreground }]}
+                  >
                     Cancel
                   </Text>
                 </Pressable>
@@ -927,7 +1310,9 @@ export default function OfflineScreen() {
                 <Feather
                   name="download"
                   size={18}
-                  color={tooLarge ? colors.mutedForeground : colors.primaryForeground}
+                  color={
+                    tooLarge ? colors.mutedForeground : colors.primaryForeground
+                  }
                 />
                 <Text
                   style={[
@@ -940,7 +1325,7 @@ export default function OfflineScreen() {
                   ]}
                 >
                   {tooLarge
-                    ? `Too large (max ${TILE_LIMIT.toLocaleString()} tiles)`
+                    ? `Too large (max ${formatBytes(PACK_BYTE_BUDGET)})`
                     : "Download this region"}
                 </Text>
               </Pressable>

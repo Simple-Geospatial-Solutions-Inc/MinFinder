@@ -1,0 +1,204 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>MinFinder basemap preview</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!--
+  Local preview for the self-hosted basemap. Open this file directly in a
+  browser -- it is NOT part of the app and NOT the Phase 2 style. It exists to
+  answer one question the tile-fetch tests cannot: does this data actually
+  render, and does it look like British Columbia?
+
+  Deliberately simple cartography. Real styling (colour ramps checked against
+  pin/cluster colours on a device in real terrain) is Phase 2.
+
+  Deployed to https://tiles.sgss.ca/preview.html as well as being openable
+  locally -- it doubles as the post-deploy smoke test, since it exercises the
+  style, glyphs, sprites, TileJSON and every tileset in one page.
+
+  Loads MapLibre GL JS from a CDN, so it needs internet. Tiles come from the
+  same origin when served from the VPS; from tiles.sgss.ca (which sends
+  Access-Control-Allow-Origin: *) when opened as a local file.
+-->
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  html,body{margin:0;height:100%;font:13px/1.4 system-ui,sans-serif}
+  #map{position:absolute;inset:0}
+  #panel{position:absolute;top:10px;left:10px;z-index:1;background:#fff;
+         padding:10px 12px;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.25);
+         min-width:180px}
+  #panel h1{font-size:13px;margin:0 0 8px;font-weight:600}
+  #panel label{display:block;margin:3px 0;cursor:pointer}
+  #panel .z{margin-top:8px;color:#666;font-variant-numeric:tabular-nums}
+  #panel select{width:100%;margin-top:6px}
+  #panel hr{border:0;border-top:1px solid #e3e3e3;margin:8px 0 6px}
+  #panel .grp{color:#666;font-size:11px;text-transform:uppercase;
+              letter-spacing:.04em;margin-bottom:4px}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <h1>MinFinder basemap</h1>
+  <label><input type="checkbox" id="t-hillshade" checked> Hillshade</label>
+  <label><input type="checkbox" id="t-contours" checked> Contours</label>
+  <label><input type="checkbox" id="t-labels" checked> Labels</label>
+  <hr>
+  <div class="grp">BC government data</div>
+  <label><input type="checkbox" id="t-fsr" checked> Resource roads</label>
+  <label><input type="checkbox" id="t-og" checked> Oil &amp; gas roads</label>
+  <label><input type="checkbox" id="t-rec" checked> Trails</label>
+  <label><input type="checkbox" id="t-parks" checked> Parks</label>
+  <label><input type="checkbox" id="t-bedrock"> Bedrock geology</label>
+  <select id="jump">
+    <option value="-122.95,50.11,12">Whistler / Coast Mtns</option>
+    <option value="-123.12,49.28,11">Vancouver</option>
+    <option value="-118.20,50.67,11">Revelstoke</option>
+    <option value="-127.10,54.68,12">Smithers — FSR density</option>
+  <option value="-120.85,56.25,11">Fort St. John — oil &amp; gas roads</option>
+  <option value="-127.65,53.90,10">Bulkley / Interior</option>
+    <option value="-133.05,54.15,9">Haida Gwaii</option>
+    <option value="-125.0,54.0,6">All of BC</option>
+  </select>
+  <div class="z" id="zoom"></div>
+</div>
+<script>
+// Served two ways, so the host is derived rather than hardcoded: opened as a
+// local file it must reach across to the VPS, but served FROM the VPS it must
+// use its own origin -- otherwise a staging box would silently render
+// production tiles and you would be reviewing the wrong data.
+const HOST = location.protocol === "file:"
+  ? "https://tiles.sgss.ca"
+  : location.origin;
+
+// Contour colours are intentionally muted: on the real map they sit UNDER
+// pins and must never compete with them for attention.
+const style = {
+  version: 8,
+  glyphs: HOST + "/glyphs/{fontstack}/{range}.pbf",
+  sprite: HOST + "/sprite",
+  sources: {
+    basemap:  { type: "vector", url: HOST + "/basemap.json" },
+    contours: { type: "vector", url: HOST + "/contours.json" },
+    // rio-rgbify wrote Mapbox terrain-RGB: -10000 + (R*65536+G*256+B)*0.1
+    terrain:  { type: "raster-dem", url: HOST + "/terrain.json",
+                encoding: "mapbox", tileSize: 512, maxzoom: 11 }
+  },
+  layers: [
+    { id: "bg", type: "background", paint: { "background-color": "#F4F1EA" } },
+
+    { id: "landcover", type: "fill", source: "basemap", "source-layer": "landcover",
+      paint: { "fill-color": [ "match", ["get","class"],
+                 "wood","#D6E2C4", "grass","#E4EBD5", "ice","#F2F7FA", "#E8EADF" ],
+               "fill-opacity": 0.7 } },
+
+    { id: "park", type: "fill", source: "basemap", "source-layer": "park",
+      paint: { "fill-color": "#CFE3C2", "fill-opacity": 0.4 } },
+
+    { id: "water", type: "fill", source: "basemap", "source-layer": "water",
+      paint: { "fill-color": "#A4C4DE" } },
+
+    { id: "waterway", type: "line", source: "basemap", "source-layer": "waterway",
+      paint: { "line-color": "#A4C4DE",
+               "line-width": ["interpolate",["linear"],["zoom"],8,0.5,14,2] } },
+
+    { id: "hillshade", type: "hillshade", source: "terrain",
+      paint: { "hillshade-exaggeration": 0.45,
+               "hillshade-shadow-color": "#6B6558",
+               "hillshade-highlight-color": "#FFFFFF" } },
+
+    // idx==1 marks index (100 m) contours; everything else is a 20 m minor.
+    { id: "contour-minor", type: "line", source: "contours", "source-layer": "contours",
+      filter: ["!=", ["get","idx"], 1], minzoom: 12,
+      paint: { "line-color": "#9C7A50", "line-width": 0.5, "line-opacity": 0.45 } },
+
+    { id: "contour-index", type: "line", source: "contours", "source-layer": "contours",
+      filter: ["==", ["get","idx"], 1],
+      paint: { "line-color": "#8A6A42", "line-width": 0.9, "line-opacity": 0.6 } },
+
+    { id: "road-minor", type: "line", source: "basemap", "source-layer": "transportation",
+      filter: ["match",["get","class"],["track","service","minor","path"],true,false],
+      minzoom: 11,
+      paint: { "line-color": "#FFFFFF", "line-width": ["interpolate",["linear"],["zoom"],11,0.5,16,3],
+               "line-opacity": 0.8 } },
+
+    { id: "road-major", type: "line", source: "basemap", "source-layer": "transportation",
+      filter: ["match",["get","class"],["motorway","trunk","primary","secondary","tertiary"],true,false],
+      paint: { "line-color": "#F7C46C",
+               "line-width": ["interpolate",["linear"],["zoom"],6,0.8,14,5] } },
+
+    { id: "contour-label", type: "symbol", source: "contours", "source-layer": "contours",
+      filter: ["==", ["get","idx"], 1], minzoom: 13,
+      layout: { "symbol-placement": "line", "text-field": ["to-string",["get","elev"]],
+                "text-font": ["Open Sans Regular"], "text-size": 10,
+                "text-max-angle": 25, "symbol-spacing": 300 },
+      paint: { "text-color": "#7A5C38", "text-halo-color": "#F4F1EA", "text-halo-width": 1.2 } },
+
+    { id: "peak", type: "symbol", source: "basemap", "source-layer": "mountain_peak",
+      minzoom: 9,
+      layout: { "text-field": ["concat", ["get","name"], "\n", ["to-string",["get","ele"]], " m"],
+                "text-font": ["Open Sans Semibold"], "text-size": 11, "text-offset": [0,0.6] },
+      paint: { "text-color": "#5A4A34", "text-halo-color": "#F4F1EA", "text-halo-width": 1.5 } },
+
+    { id: "place", type: "symbol", source: "basemap", "source-layer": "place",
+      layout: { "text-field": ["get","name"], "text-font": ["Open Sans Bold"],
+                "text-size": ["interpolate",["linear"],["zoom"],4,10,12,16] },
+      paint: { "text-color": "#333", "text-halo-color": "#F4F1EA", "text-halo-width": 1.8 } }
+  ]
+};
+
+// ?style=minimal falls back to the hand-written diagnostic style above; the
+// default is the real generated style.json (osm-bright base, 139 layers).
+const useMinimal = new URLSearchParams(location.search).get("style") === "minimal";
+const map = new maplibregl.Map({
+  container: "map",
+  style: useMinimal ? style : HOST + "/style.json",
+  center: [-122.95, 50.11], zoom: 12, hash: true, maxZoom: 18
+});
+map.addControl(new maplibregl.NavigationControl(), "top-right");
+map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
+
+const CONTOURS = ["contour-minor","contour-index","contour-label"];
+// Ids come from 06-style.sh. Only present in the generated style, so every
+// setLayoutProperty below is guarded -- ?style=minimal has none of them.
+const BC = {
+  "t-fsr":     ["resource-road","resource-road-label"],
+  "t-og":      ["og-road"],
+  "t-rec":     ["rec-line"],
+  "t-parks":   ["bc-park"],
+  "t-bedrock": ["bedrock-geology"]
+};
+const set = (ids, on) => ids.forEach(id => {
+  if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+});
+// Layer ids differ between the minimal and generated styles, so derive the
+// label set from the live style rather than hardcoding names.
+const labelIds = () => map.getStyle().layers
+  .filter(l => l.type === "symbol" && (l.layout||{})["text-field"])
+  .map(l => l.id);
+
+map.on("load", () => {
+  document.getElementById("t-hillshade").onchange = e => set(["hillshade"], e.target.checked);
+  document.getElementById("t-contours").onchange  = e => set(CONTOURS, e.target.checked);
+  document.getElementById("t-labels").onchange    = e => set(labelIds(), e.target.checked);
+  for (const [box, ids] of Object.entries(BC)) {
+    const el = document.getElementById(box);
+    el.onchange = e => set(ids, e.target.checked);
+    // bedrock ships visibility:none in style.json, so the checkbox starts
+    // unchecked and matches; the rest need no initial sync.
+  }
+  document.getElementById("jump").onchange = e => {
+    const [lng,lat,z] = e.target.value.split(",").map(Number);
+    map.flyTo({ center:[lng,lat], zoom:z });
+  };
+  const z = () => document.getElementById("zoom").textContent =
+    "zoom " + map.getZoom().toFixed(1);
+  map.on("move", z); z();
+});
+
+map.on("error", e => console.error("MapLibre:", e && e.error ? e.error.message : e));
+</script>
+</body>
+</html>

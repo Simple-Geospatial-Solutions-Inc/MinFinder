@@ -105,6 +105,16 @@ export interface BBox {
 export interface QueryOptions {
   bbox?: BBox;
   statuses?: string[];
+  /**
+   * Cap on rows returned. Omit to get every matching row.
+   *
+   * Pass a number only where a partial result is genuinely what you want — a
+   * sample of nearby rows to label something, say. This query has no ORDER BY,
+   * so a cap the table later outgrows returns whichever subset the planner
+   * happens to emit, and the call site cannot tell that from a complete load.
+   * A caller that wants everything therefore has to ask for everything, not
+   * name a number it believes is comfortably large.
+   */
   limit?: number;
 }
 
@@ -128,8 +138,11 @@ export async function queryOccurrences(
     params.push(...opts.statuses);
   }
 
-  const limit = opts.limit ?? 5000;
-  const sql = `SELECT * FROM minfile_occurrences WHERE ${where.join(" AND ")} LIMIT ${limit}`;
+  let sql = `SELECT * FROM minfile_occurrences WHERE ${where.join(" AND ")}`;
+  if (opts.limit != null) {
+    sql += " LIMIT ?";
+    params.push(opts.limit);
+  }
   return (await db.getAllAsync<Occurrence>(sql, params)) as Occurrence[];
 }
 

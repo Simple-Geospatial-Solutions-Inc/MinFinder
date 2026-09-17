@@ -1,0 +1,24 @@
+# This repo is cloned on Windows with core.autocrlf=true, which rewrites LF to
+# CRLF on checkout. For everything in this directory that is CATASTROPHIC
+# rather than cosmetic:
+#
+#   *.sh              a CRLF shebang makes `#!/usr/bin/env sh` into
+#                     `sh\r`, and the kernel reports "bad interpreter: No such
+#                     file or directory" — for a file that plainly exists.
+#   *.py              embedded in the shell scripts via heredoc; a stray \r
+#                     inside a string is invisible and corrupts values silently
+#                     (see the GRID_PX story in build/02-dem.sh).
+#   Caddyfile/service  parsed on Linux by Caddy and systemd.
+#
+# Forcing LF here keeps the working tree byte-identical to what runs in the
+# containers and on the VPS.
+#   config.env*     SOURCED by every build script (`. config.env`). With CRLF,
+#                   BASEMAP_HOST becomes "tiles.sgss.ca<CR>" and every URL
+#                   built from it is quietly wrong. The example is the file
+#                   operators copy to make the real one, so it must ship LF.
+*.sh            text eol=lf
+config.env*     text eol=lf
+*.py            text eol=lf
+*.service       text eol=lf
+Caddyfile*      text eol=lf
+*.Containerfile text eol=lf

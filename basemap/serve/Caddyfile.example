@@ -1,0 +1,191 @@
+# Caddyfile.example — the MinFinder tile-server SITE BLOCK.
+#
+# INSTALL IT AS ITS OWN FILE, NOT INTO /etc/caddy/Caddyfile:
+#
+#   sudo mkdir -p /etc/caddy/conf.d
+#   sudo install -m 644 this-file /etc/caddy/conf.d/tiles.caddy
+#   sudo caddy validate --config /etc/caddy/Caddyfile   # MUST pass first
+#   sudo systemctl reload caddy                         # reload, NEVER restart
+#
+# WHY, learned the hard way on 2026-08-27. The VPS runs one shared Caddy that
+# also terminates sgss.ca, and that config is OWNED BY ANOTHER REPO: the
+# sgs-website deploy script installs its own deploy/Caddyfile.production over
+# /etc/caddy/Caddyfile whenever the two differ. An earlier revision of this
+# file told you to APPEND the block below to /etc/caddy/Caddyfile. A routine
+# website deploy then silently removed it, Caddy was left with no site for
+# tiles.sgss.ca, and it answered TLS with alert 80 and no certificate — the
+# tile server was down and the app's map rendered blank. The certificates were
+# valid the whole time; only the config was gone.
+#
+# sgs-website's Caddyfile.production now carries a single line:
+#     import /etc/caddy/conf.d/*.caddy
+# so anything in conf.d survives its deploys and this file never has to touch
+# shared config again. If the tile server ever goes dark right after someone
+# ships the website, check that line still exists before anything else.
+#
+# `reload` keeps in-flight connections; `restart` drops them for every site on
+# the box. If `validate` fails, fix it and stop — an invalid Caddyfile takes
+# down every site, not just this one.
+#
+# THE LOG FILE MUST EXIST AND BE caddy-OWNED before the website deploy runs.
+# That script runs `caddy validate` as root, and validation provisions log
+# writers — so if /var/log/caddy/tiles.log is missing, root creates it, the
+# caddy user cannot open it, and THEIR reload fails because of our config.
+# A tmpfiles rule keeps it correct across rotation and reboots:
+#     /etc/tmpfiles.d/caddy-tiles.conf:
+#     f /var/log/caddy/tiles.log 0640 caddy caddy -
+#
+# The GLOBAL OPTIONS block (the bare `{ ... }` at the top of a Caddyfile) is
+# deliberately NOT included here. A Caddyfile may contain exactly one, it lives
+# in the website repo's Caddyfile.production, and adding a second anywhere —
+# including in an imported file — is a parse error. If an `email` is not set
+# there, add it to that block rather than here.
+#
+# Layout on the VPS (rsync'd by serve/deploy.sh):
+#   /srv/basemap/basemap.pmtiles     \
+#   /srv/basemap/terrain.pmtiles      > served as Z/X/Y by go-pmtiles :8081
+#   /srv/basemap/contours.pmtiles    /
+#   /srv/basemap/glyphs/...          \
+#   /srv/basemap/sprite*.{json,png}   > served as static files by Caddy
+#   /srv/basemap/style.json          /
+#
+# go-pmtiles (v1.31.2) URL shape, which this file must match exactly:
+#   /{tileset}/{z}/{x}/{y}.{ext}  ->  tiles   (basemap/.mvt, terrain/.png, contours/.mvt)
+#   /{tileset}.json               ->  TileJSON
+
+# Upstream connection pool for the Caddy -> go-pmtiles loopback hop, shared by
+# both reverse_proxy blocks in the site below. Caddy's defaults keep only 32 idle
+# connections per upstream, so under a 57k-request burst every request beyond
+# that opens and closes a fresh loopback connection: each one parks an
+# ephemeral port in TIME_WAIT for 60 s, and the default ~28k-port range is
+# gone in well under a minute — Caddy then fails to connect and answers 502
+# mid-download. Keeping a few hundred connections open makes the hop
+# effectively free; sysctl-tiles.conf widens the port range as a backstop.
+# go-pmtiles is a Go net/http server with no idle timeout, so it will hold
+# these open for as long as Caddy does.
+#
+# Defined ABOVE the site block on purpose: the Caddyfile adapter records a
+# snippet when it reaches it and resolves `import` in token order, so a
+# snippet used before its definition is treated as a file path and fails
+# validation. The name carries a tiles_ prefix because snippet names are
+# global across the whole assembled Caddyfile, including the website's.
+(tiles_pmtiles_upstream) {
+	transport http {
+		keepalive 2m
+		keepalive_idle_conns 512
+		keepalive_idle_conns_per_host 512
+	}
+}
+
+tiles.sgss.ca {
+	# ---- Rate limiting: NOT IN CADDY, AND NO EDGE IN FRONT ---------------
+	# `rate_limit` is not in stock Caddy — it needs a custom build (xcaddy
+	# --with github.com/mholt/caddy-ratelimit), and swapping the Caddy binary
+	# on a box already serving sgss.ca risks the company website to protect a
+	# tile server. Rejected.
+	#
+	# This site was designed assuming Cloudflare would absorb bursts at the
+	# edge. It never did and it will not: WHC's client-area Cloudflare CDN
+	# provisions the zone in THEIR partner account and proxies only the apex
+	# and www — subdomains cannot be orange-clouded there (confirmed twice by
+	# WHC support, and by asking amir/bella.ns.cloudflare.com directly: the
+	# apex answers with Cloudflare IPs, `tiles` answers with the OVH origin
+	# 51.222.206.236). SGS owns no Cloudflare account, and moving a zone that
+	# carries the company's email under p=quarantine was judged too
+	# destructive. Settled 2026-08-27. Every tile request reaches this box.
+	#
+	# What protects the origin instead (all in this directory):
+	#   * the box itself: 8 vCores / 24 GB, the 9.6 GiB archive set lives in
+	#     page cache, and OVH traffic is unmetered — the only real failure
+	#     mode is saturating the link shared with sgss.ca;
+	#   * tile-stats.sh   — measures real per-IP burst rates from the log
+	#                       below, so nothing is tuned blind;
+	#   * tile-guard.sh   — periodic aggregate-and-ban of abusive IPs via
+	#                       nftables, thresholds taken from tile-stats;
+	#   * nginx-tiles.conf.example — optional per-IP request *delay* sidecar,
+	#                       only if measurement shows the link at risk;
+	#   * the app (app/offline.tsx) treats download errors as transient and
+	#     rides out blips, so a throttle no longer costs a customer a pack.
+	#
+	# TENSION worth recording for whoever revisits this: the app's offline
+	# downloader legitimately fetches up to ~57,000 tiles in one burst when a
+	# user saves a maximum-size region (measured through lib/tileCache.ts at a
+	# 400 MB pack budget; it was ~15,000 under the old raster basemap and the
+	# figure moves whenever a source or zoom range changes). Any per-IP limit
+	# tight enough to stop a scraper is also tight enough to break that core
+	# paid feature. Every threshold must sit well above one full pack, and
+	# must come from tile-stats.sh output, not from a guess.
+
+	# ---- Static assets: style, glyphs, sprites -------------------------
+	# go-pmtiles only serves tiles/TileJSON, so these come straight off disk.
+
+	# style.json is the entry point clients re-fetch to pick up map changes —
+	# keep its cache short, unlike the immutable assets below.
+	handle /style.json {
+		root * /srv/basemap
+		header Access-Control-Allow-Origin "*"
+		header Cache-Control "public, max-age=300"
+		encode gzip zstd
+		file_server
+	}
+
+	@static path /sprite.json /sprite.png /sprite@2x.json /sprite@2x.png /glyphs/*
+	handle @static {
+		root * /srv/basemap
+		header Access-Control-Allow-Origin "*"
+		# Glyph PBFs and sprites only change when we regenerate and redeploy
+		# them, which is rare; a year with immutable is fine because a font
+		# or sprite change would ship with a new style anyway.
+		header Cache-Control "public, max-age=31536000, immutable"
+		# Glyph PBFs compress ~2x; tiles are NOT routed here (pmtiles vector
+		# tiles are stored gzip-compressed and pass through as-is).
+		encode gzip zstd
+		file_server
+	}
+
+	# ---- TileJSON ------------------------------------------------------
+	# Shorter cache than tiles: it is the pointer clients re-read to notice
+	# min/max zoom or attribution changes after a redeploy.
+	@tilejson path /basemap.json /terrain.json /contours.json
+	handle @tilejson {
+		reverse_proxy 127.0.0.1:8081 {
+			import tiles_pmtiles_upstream
+			header_down Cache-Control "public, max-age=3600"
+		}
+	}
+
+	# ---- Tiles ---------------------------------------------------------
+	# Everything else is /{tileset}/{z}/{x}/{y}.{ext}, proxied verbatim —
+	# go-pmtiles' path shape already matches our public URLs 1:1.
+	# CORS on these responses comes from go-pmtiles (--cors=* in
+	# pmtiles.service); do NOT add Access-Control-Allow-Origin here or
+	# browsers will reject the duplicated header.
+	handle {
+		reverse_proxy 127.0.0.1:8081 {
+			import tiles_pmtiles_upstream
+			# Tiles at a given URL only change on a basemap rebuild
+			# (~monthly at most); 30 days cuts repeat traffic while a
+			# rebuild still propagates within a month. The offline
+			# downloader stores tiles itself so it is unaffected.
+			header_down Cache-Control "public, max-age=2592000"
+		}
+	}
+
+	# Access log. No `format` is set, so entries are Caddy's JSON (one object
+	# per line: .ts, .request.remote_ip, .request.uri, .status, .size ...).
+	# tile-stats.sh and tile-guard.sh both parse this file; keep it JSON.
+	#
+	# Rotation is sized for analysis, not just tidiness: tile-stats.sh needs
+	# a window that contains several complete pack downloads to give honest
+	# per-IP figures, and tile-guard.sh reads the live file. One JSON entry
+	# is ~1 KB with headers, so a 57k-request pack is ~50–60 MB of log; at
+	# 100MiB x 5 the window was roughly a fortnight and one busy day could
+	# roll a whole download out of it. 500MiB x 10 keeps ~5 GB at most
+	# (rotated files are gzipped, so far less on disk) on a 200 GB drive.
+	log {
+		output file /var/log/caddy/tiles.log {
+			roll_size 500MiB
+			roll_keep 10
+		}
+	}
+}
