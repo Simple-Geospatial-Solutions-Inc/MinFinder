@@ -1,0 +1,6 @@
+# Install as /etc/tmpfiles.d/caddy-minfinder-api.conf (see minfinder-api.caddy).
+#
+# Load-bearing for OTHER PEOPLE'S deploys: the sgs-website deploy runs `caddy validate` as
+# root, which creates a missing log file root-owned; the caddy user then can't open it and
+# their reload fails pointing at our config. This keeps the file caddy-owned.
+f /var/log/caddy/minfinder-api.log 0640 caddy caddy -

@@ -1,0 +1,34 @@
+# minfinder-api.caddy — the Community Mines API site block for api.sgss.ca.
+#
+# INSTALL IT AS ITS OWN FILE, NOT INTO /etc/caddy/Caddyfile:
+#
+#   sudo install -m 644 minfinder-api.caddy /etc/caddy/conf.d/minfinder-api.caddy
+#   sudo install -m 644 caddy-minfinder-api.tmpfiles /etc/tmpfiles.d/caddy-minfinder-api.conf
+#   sudo systemd-tmpfiles --create /etc/tmpfiles.d/caddy-minfinder-api.conf
+#   sudo caddy validate --config /etc/caddy/Caddyfile   # MUST pass first
+#   sudo systemctl reload caddy                         # reload, NEVER restart
+#
+# /etc/caddy/Caddyfile belongs to the sgs-website repo, and its deploy overwrites that file;
+# only its `import /etc/caddy/conf.d/*.caddy` line keeps this block alive (see gno.caddy for
+# the 2026-08-27 outage that taught this). No global options block and no snippets here: a
+# second global block is a parse error, and snippet names are global across every site.
+#
+# Needs an A record api.sgss.ca -> 51.222.206.236 BEFORE the first reload, or the ACME
+# challenge fails and repeated failures hit Let's Encrypt rate limits.
+
+api.sgss.ca {
+	# Largest legitimate body: three photos at the API's 12 MB cap plus the JSON part. Refused
+	# here at the edge rather than buffered into the Node process.
+	request_body {
+		max_size 40MB
+	}
+
+	reverse_proxy 127.0.0.1:8084
+
+	log {
+		output file /var/log/caddy/minfinder-api.log {
+			roll_size 100MiB
+			roll_keep 5
+		}
+	}
+}

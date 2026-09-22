@@ -1,0 +1,2 @@
+# systemd units, the tmpfiles rule and deploy.sh run on Linux; CRLF breaks them.
+* text=auto eol=lf

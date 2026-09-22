@@ -1,0 +1,78 @@
+# minfinder-api.service — the MinFinder Community Mines API (Node, no framework) behind Caddy.
+#
+# Serves /v1/* on loopback :8084; Caddy owns TLS and the public edge for api.sgss.ca (see
+# minfinder-api.caddy). Port map on the box as of 2026-09-22 (`sudo ss -ltnp`): 8080 sgss.ca
+# site API (binds *:8080), 8081 go-pmtiles, 8082 reserved for the nginx sidecar, 8083 gno,
+# 25115 the website. 8084 was the next free port below 10240. Confirm with `sudo ss -ltnp` AND
+# `grep -n reverse_proxy /etc/caddy/Caddyfile /etc/caddy/conf.d/*.caddy` before assuming.
+#
+# Install (as root, once):
+#   1. useradd --system --home /var/lib/minfinder-api --shell /usr/sbin/nologin minfinder-api
+#   2. mkdir -p /srv/minfinder-api/app /etc/minfinder-api
+#   3. Write /etc/minfinder-api/minfinder-api.env (mode 0640 root:minfinder-api):
+#        DATA_DIR=/var/lib/minfinder-api
+#        PORT=8084
+#        APPLE_AUDIENCES=ca.sgss.minfinder
+#        GOOGLE_CLIENT_IDS=           # comma-separated OAuth client ids; Google sign-in 401s until set
+#        MIN_APP_VERSION=1.2.0
+#        SUBMISSIONS_ENABLED=true     # the kill switch: false pauses uploads without a release
+#   4. Ship the code: artifacts/minfinder-api/deploy/deploy.sh (from the operator's machine)
+#   5. cp minfinder-api.service minfinder-api-backup.{service,timer} /etc/systemd/system/
+#      systemctl daemon-reload && systemctl enable --now minfinder-api minfinder-api-backup.timer
+#   6. READ journalctl -u minfinder-api IN FULL. A SystemCallFilter denial surfaces as a bare
+#      EPERM, not as "systemd blocked this".
+
+[Unit]
+Description=MinFinder Community Mines API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=minfinder-api
+Group=minfinder-api
+WorkingDirectory=/srv/minfinder-api/app
+EnvironmentFile=/etc/minfinder-api/minfinder-api.env
+
+# ProtectSystem=strict makes everything read-only; the SQLite db (plus -wal/-shm), photos/ and
+# backups/ all live in /var/lib/minfinder-api, which systemd creates with the right owner.
+StateDirectory=minfinder-api
+StateDirectoryMode=0750
+
+# Node strips the TypeScript types itself (22.18+), so there's no build step and what's on disk
+# is what runs. The warning filter only silences node:sqlite's "experimental" banner.
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning src/server.ts
+
+Restart=on-failure
+RestartSec=5
+
+# Hardening from gno.service / pmtiles.service, with the same omission as gno: NO
+# MemoryDenyWriteExecute — V8's JIT needs W+X pages and Node dies at start without them.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+# AF_INET/AF_INET6 for the listener and for fetching Apple's and Google's signing keys.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+LimitNOFILE=8192
+# sharp decodes up to three large photos at once; keep a runaway decode from eating the box.
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target
