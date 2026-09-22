@@ -18,6 +18,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import colors from "@/constants/colors";
 import { SubscriptionProvider } from "@/lib/revenuecat";
+import { startSync } from "@/lib/sync";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 // Cross-fade the splash out instead of cutting to the map.
@@ -57,6 +58,11 @@ function RootLayoutNav() {
         options={{ title: "About", headerBackTitle: "Map" }}
       />
       <Stack.Screen name="redeem" options={{ title: "Redeem code" }} />
+      <Stack.Screen name="submit" options={{ title: "Add a mine", headerBackTitle: "Back" }} />
+      <Stack.Screen
+        name="my-submissions"
+        options={{ title: "My submissions", headerBackTitle: "Map" }}
+      />
     </Stack>
   );
 }
@@ -68,6 +74,8 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+
+  useEffect(() => startSync(), []);
 
   useEffect(() => {
     if (fontsLoaded || fontError) {

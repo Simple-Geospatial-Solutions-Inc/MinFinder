@@ -21,9 +21,10 @@
       "supportsTablet": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "SGS MinFinder uses your location to center the map and to indicate the direction and distance to selected MINFILE occurrences.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "SGS MinFinder uses your location to center the map and to indicate the direction and distance to selected MINFILE occurrences."
-      }
+        "NSLocationWhenInUseUsageDescription": "SGS MinFinder uses your location to center the map, to indicate the direction and distance to selected MINFILE occurrences, and to record where a mine you add was found.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "SGS MinFinder uses your location to center the map, to indicate the direction and distance to selected MINFILE occurrences, and to record where a mine you add was found."
+      },
+      "usesAppleSignIn": true
     },
     "android": {
       "package": "ca.sgss.minfinder",
@@ -50,11 +51,27 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "SGS MinFinder uses your location to center the map and navigate to MINFILE occurrences."
+          "locationAlwaysAndWhenInUsePermission": "SGS MinFinder uses your location to center the map, to indicate the direction and distance to selected MINFILE occurrences, and to record where a mine you add was found."
         }
       ],
       "expo-sqlite",
       "expo-asset",
+      "expo-apple-authentication",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "SGS MinFinder uses the camera to photograph a mine you add, as proof of what's there.",
+          "photosPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.REPLACE-WITH-IOS-CLIENT-ID"
+        }
+      ],
       "@maplibre/maplibre-react-native",
       [
         "expo-splash-screen",

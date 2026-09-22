@@ -957,6 +957,11 @@ export default function MapScreen() {
               onPress={() => router.push("/offline")}
             />
             <TopIcon
+              icon="inbox"
+              label="My submissions"
+              onPress={() => router.push("/my-submissions")}
+            />
+            <TopIcon
               icon="info"
               label="About"
               onPress={() => router.push("/about")}
@@ -1147,6 +1152,20 @@ export default function MapScreen() {
               size={20}
               color={showCoverage ? colors.navyDeep : "#F4F1EA"}
             />
+          </Pressable>
+        )}
+
+        {Platform.OS !== "web" && (
+          <Pressable
+            onPress={() => router.push("/submit")}
+            accessibilityRole="button"
+            accessibilityLabel="Add a missing mine"
+            style={({ pressed }) => [
+              styles.fab,
+              { backgroundColor: "rgba(14,36,68,0.92)", opacity: pressed ? 0.85 : 1 },
+            ]}
+          >
+            <Feather name="plus" size={22} color="#F4F1EA" />
           </Pressable>
         )}
 
