@@ -14,9 +14,10 @@ export const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.sgss.ca";
 // client, so its tokens carry the Web id; iOS tokens carry the iOS id.
 const GOOGLE_WEB_CLIENT_ID =
   "444119579996-cfslsslugel1cji5lgai7uik979bc7vi.apps.googleusercontent.com";
-// TODO(phase 2): the iOS OAuth client id. Also goes into app.json's
-// google-signin `iosUrlScheme` (reversed) and the server's GOOGLE_CLIENT_IDS.
-const GOOGLE_IOS_CLIENT_ID = "";
+// Also in app.json's google-signin `iosUrlScheme` (reversed) and the server's
+// GOOGLE_CLIENT_IDS.
+const GOOGLE_IOS_CLIENT_ID =
+  "444119579996-srbacl2iiu9krhksg3ca49jg0g0be02k.apps.googleusercontent.com";
 
 const TOKEN_KEY = "minfinder.session";
 
@@ -105,7 +106,7 @@ export async function signIn(provider: Provider): Promise<boolean> {
   } else {
     GoogleSignin.configure({
       webClientId: GOOGLE_WEB_CLIENT_ID,
-      iosClientId: GOOGLE_IOS_CLIENT_ID || undefined,
+      iosClientId: GOOGLE_IOS_CLIENT_ID,
     });
     await GoogleSignin.hasPlayServices();
     const r = await GoogleSignin.signIn();

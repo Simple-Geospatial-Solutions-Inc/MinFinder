@@ -13,7 +13,7 @@
 #        DATA_DIR=/var/lib/minfinder-api
 #        PORT=8084
 #        APPLE_AUDIENCES=ca.sgss.minfinder
-#        GOOGLE_CLIENT_IDS=           # comma-separated OAuth client ids; Google sign-in 401s until set
+#        GOOGLE_CLIENT_IDS=           # comma-separated: the Web client (Android tokens) and the iOS client
 #        MIN_APP_VERSION=1.2.0
 #        SUBMISSIONS_ENABLED=true     # the kill switch: false pauses uploads without a release
 #   4. Ship the code: artifacts/minfinder-api/deploy/deploy.sh (from the operator's machine)
