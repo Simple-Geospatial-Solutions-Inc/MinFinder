@@ -38,6 +38,7 @@ EnvironmentFile=/etc/minfinder-api/minfinder-api.env
 # backups/ all live in /var/lib/minfinder-api, which systemd creates with the right owner.
 StateDirectory=minfinder-api
 StateDirectoryMode=0750
+UMask=0077
 
 # Node strips the TypeScript types itself (22.18+), so there's no build step and what's on disk
 # is what runs. The warning filter only silences node:sqlite's "experimental" banner.
