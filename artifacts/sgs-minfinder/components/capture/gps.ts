@@ -16,6 +16,8 @@ export interface LiveFix {
   lat: number;
   lon: number;
   accuracy: number;
+  /** Metres above sea level, when the phone reports it. */
+  altitude: number | null;
   /** The fix's own timestamp, not the phone clock, so a wrong clock can't backdate a capture. */
   time: number;
 }
@@ -59,6 +61,7 @@ export function useLiveFix() {
         lat: loc.coords.latitude,
         lon: loc.coords.longitude,
         accuracy: loc.coords.accuracy ?? Infinity,
+        altitude: loc.coords.altitude ?? null,
         time: loc.timestamp,
       }
     : null;

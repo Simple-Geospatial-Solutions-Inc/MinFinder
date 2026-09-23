@@ -1,95 +1,166 @@
+import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { router, Stack } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import { Alert, BackHandler, Pressable, StyleSheet, View } from "react-native";
+import { Alert, BackHandler, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { DetailsStep } from "@/components/capture/DetailsStep";
+import { CaptureMap, MarkSheet, type LatLon, type Phase } from "@/components/capture/CaptureMap";
+import { DetailsSheet, type SavedMine } from "@/components/capture/DetailsSheet";
 import { useLiveFix, type LiveFix } from "@/components/capture/gps";
-import { MarkStep, type LatLon } from "@/components/capture/MarkStep";
+import { StatusChip } from "@/components/capture/StatusChip";
+import { floating, GUTTER, PillButton, type } from "@/components/capture/ui";
 import { Feather } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
+import { useSignedIn } from "@/lib/auth";
+import { MINE_TYPES } from "@/lib/sync";
 
 /**
- * Add a mine, in two steps: mark the spot on the map, then say what's there.
- * The GPS watch lives here so it runs across both steps, and the details step
- * stays mounted while the user goes back to adjust the pin, so nothing typed or
- * photographed is lost.
+ * Add a mine, all on one map: mark the spot, describe it in a sheet that grows
+ * over the map, then a summary over the pin. The GPS watch lives here so it runs
+ * across every step.
  */
 export default function SubmitScreen() {
-  const colors = useColors();
   const { fix, state } = useLiveFix();
-  const [step, setStep] = useState<"mark" | "details">("mark");
+  const [phase, setPhase] = useState<Phase>("mark");
+  const [center, setCenter] = useState<LatLon | null>(null);
   const [marked, setMarked] = useState<{ pin: LatLon; at: LiveFix } | null>(null);
+  const [saved, setSaved] = useState<SavedMine | null>(null);
+  // Bumped by "Add another" to give the details sheet a clean slate.
+  const [round, setRound] = useState(0);
 
   // Once there's something to lose, leaving asks first. Photos and typing live
   // only in this screen until Save.
   const leave = useCallback(() => {
-    if (!marked) return router.back();
+    if (!marked || phase === "saved") return router.back();
     Alert.alert("Discard this mine?", "The pin and anything you've added will be lost.", [
       { text: "Keep editing", style: "cancel" },
       { text: "Discard", style: "destructive", onPress: () => router.back() },
     ]);
-  }, [marked]);
+  }, [marked, phase]);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (step === "details") setStep("mark");
+      if (phase === "details") setPhase("mark");
       else leave();
       return true;
     });
     return () => sub.remove();
-  }, [step, leave]);
+  }, [phase, leave]);
+
+  const another = () => {
+    setMarked(null);
+    setSaved(null);
+    setRound((r) => r + 1);
+    setPhase("mark");
+  };
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <Stack.Screen
-        options={{
-          headerShown: step === "details",
-          title: "Mine details",
-          // A swipe would drop the capture without asking.
-          gestureEnabled: false,
-          headerLeft: () => (
-            <Pressable
-              onPress={() => setStep("mark")}
-              accessibilityRole="button"
-              accessibilityLabel="Back to the pin"
-              hitSlop={12}
-              style={styles.headerBtn}
-            >
-              <Feather name="chevron-left" size={26} color={colors.gold} />
-            </Pressable>
-          ),
+    <View style={styles.root}>
+      {/* A swipe would drop the capture without asking. */}
+      <Stack.Screen options={{ headerShown: false, gestureEnabled: false }} />
+      <CaptureMap
+        phase={phase}
+        fix={fix}
+        gps={state}
+        pin={marked?.pin ?? null}
+        onCenter={setCenter}
+        onClose={leave}
+      />
+      <MarkSheet
+        open={phase === "mark"}
+        fix={fix}
+        gps={state}
+        center={center}
+        onMark={(pin, at) => {
+          setMarked({ pin, at });
+          setPhase("details");
         }}
       />
-      {step === "mark" && (
-        <MarkStep
+      {marked && (
+        <DetailsSheet
+          key={round}
+          open={phase === "details"}
+          pin={marked.pin}
+          markedAt={marked.at}
           fix={fix}
           gps={state}
-          startAt={marked?.pin ?? null}
-          onMark={(pin, at) => {
-            setMarked({ pin, at });
-            setStep("details");
+          onAdjust={() => setPhase("mark")}
+          onSaved={(m) => {
+            setSaved(m);
+            setPhase("saved");
           }}
-          onClose={leave}
         />
       )}
-      {marked && (
-        <View style={[styles.root, step !== "details" && styles.hidden]}>
-          <DetailsStep
-            pin={marked.pin}
-            markedAt={marked.at}
-            fix={fix}
-            gps={state}
-            onAdjust={() => setStep("mark")}
-            onSaved={() => router.replace("/my-submissions")}
-          />
-        </View>
-      )}
+      {phase === "saved" && saved && <SavedSheet mine={saved} onDone={() => router.back()} onAnother={another} />}
     </View>
+  );
+}
+
+/** The summary over the pin: what was saved, where it stands, what's next. */
+function SavedSheet({ mine, onDone, onAnother }: { mine: SavedMine; onDone: () => void; onAnother: () => void }) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const signedIn = useSignedIn();
+  const label = MINE_TYPES.find(([k]) => k === mine.type)?.[1] ?? "Mine";
+
+  return (
+    <BottomSheet
+      index={0}
+      enablePanDownToClose={false}
+      backgroundStyle={{ backgroundColor: colors.card, borderRadius: 16 }}
+      handleIndicatorStyle={{ width: 32, height: 5, backgroundColor: colors.border }}
+      style={floating}
+    >
+      <BottomSheetView style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+        <View style={styles.head}>
+          <View style={styles.okDisc}>
+            <Feather name="check" size={18} color="#1B6B3A" />
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={[type.title, { color: colors.foreground }]} accessibilityRole="header">
+              Saved to this phone
+            </Text>
+            <Text style={[type.meta, { color: colors.mutedForeground }]}>
+              {label} · {mine.photos} {mine.photos === 1 ? "photo" : "photos"}
+            </Text>
+          </View>
+        </View>
+        <Pressable
+          onPress={() => router.replace("/my-submissions")}
+          accessibilityRole="link"
+          style={styles.statusRow}
+          hitSlop={8}
+        >
+          <StatusChip
+            status={
+              signedIn
+                ? { icon: "clock", label: "Uploads when you have signal", tone: "wait" }
+                : { icon: "user", label: "Sign in to upload", tone: "wait" }
+            }
+          />
+          <Text style={[type.link, { color: colors.primary }]}>My submissions</Text>
+        </Pressable>
+        <View style={styles.pair}>
+          <PillButton label="Done" variant="secondary" onPress={onDone} />
+          <PillButton label="Add another" icon="plus" onPress={onAnother} />
+        </View>
+      </BottomSheetView>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  hidden: { display: "none" },
-  headerBtn: { minWidth: 44, minHeight: 44, justifyContent: "center" },
+  sheet: { paddingHorizontal: GUTTER, paddingTop: 4, gap: 16 },
+  head: { flexDirection: "row", alignItems: "center", gap: 12 },
+  okDisc: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#E3F1E7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statusRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, minHeight: 32 },
+  pair: { flexDirection: "row", gap: 8 },
 });

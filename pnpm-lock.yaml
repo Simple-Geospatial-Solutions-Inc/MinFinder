@@ -280,6 +280,9 @@ importers:
 
   artifacts/sgs-minfinder:
     dependencies:
+      '@gorhom/bottom-sheet':
+        specifier: ^5.2.14
+        version: 5.2.14(@types/react@19.2.14)(react-native-gesture-handler@2.31.2(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native-reanimated@4.3.1(react-native-worklets@0.8.3(@babel/core@7.29.0)(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       '@maplibre/maplibre-react-native':
         specifier: ^11.3.6
         version: 11.3.6(@types/geojson@7946.0.16)(@types/react@19.2.14)(expo@56.0.16)(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
@@ -1285,6 +1288,27 @@ packages:
 
   '@floating-ui/utils@0.2.11':
     resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
+
+  '@gorhom/bottom-sheet@5.2.14':
+    resolution: {integrity: sha512-uLQFlDjp9z+jrOFcMSEldPqL5JdaXL3vXOh+juhwoNvXgTsEorJLjHTugXu+YccAG/0KJnShzKCrb71MHBsvJg==}
+    peerDependencies:
+      '@types/react': '*'
+      '@types/react-native': '*'
+      react: '*'
+      react-native: 0.85.3
+      react-native-gesture-handler: '>=2.16.1'
+      react-native-reanimated: '>=3.16.0 || >=4.0.0-'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      '@types/react-native':
+        optional: true
+
+  '@gorhom/portal@1.0.14':
+    resolution: {integrity: sha512-MXyL4xvCjmgaORr/rtryDNFy3kU4qUbKlwtQqqsygd0xX3mhKjOLn6mQK8wfu0RkoE0pBE0nAasRoHua+/QZ7A==}
+    peerDependencies:
+      react: '*'
+      react-native: 0.85.3
 
   '@hookform/resolvers@3.10.0':
     resolution: {integrity: sha512-79Dv+3mDF7i+2ajj7SkypSKHhl1cbln1OGavqrsF7p6mbUv11xpqpacPsGDCTRvCSjEEIez2ef1NveSVL3b0Ag==}
@@ -6299,6 +6323,23 @@ snapshots:
       react-dom: 19.2.3(react@19.2.3)
 
   '@floating-ui/utils@0.2.11': {}
+
+  '@gorhom/bottom-sheet@5.2.14(@types/react@19.2.14)(react-native-gesture-handler@2.31.2(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native-reanimated@4.3.1(react-native-worklets@0.8.3(@babel/core@7.29.0)(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)':
+    dependencies:
+      '@gorhom/portal': 1.0.14(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+      invariant: 2.2.4
+      react: 19.2.3
+      react-native: 0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3)
+      react-native-gesture-handler: 2.31.2(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+      react-native-reanimated: 4.3.1(react-native-worklets@0.8.3(@babel/core@7.29.0)(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+    optionalDependencies:
+      '@types/react': 19.2.14
+
+  '@gorhom/portal@1.0.14(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)':
+    dependencies:
+      nanoid: 3.3.12
+      react: 19.2.3
+      react-native: 0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3)
 
   '@hookform/resolvers@3.10.0(react-hook-form@7.75.0(react@19.2.3))':
     dependencies:

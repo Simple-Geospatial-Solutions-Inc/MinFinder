@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { MineGlyph } from "@/components/capture/MineGlyph";
 import { outboxStatus, StatusChip, TIER_STATUS, type Status } from "@/components/capture/StatusChip";
+import { GUTTER, PillButton } from "@/components/capture/ui";
 import { Feather } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
 import { signIn, useSignedIn, type Provider } from "@/lib/auth";
@@ -124,14 +125,9 @@ export default function MySubmissionsScreen() {
       {empty ? (
         <EmptyState />
       ) : (
-        <Pressable
-          onPress={() => router.push("/submit")}
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.addBtn, { backgroundColor: colors.gold, opacity: pressed ? 0.85 : 1 }]}
-        >
-          <Feather name="plus" size={20} color={colors.navyDeep} />
-          <Text style={[styles.addText, { color: colors.navyDeep }]}>Add a mine</Text>
-        </Pressable>
+        <View style={styles.btnRow}>
+          <PillButton label="Add a mine" icon="plus" onPress={() => router.push("/submit")} />
+        </View>
       )}
 
       {queued.length > 0 && (
@@ -223,7 +219,7 @@ function SignIn({
               ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
               : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
           }
-          cornerRadius={12}
+          cornerRadius={24}
           style={styles.providerBtn}
           onPress={() => onSignIn("apple")}
         />
@@ -262,7 +258,7 @@ function EmptyState() {
   return (
     <View style={styles.empty}>
       <View style={[styles.emptyGlyph, { backgroundColor: colors.muted }]}>
-        <MineGlyph type="adit" size={44} color={colors.foreground} />
+        <MineGlyph type="adit" size={36} color={colors.foreground} />
       </View>
       <Text style={[styles.h1, { color: colors.foreground }]}>Found a working that isn&apos;t on the map?</Text>
       <Text style={[styles.body, { color: colors.mutedForeground }]}>
@@ -276,14 +272,9 @@ function EmptyState() {
           </View>
         ))}
       </View>
-      <Pressable
-        onPress={() => router.push("/submit")}
-        accessibilityRole="button"
-        style={({ pressed }) => [styles.addBtn, { backgroundColor: colors.gold, opacity: pressed ? 0.85 : 1 }]}
-      >
-        <Feather name="plus" size={20} color={colors.navyDeep} />
-        <Text style={[styles.addText, { color: colors.navyDeep }]}>Add a mine</Text>
-      </Pressable>
+      <View style={styles.btnRow}>
+        <PillButton label="Add a mine" icon="plus" onPress={() => router.push("/submit")} />
+      </View>
     </View>
   );
 }
@@ -339,7 +330,7 @@ function Row({
         <Image source={{ uri: photo }} style={styles.thumb} />
       ) : (
         <View style={[styles.thumb, styles.thumbGlyph, { backgroundColor: colors.muted }]}>
-          <MineGlyph type={type} size={28} color={colors.foreground} />
+          <MineGlyph type={type} size={24} color={colors.foreground} />
         </View>
       )}
       <View style={styles.rowText}>
@@ -361,12 +352,13 @@ function Row({
 }
 
 const styles = StyleSheet.create({
-  scroll: { padding: 16, gap: 24 },
+  scroll: { paddingHorizontal: GUTTER, paddingTop: 16, gap: 24 },
   h1: { fontFamily: "Inter_700Bold", fontSize: 22, lineHeight: 28 },
-  h2: { fontFamily: "Inter_700Bold", fontSize: 18 },
-  body: { fontFamily: "Inter_600SemiBold", fontSize: 15, lineHeight: 21 },
+  h2: { fontFamily: "Inter_700Bold", fontSize: 18, lineHeight: 24 },
+  body: { fontFamily: "Inter_600SemiBold", fontSize: 15, lineHeight: 20 },
   note: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
-  link: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
+  link: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  btnRow: { flexDirection: "row" },
   textBtn: { minHeight: 44, justifyContent: "center" },
   accountRow: {
     flexDirection: "row",
@@ -375,36 +367,27 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingBottom: 4,
   },
-  signIn: { padding: 16, borderRadius: 16, borderWidth: 1, gap: 12 },
-  providerBtn: { height: 50, borderRadius: 12 },
-  googleBtn: { borderWidth: 1.5, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  providerText: { fontFamily: "Inter_600SemiBold", fontSize: 17 },
-  addBtn: {
-    minHeight: 56,
-    borderRadius: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-  addText: { fontFamily: "Inter_700Bold", fontSize: 17 },
+  signIn: { padding: 16, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, gap: 12 },
+  providerBtn: { height: 48, borderRadius: 24 },
+  googleBtn: { borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  providerText: { fontFamily: "Inter_600SemiBold", fontSize: 16 },
   empty: { gap: 14, paddingTop: 8 },
-  emptyGlyph: { width: 80, height: 80, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  emptyGlyph: { width: 64, height: 64, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   steps: { gap: 14, paddingVertical: 6 },
   stepRow: { flexDirection: "row", alignItems: "center", gap: 14 },
   section: { gap: 10 },
   sectionHead: { flexDirection: "row", alignItems: "center" },
-  list: { borderRadius: 16, borderWidth: 1, overflow: "hidden" },
+  list: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: "hidden" },
   row: {
     flexDirection: "row",
-    gap: 14,
-    padding: 14,
+    gap: 12,
+    padding: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     // Tucks the last row's divider under the list's own border (overflow: hidden).
     marginBottom: -StyleSheet.hairlineWidth,
   },
   rowText: { flex: 1, gap: 4 },
-  thumb: { width: 64, height: 64, borderRadius: 10 },
+  thumb: { width: 56, height: 56, borderRadius: 10 },
   thumbGlyph: { alignItems: "center", justifyContent: "center" },
   discard: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 44, alignSelf: "flex-start" },
 });

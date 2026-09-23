@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, useColorScheme, View } from "react-native";
 
 import { Feather, type FeatherIconName } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
@@ -37,24 +37,34 @@ export const TIER_STATUS: Record<Tier, Status> = {
   hidden: { icon: "eye-off", label: "Hidden for review", tone: "bad" },
 };
 
-/** Icon plus words, so the state reads without colour. */
+/** Icon plus words in a tinted pill, so the state reads without colour. */
 export function StatusChip({ status }: { status: Status }) {
   const colors = useColors();
-  const fg =
-    status.tone === "ok"
-      ? colors.foreground
-      : status.tone === "bad"
-        ? colors.destructive
-        : colors.mutedForeground;
+  const dark = useColorScheme() === "dark";
+  // weak fill + strong text, the AllTrails status-token pairing.
+  const [bg, fg] = {
+    ok: dark ? ["#12321F", "#8FD9A8"] : ["#E3F1E7", "#1B6B3A"],
+    wait: dark ? ["#3A2C08", "#F2C45A"] : ["#FFF1CC", "#6B4700"],
+    bad: dark ? ["#3D1714", "#F08A80"] : ["#FBE4E2", "#8C1D17"],
+    neutral: [colors.muted, colors.foreground],
+  }[status.tone];
   return (
-    <View style={styles.chip}>
-      <Feather name={status.icon} size={15} color={status.tone === "ok" ? "#2E8B57" : fg} />
+    <View style={[styles.chip, { backgroundColor: bg }]}>
+      <Feather name={status.icon} size={13} color={fg} />
       <Text style={[styles.text, { color: fg }]}>{status.label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  chip: { flexDirection: "row", alignItems: "center", gap: 6 },
-  text: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  text: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
 });
