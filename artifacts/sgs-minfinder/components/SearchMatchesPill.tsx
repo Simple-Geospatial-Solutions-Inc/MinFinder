@@ -2,6 +2,9 @@ import { Feather } from "@/components/Icon";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { floating, radius } from "@/components/ui";
+import colors from "@/constants/colors";
+
 import { formatSpanKm, type Bounds } from "@/lib/mapGeo";
 
 /** Gold halo drawn around a matched pin — see app/index.tsx. */
@@ -69,15 +72,17 @@ export function SearchMatchesPill({
         onPress={onClear}
         accessibilityRole="button"
         accessibilityLabel="Clear the search highlight"
-        hitSlop={12}
         style={({ pressed }) => [styles.clearBtn, { opacity: pressed ? 0.6 : 1 }]}
       >
         <Text style={styles.clearText}>Clear</Text>
-        <Feather name="x" size={14} color="#F4F1EA" />
+        <Feather name="x" size={16} color={MAP.mapChromeForeground} />
       </Pressable>
     </View>
   );
 }
+
+// Sits on the light basemap in both colour schemes.
+const MAP = colors.light;
 
 const styles = StyleSheet.create({
   pill: {
@@ -87,13 +92,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    minHeight: 52,
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    // Matches OfflineRegionPill and the permission banner on the map screen.
-    backgroundColor: "rgba(14,36,68,0.92)",
-    borderColor: "rgba(252,186,25,0.4)",
-    borderWidth: 1,
+    paddingLeft: 16,
+    paddingRight: 8,
+    borderRadius: radius.lg,
+    backgroundColor: MAP.mapChrome,
+    ...floating,
   },
   legendChip: {
     width: 14,
@@ -106,27 +111,18 @@ const styles = StyleSheet.create({
   // Keeps the title in the same place whether or not the chip is shown.
   chipSpacer: { width: 14, height: 14 },
   textCol: { flex: 1 },
-  title: {
-    color: "#F4F1EA",
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 13,
-  },
-  subtitle: {
-    color: "rgba(244,241,234,0.75)",
-    fontFamily: "Inter_400Regular",
-    fontSize: 11,
-    marginTop: 1,
-  },
+  title: { color: MAP.mapChromeForeground, fontFamily: "Inter_600SemiBold", fontSize: 15, lineHeight: 20 },
+  subtitle: { color: MAP.mapChromeMuted, fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 18 },
   clearBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    paddingVertical: 4,
-    paddingHorizontal: 6,
+    minHeight: 44,
+    paddingHorizontal: 8,
   },
   clearText: {
-    color: "#F4F1EA",
+    color: MAP.mapChromeForeground,
     fontFamily: "Inter_600SemiBold",
-    fontSize: 12,
+    fontSize: 14,
   },
 });

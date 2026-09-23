@@ -46,6 +46,7 @@ const colors = {
     // Controls floating on the map stay light in both schemes: the basemap is light.
     mapChrome: "#FFFFFF",
     mapChromeForeground: "#0E1A2B",
+    mapChromeMuted: "#5F6B7A",
     scrim: "rgba(0,0,0,0.55)",
 
     // App-specific
@@ -92,6 +93,7 @@ const colors = {
 
     mapChrome: "#FFFFFF",
     mapChromeForeground: "#0E1A2B",
+    mapChromeMuted: "#5F6B7A",
     scrim: "rgba(0,0,0,0.55)",
 
     navy,

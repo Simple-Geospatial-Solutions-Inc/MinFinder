@@ -1,5 +1,9 @@
-import BottomSheet, { type BottomSheetProps } from "@gorhom/bottom-sheet";
-import React from "react";
+import BottomSheet, {
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+  type BottomSheetProps,
+} from "@gorhom/bottom-sheet";
+import React, { useCallback } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Feather, type FeatherIconName } from "@/components/Icon";
@@ -37,12 +41,15 @@ export function PillButton({
   variant = "primary",
   disabled,
   busy,
+  grow = true,
   accessibilityHint,
 }: {
   label: string;
   onPress: () => void;
   icon?: FeatherIconName;
   variant?: "primary" | "secondary" | "outline";
+  /** Fill the row. Off for a lone button sized to its label, e.g. on the map. */
+  grow?: boolean;
   disabled?: boolean;
   busy?: boolean;
   accessibilityHint?: string;
@@ -61,6 +68,7 @@ export function PillButton({
       accessibilityHint={accessibilityHint}
       style={({ pressed }) => [
         styles.pill,
+        grow && styles.grow,
         { backgroundColor: outline && pressed ? colors.muted : bg, opacity: pressed && !outline ? 0.85 : 1 },
         outline && { borderWidth: 1, borderColor: colors.foreground },
       ]}
@@ -98,6 +106,40 @@ export function TextButton({
     >
       {icon && <Feather name={icon} size={16} color={fg} />}
       <Text style={[type.link, { color: fg }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/** A round icon-only action: a sheet's close, a field's clear. 44 pt to the touch. */
+export function IconButton({
+  icon,
+  label,
+  onPress,
+  variant = "muted",
+  color,
+}: {
+  icon: FeatherIconName;
+  label: string;
+  onPress: () => void;
+  /** Muted sits on a grey disc; plain is the bare glyph, for inside a field. */
+  variant?: "muted" | "plain";
+  /** Glyph colour, for fields on map chrome that don't follow the colour scheme. */
+  color?: string;
+}) {
+  const colors = useColors();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={4}
+      style={({ pressed }) => [
+        styles.iconBtn,
+        variant === "muted" && { backgroundColor: colors.muted },
+        { opacity: pressed ? 0.6 : 1 },
+      ]}
+    >
+      <Feather name={icon} size={18} color={color ?? colors.foreground} />
     </Pressable>
   );
 }
@@ -170,10 +212,12 @@ export function Notice({
 /** A titled group of rows on a card, divided by hairlines. */
 export function ListSection({
   title,
+  subtitle,
   action,
   children,
 }: {
   title: string;
+  subtitle?: string;
   action?: { label: string; onPress: () => void };
   children: React.ReactNode;
 }) {
@@ -181,9 +225,12 @@ export function ListSection({
   return (
     <View style={styles.section}>
       <View style={styles.sectionHead}>
-        <Text style={[type.title, { color: colors.foreground, flex: 1 }]} accessibilityRole="header">
-          {title}
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[type.title, { color: colors.foreground }]} accessibilityRole="header">
+            {title}
+          </Text>
+          {subtitle && <Text style={[type.meta, { color: colors.mutedForeground }]}>{subtitle}</Text>}
+        </View>
         {action && <TextButton label={action.label} onPress={action.onPress} />}
       </View>
       <View style={[styles.list, { backgroundColor: colors.card, borderColor: colors.border }]}>{children}</View>
@@ -191,19 +238,57 @@ export function ListSection({
   );
 }
 
-export function ListRow({ children }: { children: React.ReactNode }) {
+export function ListRow({
+  children,
+  onPress,
+  accessibilityLabel,
+}: {
+  children: React.ReactNode;
+  /** Makes the whole row the target, with a chevron to say so. */
+  onPress?: () => void;
+  accessibilityLabel?: string;
+}) {
   const colors = useColors();
-  return <View style={[styles.row, { borderBottomColor: colors.border }]}>{children}</View>;
+  if (!onPress) return <View style={[styles.row, { borderBottomColor: colors.border }]}>{children}</View>;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={({ pressed }) => [
+        styles.row,
+        styles.rowPressable,
+        { borderBottomColor: colors.border, backgroundColor: pressed ? colors.muted : "transparent" },
+      ]}
+    >
+      {children}
+      <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+    </Pressable>
+  );
 }
 
-/** The app's one bottom-sheet look: card fill, 16 pt corners, 32×5 handle. */
-export function Sheet({ ref, ...props }: BottomSheetProps & { ref?: React.Ref<BottomSheet> }) {
+/**
+ * The app's one bottom-sheet look: card fill, 16 pt corners, 32×5 handle.
+ * `backdrop` dims the map behind and closes the sheet on a tap outside it.
+ */
+export function Sheet({
+  ref,
+  backdrop,
+  ...props
+}: BottomSheetProps & { ref?: React.Ref<BottomSheet>; backdrop?: boolean }) {
   const colors = useColors();
+  const renderBackdrop = useCallback(
+    (p: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop {...p} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.25} pressBehavior="close" />
+    ),
+    [],
+  );
   return (
     <BottomSheet
       ref={ref}
       backgroundStyle={{ backgroundColor: colors.card, borderRadius: radius.lg }}
       handleIndicatorStyle={[styles.handle, { backgroundColor: colors.border }]}
+      backdropComponent={backdrop ? renderBackdrop : undefined}
       style={floating}
       {...props}
     />
@@ -230,12 +315,14 @@ export function MapButton({
   label,
   onPress,
   active,
+  accessibilityHint,
 }: {
   icon: FeatherIconName;
   label: string;
   onPress: () => void;
   /** On state for toggles: filled in ink, like a selected chip. */
   active?: boolean;
+  accessibilityHint?: string;
 }) {
   const colors = useColors();
   return (
@@ -244,6 +331,7 @@ export function MapButton({
       accessibilityRole={active === undefined ? "button" : "switch"}
       accessibilityState={active === undefined ? undefined : { checked: active }}
       accessibilityLabel={label}
+      accessibilityHint={accessibilityHint}
       hitSlop={4}
       style={({ pressed }) => [
         styles.disc,
@@ -256,8 +344,8 @@ export function MapButton({
 }
 
 const styles = StyleSheet.create({
+  grow: { flex: 1 },
   pill: {
-    flex: 1,
     height: 48,
     borderRadius: 24,
     flexDirection: "row",
@@ -291,6 +379,8 @@ const styles = StyleSheet.create({
     // Tucks the last row's divider under the list's own border (overflow: hidden).
     marginBottom: -StyleSheet.hairlineWidth,
   },
+  rowPressable: { alignItems: "center", minHeight: 56 },
+  iconBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   handle: { width: 32, height: 5 },
   stat: { flex: 1, gap: 2 },
   statValue: { fontFamily: "Inter_600SemiBold", fontSize: 22, lineHeight: 28, fontVariant: ["tabular-nums"] },
