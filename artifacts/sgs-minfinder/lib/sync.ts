@@ -200,7 +200,10 @@ async function pushOutbox(): Promise<void> {
   );
   for (const row of due) {
     const form = new FormData();
-    form.append("data", row.data);
+    // Rounded here too for captures queued before gps.ts rounded the fix time.
+    const data = JSON.parse(row.data);
+    data.captured_at = Math.round(data.captured_at);
+    form.append("data", JSON.stringify(data));
     for (const uri of JSON.parse(row.photos) as string[]) {
       // Expo's fetch (the global one) takes a File, not React Native's
       // { uri, name, type } parts: it reads the bytes and sends name and type.

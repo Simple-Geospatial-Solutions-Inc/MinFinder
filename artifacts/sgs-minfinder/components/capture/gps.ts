@@ -62,7 +62,8 @@ export function useLiveFix() {
         lon: loc.coords.longitude,
         accuracy: loc.coords.accuracy ?? Infinity,
         altitude: loc.coords.altitude ?? null,
-        time: loc.timestamp,
+        // Android can report fractional milliseconds; the server wants an integer.
+        time: Math.round(loc.timestamp),
       }
     : null;
 
