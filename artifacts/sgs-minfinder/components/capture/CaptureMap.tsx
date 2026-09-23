@@ -23,7 +23,9 @@ import { floating, GUTTER, MapButton, PillButton, Stat, type } from "@/component
 import { Feather } from "@/components/Icon";
 import { SatelliteCredit } from "@/components/SatelliteCredit";
 import { useColors } from "@/hooks/useColors";
+import { formatShortDate } from "@/lib/format";
 import { distanceMeters } from "@/lib/geo";
+import { MINE_TYPES, type MineType, type MyMine } from "@/lib/sync";
 import { BASEMAP_STYLE_JSON } from "@/lib/mapStyle";
 import {
   DEFAULT_BASEMAP,
@@ -72,6 +74,28 @@ const youDot = {
   circleStrokeWidth: 3,
 } as unknown as CircleLayerStyle;
 
+// Mirrors LIMITS in artifacts/minfinder-api/src/rules.ts.
+const OWN_RADIUS_M = 100;
+const TYPE_LABEL = Object.fromEntries(MINE_TYPES) as Record<MineType, string>;
+const myDot = {
+  circleColor: "#FCBA19",
+  circleRadius: 6,
+  circleStrokeColor: "#0E2444",
+  circleStrokeWidth: 2,
+} as unknown as CircleLayerStyle;
+const myZone = { fillColor: "#B3261E", fillOpacity: 0.08 } as unknown as FillLayerStyle;
+
+/** The user's closest mine within the one-per-100 m rule, if any. */
+export function ownMineNear(myMines: MyMine[], at: LatLon | null) {
+  if (!at) return null;
+  return (
+    myMines
+      .map((mine) => ({ mine, m: distanceMeters(at.lat, at.lon, mine.lat, mine.lon) }))
+      .filter((x) => x.m <= OWN_RADIUS_M)
+      .sort((a, b) => a.m - b.m)[0] ?? null
+  );
+}
+
 const TONE = { ok: "#1B6B3A", bad: "#B3261E", wait: "#0E2444" } as const;
 
 function PinGlyph({ fill }: { fill: string }) {
@@ -98,10 +122,12 @@ export function CaptureMap({
   fix,
   gps,
   pin,
+  myMines,
   onCenter,
   onClose,
 }: {
   phase: Phase;
+  myMines: MyMine[];
   fix: LiveFix | null;
   gps: GpsState;
   /** The marked pin; null until the first Mark. */
@@ -173,6 +199,21 @@ export function CaptureMap({
     [fix?.lat, fix?.lon, fix?.accuracy],
   );
 
+  // Your own mines, each with the 100 m where you can't add another.
+  const mine = useMemo(
+    () => ({
+      zones: fc(myMines.map((m) => circle(m.lat, m.lon, OWN_RADIUS_M))),
+      dots: fc(
+        myMines.map((m) => ({
+          type: "Feature",
+          properties: {},
+          geometry: { type: "Point", coordinates: [m.lon, m.lat] },
+        })),
+      ),
+    }),
+    [myMines],
+  );
+
   const pinLift = useAnimatedStyle(() => ({
     transform: [{ translateY: reduceMotion ? 0 : withTiming(panning ? -10 : 0, { duration: 160 }) }],
   }));
@@ -223,6 +264,12 @@ export function CaptureMap({
             layout={{ visibility: satellite ? "visible" : "none" }}
           />
         </RasterSource>
+        <GeoJSONSource id="my-zones" data={mine.zones}>
+          <Layer id="my-zones" type="fill" style={myZone} />
+        </GeoJSONSource>
+        <GeoJSONSource id="my-mines" data={mine.dots}>
+          <Layer id="my-mines" type="circle" style={myDot} />
+        </GeoJSONSource>
         {shapes && (
           <>
             <GeoJSONSource id="accuracy" data={shapes.accuracy}>
@@ -309,9 +356,11 @@ export function MarkSheet({
   fix,
   gps,
   center,
+  myMines,
   onMark,
 }: {
   open: boolean;
+  myMines: MyMine[];
   fix: LiveFix | null;
   gps: GpsState;
   center: LatLon | null;
@@ -329,10 +378,13 @@ export function MarkSheet({
   const dist = fix && center ? distanceMeters(fix.lat, fix.lon, center.lat, center.lon) : null;
   const tooFar = dist !== null && dist > MAX_NUDGE_M;
   const locked = gps === "locked";
-  const canMark = locked && !!fix && !!center && !tooFar;
+  const own = ownMineNear(myMines, center);
+  const canMark = locked && !!fix && !!center && !tooFar && !own;
 
   const title =
-    gps === "denied"
+    own
+      ? "You've already added a mine here"
+      : gps === "denied"
       ? "Location is off"
       : gps === "mocked"
         ? "Mock location is on"
@@ -342,7 +394,9 @@ export function MarkSheet({
             ? "Pin is too far from you"
             : "Put the pin on the working";
   const guidance =
-    gps === "denied"
+    own
+      ? `Your ${own.mine.name || TYPE_LABEL[own.mine.type].toLowerCase()} from ${formatShortDate(own.mine.captured_at)} is ${Math.round(own.m)} m away. Each member can add one mine per 100 m.`
+      : gps === "denied"
       ? "Adding a mine needs your location, to prove you're at the site."
       : gps === "mocked"
         ? "Turn off the mock-location app to add a mine."
@@ -370,7 +424,7 @@ export function MarkSheet({
       <BottomSheetView style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
         <View style={{ gap: 2 }}>
           <Text
-            style={[type.title, { color: tooFar ? colors.destructive : colors.foreground }]}
+            style={[type.title, { color: tooFar || own ? colors.destructive : colors.foreground }]}
             accessibilityRole="header"
             accessibilityLiveRegion="polite"
           >

@@ -21,14 +21,14 @@ import { queryOccurrences } from "@/lib/db";
 import { distanceMeters } from "@/lib/geo";
 import {
   communityMinesNear,
-  getMySubmissions,
-  getOutbox,
   HAZARDS,
   MINE_TYPES,
   queueSubmission,
   type Hazard,
   type MineType,
+  type MyMine,
 } from "@/lib/sync";
+import { formatShortDate } from "@/lib/format";
 
 // Mirrors LIMITS in artifacts/minfinder-api/src/rules.ts.
 const MAX_PHOTOS = 3;
@@ -37,12 +37,13 @@ const DUPLICATE_RADIUS_M = 30;
 const MINFILE_NEAR_M = 100;
 // Photos have to be taken at the site, not after walking back to the truck.
 const PHOTO_RADIUS_M = 100;
+const TYPE_LABEL = Object.fromEntries(MINE_TYPES) as Record<MineType, string>;
 const SNAPS = [`${DETAILS_SNAP * 100}%`, "100%"];
 
 interface Nearby {
   minfile: { name: string; no: string; m: number } | null;
   community: boolean;
-  own: boolean;
+  own: { m: number; mine: MyMine } | null;
 }
 
 export interface SavedMine {
@@ -61,10 +62,12 @@ export function DetailsSheet({
   markedAt,
   fix,
   gps,
+  myMines,
   onAdjust,
   onSaved,
 }: {
   open: boolean;
+  myMines: MyMine[];
   pin: LatLon;
   /** The fix when the user pressed Mark: the position the server checks the pin against. */
   markedAt: LiveFix;
@@ -87,7 +90,7 @@ export function DetailsSheet({
   const [safetyAck, setSafetyAck] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [nearby, setNearby] = useState<Nearby>({ minfile: null, community: false, own: false });
+  const [nearby, setNearby] = useState<Nearby>({ minfile: null, community: false, own: null });
   const [footerH, setFooterH] = useState(160);
 
   useEffect(() => {
@@ -116,10 +119,10 @@ export function DetailsSheet({
       const community = (await communityMinesNear(pin.lat, pin.lon, DUPLICATE_RADIUS_M)).some(
         (m) => d(m.lat, m.lon) <= DUPLICATE_RADIUS_M,
       );
-      const own = [
-        ...(await getOutbox()).filter((o) => o.state === "queued").map((o) => o.data),
-        ...(await getMySubmissions()),
-      ].some((m) => d(m.lat, m.lon) <= OWN_RADIUS_M);
+      const own = myMines
+        .map((mine) => ({ mine, m: Math.round(d(mine.lat, mine.lon)) }))
+        .filter((x) => x.m <= OWN_RADIUS_M)
+        .sort((a, b) => a.m - b.m)[0] ?? null;
       if (cancelled) return;
       setNearby({
         minfile: near
@@ -132,7 +135,7 @@ export function DetailsSheet({
     return () => {
       cancelled = true;
     };
-  }, [pin.lat, pin.lon]);
+  }, [pin.lat, pin.lon, myMines]);
 
   const takePhoto = async () => {
     if (!canShoot) return;
@@ -270,7 +273,7 @@ export function DetailsSheet({
             <Feather name={nearby.own ? "circle-x" : "info"} size={16} color={nearby.own ? colors.destructive : colors.foreground} />
             <Text style={[type.meta, { flex: 1, color: nearby.own ? colors.destructive : colors.foreground }]}>
               {nearby.own
-                ? "You've already added a mine within 100 m of here. Each member can add one per 100 m."
+                ? `You added ${nearby.own.mine.name || `a ${TYPE_LABEL[nearby.own.mine.type].toLowerCase()}`} ${nearby.own.m} m from here on ${formatShortDate(nearby.own.mine.captured_at)}${nearby.own.mine.uploaded ? "" : " (still on this phone)"}. Each member can add one mine per 100 m. Find it in My submissions.`
                 : nearby.community
                   ? "Another member has already added a mine within 30 m. The server will refuse a duplicate."
                   : `${nearby.minfile!.name} (MINFILE ${nearby.minfile!.no}) is ${nearby.minfile!.m} m away. Only add this if it's a different working.`}

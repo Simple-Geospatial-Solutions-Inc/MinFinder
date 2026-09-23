@@ -148,6 +148,24 @@ export async function getMySubmissions(): Promise<Mine[]> {
   return (await kvGet<Mine[]>("my_submissions")) ?? [];
 }
 
+export interface MyMine {
+  lat: number;
+  lon: number;
+  type: MineType;
+  name: string | null;
+  captured_at: number;
+  uploaded: boolean;
+}
+
+/** Everything this user has added: still on the phone, or already uploaded. */
+export async function getMyMines(): Promise<MyMine[]> {
+  const queued = (await getOutbox())
+    .filter((o) => o.state === "queued")
+    .map((o) => ({ ...o.data, name: o.data.name ?? null, uploaded: false }));
+  const uploaded = (await getMySubmissions()).map((m) => ({ ...m, uploaded: true }));
+  return [...queued, ...uploaded];
+}
+
 /** Public community mines near a point, from the local cache. */
 export async function communityMinesNear(lat: number, lon: number, radiusM: number): Promise<Mine[]> {
   const dLat = radiusM / 111_320;

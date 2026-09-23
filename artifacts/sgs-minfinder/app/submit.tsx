@@ -12,7 +12,7 @@ import { floating, GUTTER, PillButton, type } from "@/components/capture/ui";
 import { Feather } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
 import { useSignedIn } from "@/lib/auth";
-import { MINE_TYPES } from "@/lib/sync";
+import { getMyMines, MINE_TYPES, onSyncChange, type MyMine } from "@/lib/sync";
 
 /**
  * Add a mine, all on one map: mark the spot, describe it in a sheet that grows
@@ -27,6 +27,12 @@ export default function SubmitScreen() {
   const [saved, setSaved] = useState<SavedMine | null>(null);
   // Bumped by "Add another" to give the details sheet a clean slate.
   const [round, setRound] = useState(0);
+  const [myMines, setMyMines] = useState<MyMine[]>([]);
+  useEffect(() => {
+    const load = () => void getMyMines().then(setMyMines).catch(() => {});
+    load();
+    return onSyncChange(load);
+  }, []);
 
   // Once there's something to lose, leaving asks first. Photos and typing live
   // only in this screen until Save.
@@ -63,6 +69,7 @@ export default function SubmitScreen() {
         fix={fix}
         gps={state}
         pin={marked?.pin ?? null}
+        myMines={myMines}
         onCenter={setCenter}
         onClose={leave}
       />
@@ -71,6 +78,7 @@ export default function SubmitScreen() {
         fix={fix}
         gps={state}
         center={center}
+        myMines={myMines}
         onMark={(pin, at) => {
           setMarked({ pin, at });
           setPhase("details");
@@ -84,6 +92,7 @@ export default function SubmitScreen() {
           markedAt={marked.at}
           fix={fix}
           gps={state}
+          myMines={myMines}
           onAdjust={() => setPhase("mark")}
           onSaved={(m) => {
             setSaved(m);
