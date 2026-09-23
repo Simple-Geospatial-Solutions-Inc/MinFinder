@@ -1,4 +1,5 @@
 import { randomUUID } from "expo-crypto";
+import { File } from "expo-file-system";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Network from "expo-network";
 import { AppState } from "react-native";
@@ -200,10 +201,11 @@ async function pushOutbox(): Promise<void> {
   for (const row of due) {
     const form = new FormData();
     form.append("data", row.data);
-    (JSON.parse(row.photos) as string[]).forEach((uri, i) =>
-      // React Native's FormData streams a file from { uri, name, type }.
-      form.append("photo", { uri, name: `${i}.jpg`, type: "image/jpeg" } as unknown as Blob),
-    );
+    for (const uri of JSON.parse(row.photos) as string[]) {
+      // Expo's fetch (the global one) takes a File, not React Native's
+      // { uri, name, type } parts: it reads the bytes and sends name and type.
+      form.append("photo", new File(uri) as unknown as Blob);
+    }
     try {
       await api("/submissions", { method: "POST", body: form });
       // Only now, with the server's ack in hand, is it safe to let go of it.
