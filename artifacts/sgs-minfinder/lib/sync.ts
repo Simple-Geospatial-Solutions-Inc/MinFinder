@@ -217,14 +217,26 @@ async function pushOutbox(): Promise<void> {
         notify();
         continue;
       }
+      // A fetch that throws is only "no signal" if the phone agrees it's offline;
+      // otherwise keep what actually went wrong, so it can be shown and fixed.
+      let code = e instanceof ApiError ? e.code : "network";
+      let message = e instanceof ApiError ? e.message : null;
+      if (!(e instanceof ApiError)) {
+        const net = await Network.getNetworkStateAsync().catch(() => null);
+        if (net?.isConnected && net.isInternetReachable !== false) {
+          code = "upload_failed";
+          message = e instanceof Error ? e.message : String(e);
+        }
+        console.warn("upload failed", e);
+      }
       const attempts = row.attempts + 1;
       await db.runAsync(
         "UPDATE outbox SET attempts = ?, next_at = ?, error = ?, message = ? WHERE id = ?",
         [
           attempts,
           Date.now() + Math.min(30_000 * 2 ** attempts, BACKOFF_MAX_MS),
-          e instanceof ApiError ? e.code : "network",
-          e instanceof ApiError ? e.message : null,
+          code,
+          message,
           row.id,
         ],
       );
@@ -304,13 +316,21 @@ export function sync(): Promise<void> {
 }
 
 /** Wires the triggers. Mounted once, in app/_layout.tsx. */
+// Uploads that failed for want of signal don't wait out their backoff once the
+// signal is back; that wait is for a struggling server, not a dead zone.
+async function retryOffline(): Promise<void> {
+  const db = await getUserDb();
+  await db.runAsync("UPDATE outbox SET next_at = 0 WHERE state = 'queued' AND error = 'network'");
+  await sync();
+}
+
 export function startSync(): () => void {
-  void sync();
+  void retryOffline();
   const app = AppState.addEventListener("change", (s) => {
-    if (s === "active") void sync();
+    if (s === "active") void retryOffline();
   });
   const net = Network.addNetworkStateListener((s) => {
-    if (s.isConnected && s.isInternetReachable !== false) void sync();
+    if (s.isConnected && s.isInternetReachable !== false) void retryOffline();
   });
   return () => {
     app.remove();

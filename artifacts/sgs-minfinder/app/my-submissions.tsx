@@ -143,6 +143,7 @@ export default function MySubmissionsScreen() {
               title={o.data.name || TYPE_LABEL[o.data.type]}
               meta={`${TYPE_LABEL[o.data.type]} · ${formatShortDate(o.data.captured_at)}`}
               status={outboxStatus(o, signedIn)}
+              reason={o.error === "upload_failed" && o.message ? `Error: ${o.message}` : undefined}
             />
           ))}
         </Section>
