@@ -241,7 +241,9 @@ export function DetailsSheet({
   return (
     <BottomSheet
       ref={ref}
-      index={-1}
+      // It mounts at the moment Mark is pressed, before the sheet has measured
+      // itself, so a snapToIndex from the effect would be dropped. Start open.
+      index={open ? 0 : -1}
       snapPoints={SNAPS}
       enableDynamicSizing={false}
       enablePanDownToClose={false}

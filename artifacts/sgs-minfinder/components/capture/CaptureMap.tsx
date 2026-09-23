@@ -5,6 +5,7 @@ import {
   Layer,
   Map as MapLibreMap,
   Marker,
+  RasterSource,
   type CameraRef,
   type CircleLayerStyle,
   type FillLayerStyle,
@@ -20,9 +21,22 @@ import Svg, { Circle, Path } from "react-native-svg";
 import { describeGps, MAX_NUDGE_M, type GpsState, type LiveFix } from "@/components/capture/gps";
 import { floating, GUTTER, MapButton, PillButton, Stat, type } from "@/components/capture/ui";
 import { Feather } from "@/components/Icon";
+import { SatelliteCredit } from "@/components/SatelliteCredit";
 import { useColors } from "@/hooks/useColors";
 import { distanceMeters } from "@/lib/geo";
 import { BASEMAP_STYLE_JSON } from "@/lib/mapStyle";
+import {
+  DEFAULT_BASEMAP,
+  loadBasemap,
+  otherBasemap,
+  SATELLITE_ANCHOR_LAYER,
+  SATELLITE_ATTRIBUTION,
+  SATELLITE_MAX_ZOOM,
+  SATELLITE_TILE_SIZE,
+  SATELLITE_TILES,
+  saveBasemap,
+  type Basemap,
+} from "@/lib/satellite";
 
 export type LatLon = { lat: number; lon: number };
 export type Phase = "mark" | "details" | "saved";
@@ -102,6 +116,18 @@ export function CaptureMap({
   const reduceMotion = useReducedMotion();
   const [panning, setPanning] = useState(false);
   const [center, setCenter] = useState<LatLon | null>(null);
+  // Same choice as the main map, so imagery stays on if that's how they browse.
+  const [basemap, setBasemap] = useState<Basemap>(DEFAULT_BASEMAP);
+  useEffect(() => {
+    loadBasemap().then(setBasemap);
+  }, []);
+  const toggleBasemap = () => {
+    Haptics.selectionAsync().catch(() => {});
+    const next = otherBasemap(basemap);
+    setBasemap(next);
+    void saveBasemap(next);
+  };
+  const satellite = basemap === "satellite";
 
   const marking = phase === "mark";
   const report = (c: LatLon) => {
@@ -181,6 +207,22 @@ export function CaptureMap({
         }}
       >
         <Camera ref={cameraRef} initialViewState={{ center: BC_CENTER, zoom: 4 }} />
+        {/* Mounted always and toggled by visibility, as on the main map: a
+            remounted layer would land on top of the style. */}
+        <RasterSource
+          id="satellite"
+          tiles={SATELLITE_TILES}
+          tileSize={SATELLITE_TILE_SIZE}
+          maxzoom={SATELLITE_MAX_ZOOM}
+          attribution={SATELLITE_ATTRIBUTION}
+        >
+          <Layer
+            id="satellite"
+            type="raster"
+            beforeId={SATELLITE_ANCHOR_LAYER}
+            layout={{ visibility: satellite ? "visible" : "none" }}
+          />
+        </RasterSource>
         {shapes && (
           <>
             <GeoJSONSource id="accuracy" data={shapes.accuracy}>
@@ -243,10 +285,20 @@ export function CaptureMap({
           </View>
         )}
         <View style={{ flex: 1 }} />
-        {marking && offCentre && gps === "locked" && (
-          <MapButton icon="locate-fixed" label="Put the pin back on your position" onPress={recentre} />
-        )}
+        <MapButton
+          icon="satellite"
+          label="Satellite imagery"
+          active={satellite}
+          onPress={toggleBasemap}
+        />
       </View>
+      {marking && offCentre && gps === "locked" && (
+        <View style={[styles.rightCol, { top: insets.top + 56 }]}>
+          <MapButton icon="locate-fixed" label="Put the pin back on your position" onPress={recentre} />
+        </View>
+      )}
+      {/* Esri's credit has to show with its imagery; the sheet owns the bottom. */}
+      {satellite && <SatelliteCredit top={insets.top + 56} />}
     </View>
   );
 }
@@ -378,6 +430,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
+  rightCol: { position: "absolute", right: 16 },
   gpsPill: {
     flexShrink: 1,
     flexDirection: "row",

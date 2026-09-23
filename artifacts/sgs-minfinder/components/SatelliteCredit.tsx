@@ -14,7 +14,7 @@ import { SATELLITE_ATTRIBUTION } from "@/lib/satellite";
  * also carries the online-only hint. The parent mounts it only while imagery
  * is showing, so the expanded state resets on every switch back to topo.
  */
-export function SatelliteCredit({ bottom }: { bottom: number }) {
+export function SatelliteCredit({ bottom, top }: { bottom?: number; top?: number }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <Pressable
@@ -26,7 +26,7 @@ export function SatelliteCredit({ bottom }: { bottom: number }) {
       }
       accessibilityState={{ expanded }}
       hitSlop={8}
-      style={[styles.chip, { bottom }]}
+      style={[styles.chip, { bottom, top }]}
     >
       <Feather name="info" size={10} color="#F4F1EA" />
       <Text style={styles.text} numberOfLines={expanded ? 3 : 1}>

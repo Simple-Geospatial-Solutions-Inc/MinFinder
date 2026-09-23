@@ -73,20 +73,24 @@ export function MapButton({
   icon,
   label,
   onPress,
+  active,
 }: {
   icon: FeatherIconName;
   label: string;
   onPress: () => void;
+  /** On state for toggles: filled in ink, like a selected chip. */
+  active?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
-      accessibilityRole="button"
+      accessibilityRole={active === undefined ? "button" : "switch"}
+      accessibilityState={active === undefined ? undefined : { checked: active }}
       accessibilityLabel={label}
       hitSlop={4}
-      style={({ pressed }) => [styles.disc, { opacity: pressed ? 0.85 : 1 }]}
+      style={({ pressed }) => [styles.disc, active && { backgroundColor: "#0E2444" }, { opacity: pressed ? 0.85 : 1 }]}
     >
-      <Feather name={icon} size={20} color="#0E1A2B" />
+      <Feather name={icon} size={20} color={active ? "#FFFFFF" : "#0E1A2B"} />
     </Pressable>
   );
 }
