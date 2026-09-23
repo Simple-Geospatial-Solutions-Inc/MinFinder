@@ -1,4 +1,4 @@
-import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
+import { BottomSheetView } from "@gorhom/bottom-sheet";
 import { router, Stack } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import { Alert, BackHandler, Pressable, StyleSheet, Text, View } from "react-native";
@@ -8,7 +8,7 @@ import { CaptureMap, MarkSheet, type LatLon, type Phase } from "@/components/cap
 import { DetailsSheet, type SavedMine } from "@/components/capture/DetailsSheet";
 import { useLiveFix, type LiveFix } from "@/components/capture/gps";
 import { StatusChip } from "@/components/capture/StatusChip";
-import { floating, GUTTER, PillButton, type } from "@/components/capture/ui";
+import { GUTTER, PillButton, Sheet, type } from "@/components/ui";
 import { Feather } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
 import { useSignedIn } from "@/lib/auth";
@@ -113,17 +113,11 @@ function SavedSheet({ mine, onDone, onAnother }: { mine: SavedMine; onDone: () =
   const label = MINE_TYPES.find(([k]) => k === mine.type)?.[1] ?? "Mine";
 
   return (
-    <BottomSheet
-      index={0}
-      enablePanDownToClose={false}
-      backgroundStyle={{ backgroundColor: colors.card, borderRadius: 16 }}
-      handleIndicatorStyle={{ width: 32, height: 5, backgroundColor: colors.border }}
-      style={floating}
-    >
+    <Sheet index={0} enablePanDownToClose={false}>
       <BottomSheetView style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.head}>
-          <View style={styles.okDisc}>
-            <Feather name="check" size={18} color="#1B6B3A" />
+          <View style={[styles.okDisc, { backgroundColor: colors.successSubtle }]}>
+            <Feather name="check" size={18} color={colors.success} />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={[type.title, { color: colors.foreground }]} accessibilityRole="header">
@@ -154,7 +148,7 @@ function SavedSheet({ mine, onDone, onAnother }: { mine: SavedMine; onDone: () =
           <PillButton label="Add another" icon="plus" onPress={onAnother} />
         </View>
       </BottomSheetView>
-    </BottomSheet>
+    </Sheet>
   );
 }
 
@@ -166,7 +160,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#E3F1E7",
     alignItems: "center",
     justifyContent: "center",
   },

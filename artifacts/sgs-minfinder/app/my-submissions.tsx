@@ -3,9 +3,7 @@ import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -17,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { MineGlyph } from "@/components/capture/MineGlyph";
 import { outboxStatus, StatusChip, TIER_STATUS, type Status } from "@/components/capture/StatusChip";
-import { GUTTER, PillButton } from "@/components/capture/ui";
+import { GUTTER, ListRow, ListSection, PillButton, TextButton, type } from "@/components/ui";
 import { Feather } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
 import { signIn, useSignedIn, type Provider } from "@/lib/auth";
@@ -113,10 +111,8 @@ export default function MySubmissionsScreen() {
       {signedIn ? (
         <View style={[styles.accountRow, { borderColor: colors.border }]}>
           <Feather name="user" size={18} color={colors.mutedForeground} />
-          <Text style={[styles.body, { color: colors.foreground, flex: 1 }]}>Signed in</Text>
-          <Pressable onPress={() => void signOutAndForget()} hitSlop={8} accessibilityRole="button" style={styles.textBtn}>
-            <Text style={[styles.link, { color: colors.primary }]}>Sign out</Text>
-          </Pressable>
+          <Text style={[type.label, { color: colors.foreground, flex: 1 }]}>Signed in</Text>
+          <TextButton label="Sign out" onPress={() => void signOutAndForget()} />
         </View>
       ) : (
         <SignIn busy={signingIn} error={signInError} onSignIn={onSignIn} waiting={queued.length} />
@@ -131,7 +127,7 @@ export default function MySubmissionsScreen() {
       )}
 
       {queued.length > 0 && (
-        <Section
+        <ListSection
           title="On this phone"
           action={signedIn ? { label: "Upload now", onPress: () => void uploadNow() } : undefined}
         >
@@ -146,11 +142,11 @@ export default function MySubmissionsScreen() {
               reason={o.error === "upload_failed" && o.message ? `Error: ${o.message}` : undefined}
             />
           ))}
-        </Section>
+        </ListSection>
       )}
 
       {rejected.length > 0 && (
-        <Section title="Not accepted">
+        <ListSection title="Not accepted">
           {rejected.map((o) => (
             <Row
               key={o.id}
@@ -163,11 +159,11 @@ export default function MySubmissionsScreen() {
               onDiscard={() => void discardOutboxItem(o.id)}
             />
           ))}
-        </Section>
+        </ListSection>
       )}
 
       {mine.length > 0 && (
-        <Section title="Uploaded">
+        <ListSection title="Uploaded">
           {mine.map((m) => (
             <Row
               key={m.id}
@@ -179,11 +175,11 @@ export default function MySubmissionsScreen() {
               status={TIER_STATUS[m.tier]}
             />
           ))}
-        </Section>
+        </ListSection>
       )}
 
       {!signedIn && mine.length === 0 && !empty && (
-        <Text style={[styles.note, { color: colors.mutedForeground }]}>
+        <Text style={[type.meta, { color: colors.mutedForeground }]}>
           Sign in to see what you&apos;ve already uploaded.
         </Text>
       )}
@@ -206,10 +202,10 @@ function SignIn({
   const dark = useColorScheme() === "dark";
   return (
     <View style={[styles.signIn, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.h2, { color: colors.foreground }]} accessibilityRole="header">
+      <Text style={[type.title, { color: colors.foreground }]} accessibilityRole="header">
         {waiting > 0 ? `Sign in to upload ${waiting === 1 ? "your mine" : `${waiting} mines`}` : "Sign in to add mines"}
       </Text>
-      <Text style={[styles.note, { color: colors.mutedForeground }]}>
+      <Text style={[type.meta, { color: colors.mutedForeground }]}>
         Browsing never needs an account. We keep an anonymous ID from Apple or Google, never your name or email.
       </Text>
       {Platform.OS === "ios" && (
@@ -225,22 +221,17 @@ function SignIn({
           onPress={() => onSignIn("apple")}
         />
       )}
-      <Pressable
-        onPress={() => onSignIn("google")}
-        disabled={busy !== null}
-        accessibilityRole="button"
-        accessibilityState={{ busy: busy === "google" }}
-        style={({ pressed }) => [
-          styles.providerBtn,
-          styles.googleBtn,
-          { borderColor: colors.foreground, backgroundColor: pressed ? colors.muted : "transparent" },
-        ]}
-      >
-        {busy === "google" && <ActivityIndicator color={colors.foreground} />}
-        <Text style={[styles.providerText, { color: colors.foreground }]}>Sign in with Google</Text>
-      </Pressable>
+      <View style={styles.btnRow}>
+        <PillButton
+          label="Sign in with Google"
+          variant="outline"
+          busy={busy === "google"}
+          disabled={busy !== null && busy !== "google"}
+          onPress={() => onSignIn("google")}
+        />
+      </View>
       {error && (
-        <Text style={[styles.note, { color: colors.destructive }]} accessibilityLiveRegion="polite">
+        <Text style={[type.meta, { color: colors.destructive }]} accessibilityLiveRegion="polite">
           {error}
         </Text>
       )}
@@ -261,15 +252,15 @@ function EmptyState() {
       <View style={[styles.emptyGlyph, { backgroundColor: colors.muted }]}>
         <MineGlyph type="adit" size={36} color={colors.foreground} />
       </View>
-      <Text style={[styles.h1, { color: colors.foreground }]}>Found a working that isn&apos;t on the map?</Text>
-      <Text style={[styles.body, { color: colors.mutedForeground }]}>
+      <Text style={[type.display, { color: colors.foreground }]}>Found a working that isn&apos;t on the map?</Text>
+      <Text style={[type.label, { color: colors.mutedForeground }]}>
         Add it for other MinFinder users. SGS reviews a new member&apos;s first three submissions.
       </Text>
       <View style={styles.steps}>
         {steps.map(([icon, text]) => (
           <View key={icon} style={styles.stepRow}>
             <Feather name={icon} size={20} color={colors.foreground} />
-            <Text style={[styles.body, { color: colors.foreground, flex: 1 }]}>{text}</Text>
+            <Text style={[type.label, { color: colors.foreground, flex: 1 }]}>{text}</Text>
           </View>
         ))}
       </View>
@@ -280,36 +271,9 @@ function EmptyState() {
   );
 }
 
-function Section({
-  title,
-  action,
-  children,
-}: {
-  title: string;
-  action?: { label: string; onPress: () => void };
-  children: React.ReactNode;
-}) {
-  const colors = useColors();
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHead}>
-        <Text style={[styles.h2, { color: colors.foreground, flex: 1 }]} accessibilityRole="header">
-          {title}
-        </Text>
-        {action && (
-          <Pressable onPress={action.onPress} hitSlop={8} accessibilityRole="button" style={styles.textBtn}>
-            <Text style={[styles.link, { color: colors.primary }]}>{action.label}</Text>
-          </Pressable>
-        )}
-      </View>
-      <View style={[styles.list, { backgroundColor: colors.card, borderColor: colors.border }]}>{children}</View>
-    </View>
-  );
-}
-
 function Row({
   photo,
-  type,
+  type: kind,
   title,
   meta,
   status,
@@ -326,41 +290,30 @@ function Row({
 }) {
   const colors = useColors();
   return (
-    <View style={[styles.row, { borderBottomColor: colors.border }]}>
+    <ListRow>
       {photo ? (
         <Image source={{ uri: photo }} style={styles.thumb} />
       ) : (
         <View style={[styles.thumb, styles.thumbGlyph, { backgroundColor: colors.muted }]}>
-          <MineGlyph type={type} size={24} color={colors.foreground} />
+          <MineGlyph type={kind} size={24} color={colors.foreground} />
         </View>
       )}
       <View style={styles.rowText}>
-        <Text style={[styles.body, { color: colors.foreground }]} numberOfLines={1}>
+        <Text style={[type.label, { color: colors.foreground }]} numberOfLines={1}>
           {title}
         </Text>
-        <Text style={[styles.note, { color: colors.mutedForeground }]}>{meta}</Text>
+        <Text style={[type.meta, { color: colors.mutedForeground }]}>{meta}</Text>
         <StatusChip status={status} />
-        {reason && <Text style={[styles.note, { color: colors.foreground }]}>{reason}</Text>}
-        {onDiscard && (
-          <Pressable onPress={onDiscard} accessibilityRole="button" style={styles.discard} hitSlop={4}>
-            <Feather name="trash-2" size={16} color={colors.destructive} />
-            <Text style={[styles.link, { color: colors.destructive }]}>Discard</Text>
-          </Pressable>
-        )}
+        {reason && <Text style={[type.meta, { color: colors.foreground }]}>{reason}</Text>}
+        {onDiscard && <TextButton label="Discard" icon="trash-2" tone="destructive" onPress={onDiscard} />}
       </View>
-    </View>
+    </ListRow>
   );
 }
 
 const styles = StyleSheet.create({
   scroll: { paddingHorizontal: GUTTER, paddingTop: 16, gap: 24 },
-  h1: { fontFamily: "Inter_700Bold", fontSize: 22, lineHeight: 28 },
-  h2: { fontFamily: "Inter_700Bold", fontSize: 18, lineHeight: 24 },
-  body: { fontFamily: "Inter_600SemiBold", fontSize: 15, lineHeight: 20 },
-  note: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
-  link: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
   btnRow: { flexDirection: "row" },
-  textBtn: { minHeight: 44, justifyContent: "center" },
   accountRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -370,25 +323,11 @@ const styles = StyleSheet.create({
   },
   signIn: { padding: 16, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, gap: 12 },
   providerBtn: { height: 48, borderRadius: 24 },
-  googleBtn: { borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  providerText: { fontFamily: "Inter_600SemiBold", fontSize: 16 },
   empty: { gap: 14, paddingTop: 8 },
   emptyGlyph: { width: 64, height: 64, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   steps: { gap: 14, paddingVertical: 6 },
   stepRow: { flexDirection: "row", alignItems: "center", gap: 14 },
-  section: { gap: 10 },
-  sectionHead: { flexDirection: "row", alignItems: "center" },
-  list: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: "hidden" },
-  row: {
-    flexDirection: "row",
-    gap: 12,
-    padding: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    // Tucks the last row's divider under the list's own border (overflow: hidden).
-    marginBottom: -StyleSheet.hairlineWidth,
-  },
   rowText: { flex: 1, gap: 4 },
-  thumb: { width: 56, height: 56, borderRadius: 10 },
+  thumb: { width: 56, height: 56, borderRadius: 8 },
   thumbGlyph: { alignItems: "center", justifyContent: "center" },
-  discard: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 44, alignSelf: "flex-start" },
 });

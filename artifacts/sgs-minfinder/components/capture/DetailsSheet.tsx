@@ -1,4 +1,5 @@
-import BottomSheet, {
+import type BottomSheet from "@gorhom/bottom-sheet";
+import {
   BottomSheetFooter,
   BottomSheetScrollView,
   BottomSheetTextInput,
@@ -14,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DETAILS_SNAP, type LatLon } from "@/components/capture/CaptureMap";
 import { describeGps, type GpsState, type LiveFix } from "@/components/capture/gps";
 import { MineGlyph, TYPE_HINTS } from "@/components/capture/MineGlyph";
-import { floating, GUTTER, PillButton, type } from "@/components/capture/ui";
+import { Chip, GUTTER, Notice, PillButton, Sheet, type } from "@/components/ui";
 import { Feather } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
 import { queryOccurrences } from "@/lib/db";
@@ -242,7 +243,7 @@ export function DetailsSheet({
   );
 
   return (
-    <BottomSheet
+    <Sheet
       ref={ref}
       // It mounts at the moment Mark is pressed, before the sheet has measured
       // itself, so a snapToIndex from the effect would be dropped. Start open.
@@ -254,9 +255,6 @@ export function DetailsSheet({
       keyboardBehavior="extend"
       android_keyboardInputMode="adjustResize"
       footerComponent={renderFooter}
-      backgroundStyle={{ backgroundColor: colors.card, borderRadius: 16 }}
-      handleIndicatorStyle={{ width: 32, height: 5, backgroundColor: colors.border }}
-      style={floating}
     >
       <BottomSheetScrollView contentContainerStyle={[styles.scroll, { paddingBottom: footerH + 16 }]}>
         <View style={{ gap: 2 }}>
@@ -269,16 +267,13 @@ export function DetailsSheet({
         </View>
 
         {(nearby.minfile || nearby.community || nearby.own) && (
-          <View style={[styles.notice, { backgroundColor: colors.muted }]}>
-            <Feather name={nearby.own ? "circle-x" : "info"} size={16} color={nearby.own ? colors.destructive : colors.foreground} />
-            <Text style={[type.meta, { flex: 1, color: nearby.own ? colors.destructive : colors.foreground }]}>
-              {nearby.own
+          <Notice icon={nearby.own ? "circle-x" : "info"} tone={nearby.own ? "danger" : "default"}>
+            {nearby.own
                 ? `You added ${nearby.own.mine.name || `a ${TYPE_LABEL[nearby.own.mine.type].toLowerCase()}`} ${nearby.own.m} m from here on ${formatShortDate(nearby.own.mine.captured_at)}${nearby.own.mine.uploaded ? "" : " (still on this phone)"}. Each member can add one mine per 100 m. Find it in My submissions.`
                 : nearby.community
                   ? "Another member has already added a mine within 30 m. The server will refuse a duplicate."
                   : `${nearby.minfile!.name} (MINFILE ${nearby.minfile!.no}) is ${nearby.minfile!.m} m away. Only add this if it's a different working.`}
-            </Text>
-          </View>
+          </Notice>
         )}
 
         {/* Photos */}
@@ -311,7 +306,7 @@ export function DetailsSheet({
                   accessibilityRole="button"
                   accessibilityLabel={`Remove photo ${i + 1}`}
                   hitSlop={10}
-                  style={styles.photoX}
+                  style={[styles.photoX, { backgroundColor: colors.scrim }]}
                 >
                   <Feather name="x" size={12} color="#FFFFFF" />
                 </Pressable>
@@ -334,31 +329,19 @@ export function DetailsSheet({
           </Text>
           <View style={styles.wrap} accessibilityRole="radiogroup">
             {MINE_TYPES.map(([key, label]) => {
-              const on = mineType === key;
               return (
-                <Pressable
+                <Chip
                   key={key}
+                  label={label}
+                  role="radio"
+                  selected={mineType === key}
+                  accessibilityHint={TYPE_HINTS[key]}
+                  icon={(c) => <MineGlyph type={key} size={20} color={c} />}
                   onPress={() => {
                     Haptics.selectionAsync().catch(() => {});
                     setMineType(key);
                   }}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={label}
-                  accessibilityHint={TYPE_HINTS[key]}
-                  style={({ pressed }) => [
-                    styles.chip,
-                    styles.typeChip,
-                    {
-                      borderColor: on ? colors.foreground : colors.border,
-                      borderWidth: on ? 2 : 1,
-                      backgroundColor: pressed ? colors.muted : "transparent",
-                    },
-                  ]}
-                >
-                  <MineGlyph type={key} size={20} color={colors.foreground} />
-                  <Text style={[styles.chipText, fg]}>{label}</Text>
-                </Pressable>
+                />
               );
             })}
           </View>
@@ -376,24 +359,15 @@ export function DetailsSheet({
             {HAZARDS.map(([key, label]) => {
               const on = hazards.includes(key);
               return (
-                <Pressable
+                <Chip
                   key={key}
+                  label={label}
+                  role="checkbox"
+                  tone="danger"
+                  selected={on}
+                  icon={on ? (c) => <Feather name="alert-triangle" size={14} color={c} /> : undefined}
                   onPress={() => setHazards((h) => (on ? h.filter((x) => x !== key) : [...h, key]))}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: on }}
-                  hitSlop={4}
-                  style={({ pressed }) => [
-                    styles.chip,
-                    {
-                      borderColor: on ? colors.destructive : colors.border,
-                      borderWidth: on ? 2 : 1,
-                      backgroundColor: pressed ? colors.muted : "transparent",
-                    },
-                  ]}
-                >
-                  {on && <Feather name="alert-triangle" size={14} color={colors.destructive} />}
-                  <Text style={[styles.chipText, { color: on ? colors.destructive : colors.foreground }]}>{label}</Text>
-                </Pressable>
+                />
               );
             })}
           </View>
@@ -435,7 +409,7 @@ export function DetailsSheet({
         </View>
         <Text style={[type.meta, sub]}>SGS reviews every mine. Photos of the opening help most.</Text>
       </BottomSheetScrollView>
-    </BottomSheet>
+    </Sheet>
   );
 }
 
@@ -453,9 +427,8 @@ function Field({ label, hint, children }: { label: string; hint: string; childre
 const styles = StyleSheet.create({
   scroll: { paddingHorizontal: GUTTER, paddingTop: 4, gap: 24 },
   section: { gap: 10 },
-  notice: { flexDirection: "row", gap: 10, padding: 12, borderRadius: 12 },
   photoRow: { flexDirection: "row", gap: 8 },
-  photo: { width: 72, height: 72, borderRadius: 10 },
+  photo: { width: 72, height: 72, borderRadius: 8 },
   shutter: { borderWidth: 1.5, borderStyle: "dashed", alignItems: "center", justifyContent: "center" },
   photoX: {
     position: "absolute",
@@ -464,21 +437,10 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: "rgba(0,0,0,0.6)",
     alignItems: "center",
     justifyContent: "center",
   },
   wrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    minHeight: 36,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-  },
-  typeChip: { minHeight: 44, gap: 8 },
-  chipText: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
   disclosure: {
     flexDirection: "row",
     alignItems: "center",
@@ -490,7 +452,7 @@ const styles = StyleSheet.create({
   fields: { gap: 16, paddingTop: 16 },
   input: {
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     minHeight: 44,

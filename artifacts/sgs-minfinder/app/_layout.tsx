@@ -17,6 +17,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import colors from "@/constants/colors";
+import { useColors } from "@/hooks/useColors";
 import { SubscriptionProvider } from "@/lib/revenuecat";
 import { startSync } from "@/lib/sync";
 
@@ -31,6 +32,7 @@ const HEADER_FG = "#F4F1EA";
 const HEADER_ACCENT = colors.light.gold;
 
 function RootLayoutNav() {
+  const { background } = useColors();
   return (
     <Stack
       screenOptions={{
@@ -41,7 +43,7 @@ function RootLayoutNav() {
           color: HEADER_FG,
           fontFamily: "Inter_700Bold",
         },
-        contentStyle: { backgroundColor: colors.light.background },
+        contentStyle: { backgroundColor: background },
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />

@@ -1,4 +1,5 @@
-import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
+import type BottomSheet from "@gorhom/bottom-sheet";
+import { BottomSheetView } from "@gorhom/bottom-sheet";
 import {
   Camera,
   GeoJSONSource,
@@ -13,13 +14,13 @@ import {
 } from "@maplibre/maplibre-react-native";
 import * as Haptics from "expo-haptics";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Linking, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Animated, { useAnimatedStyle, useReducedMotion, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
 
 import { describeGps, MAX_NUDGE_M, type GpsState, type LiveFix } from "@/components/capture/gps";
-import { floating, GUTTER, MapButton, PillButton, Stat, type } from "@/components/capture/ui";
+import { floating, GUTTER, MapButton, PillButton, Sheet, Stat, TextButton, type } from "@/components/ui";
 import { Feather } from "@/components/Icon";
 import { SatelliteCredit } from "@/components/SatelliteCredit";
 import { useColors } from "@/hooks/useColors";
@@ -320,13 +321,13 @@ export function CaptureMap({
         <MapButton icon="x" label="Cancel adding a mine" onPress={onClose} />
         {phase !== "saved" && (
           <View
-            style={styles.gpsPill}
+            style={[styles.gpsPill, { backgroundColor: colors.mapChrome }]}
             accessibilityRole="text"
             accessibilityLiveRegion="polite"
             accessibilityLabel={`GPS: ${pill.label}`}
           >
             <Feather name={pill.icon} size={16} color={TONE[pill.tone]} />
-            <Text style={styles.gpsText} numberOfLines={1} maxFontSizeMultiplier={1.4}>
+            <Text style={[styles.gpsText, { color: colors.mapChromeForeground }]} numberOfLines={1} maxFontSizeMultiplier={1.4}>
               {pill.label}
             </Text>
           </View>
@@ -413,14 +414,7 @@ export function MarkSheet({
   };
 
   return (
-    <BottomSheet
-      ref={ref}
-      index={0}
-      enablePanDownToClose={false}
-      backgroundStyle={{ backgroundColor: colors.card, borderRadius: 16 }}
-      handleIndicatorStyle={[styles.handle, { backgroundColor: colors.border }]}
-      style={floating}
-    >
+    <Sheet ref={ref} index={0} enablePanDownToClose={false}>
       <BottomSheetView style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
         <View style={{ gap: 2 }}>
           <Text
@@ -433,9 +427,7 @@ export function MarkSheet({
           <Text style={[type.meta, { color: colors.mutedForeground }]}>{guidance}</Text>
         </View>
         {gps === "denied" && (
-          <Pressable onPress={() => void Linking.openSettings()} hitSlop={12} accessibilityRole="link">
-            <Text style={[type.link, { color: colors.primary }]}>Open Settings</Text>
-          </Pressable>
+          <TextButton label="Open Settings" onPress={() => void Linking.openSettings()} accessibilityRole="link" />
         )}
         {fix && gps !== "denied" && (
           <View style={[styles.stats, { borderColor: colors.border }]}>
@@ -452,7 +444,7 @@ export function MarkSheet({
           <PillButton label="Mark this spot" icon="map-pin" onPress={mark} disabled={!canMark} />
         </View>
       </BottomSheetView>
-    </BottomSheet>
+    </Sheet>
   );
 }
 
@@ -493,11 +485,9 @@ const styles = StyleSheet.create({
     height: 40,
     paddingHorizontal: 14,
     borderRadius: 20,
-    backgroundColor: "#FFFFFF",
     ...floating,
   },
-  gpsText: { color: "#0E1A2B", fontFamily: "Inter_600SemiBold", fontSize: 14, flexShrink: 1 },
-  handle: { width: 32, height: 5 },
+  gpsText: { fontFamily: "Inter_600SemiBold", fontSize: 14, flexShrink: 1 },
   sheet: { paddingHorizontal: GUTTER, paddingTop: 4, gap: 16 },
   stats: {
     flexDirection: "row",

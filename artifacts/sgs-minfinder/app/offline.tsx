@@ -842,7 +842,7 @@ export default function OfflineScreen() {
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
-          <Feather name="download-cloud" size={20} color={colors.navy} />
+          <Feather name="download-cloud" size={20} color={colors.primary} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.headerTitle, { color: colors.foreground }]}>
               Offline map regions
@@ -875,7 +875,7 @@ export default function OfflineScreen() {
 
         {loading ? (
           <View style={styles.emptyWrap}>
-            <ActivityIndicator color={colors.navy} />
+            <ActivityIndicator color={colors.primary} />
           </View>
         ) : packs.length === 0 ? (
           <View style={styles.emptyWrap}>

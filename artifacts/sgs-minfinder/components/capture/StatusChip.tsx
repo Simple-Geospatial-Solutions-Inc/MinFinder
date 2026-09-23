@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, Text, useColorScheme, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { Feather, type FeatherIconName } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
@@ -40,12 +40,11 @@ export const TIER_STATUS: Record<Tier, Status> = {
 /** Icon plus words in a tinted pill, so the state reads without colour. */
 export function StatusChip({ status }: { status: Status }) {
   const colors = useColors();
-  const dark = useColorScheme() === "dark";
   // weak fill + strong text, the AllTrails status-token pairing.
   const [bg, fg] = {
-    ok: dark ? ["#12321F", "#8FD9A8"] : ["#E3F1E7", "#1B6B3A"],
-    wait: dark ? ["#3A2C08", "#F2C45A"] : ["#FFF1CC", "#6B4700"],
-    bad: dark ? ["#3D1714", "#F08A80"] : ["#FBE4E2", "#8C1D17"],
+    ok: [colors.successSubtle, colors.success],
+    wait: [colors.warningSubtle, colors.warning],
+    bad: [colors.dangerSubtle, colors.danger],
     neutral: [colors.muted, colors.foreground],
   }[status.tone];
   return (
