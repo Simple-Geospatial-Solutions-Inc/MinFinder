@@ -13,6 +13,11 @@ const ROW_LEFT = DIVIDER_OPEN + 4;
 // The hamburger's lines, drawn to match the 18 pt glyph they replace.
 const BAR_W = 14;
 const BAR_GAP = 4.5;
+// Stretch of progress over which the lines travel, and how long each takes to
+// turn into its icon once it breaks off. The last label settles at 0.7 + BREAK + 0.1, inside 1.
+const TRAVEL_START = 0;
+const TRAVEL_END = 0.7;
+const BREAK = 0.17;
 
 const clamp = (p: number, from: number, to: number) => {
   "worklet";
@@ -22,7 +27,8 @@ const clamp = (p: number, from: number, to: number) => {
 /**
  * The search pill's menu. Opening, the divider slides left over the field and
  * the menu grows in behind it from the right, while the hamburger's three lines
- * fly apart, one to each option, and turn into its icon. `progress` runs 0 to
+ * slide left together and break off one by one, each turning into the icon of
+ * the option it stops at. `progress` runs 0 to
  * 1; the parent owns it so the field can fade on the same clock.
  */
 export function PillMenu<H extends string>({
@@ -53,6 +59,11 @@ export function PillMenu<H extends string>({
 
   const dividerRest = width - 4 - BUTTON - 4 - StyleSheet.hairlineWidth;
   const home = width - 4 - BUTTON / 2;
+  // The lines travel as one until the leftmost option; each drops off on the
+  // way, at the progress where the group passes its own option.
+  const far = Math.min(home, ...items.map((_, i) => targets[i] ?? home));
+  const arrival = (i: number) =>
+    TRAVEL_START + (far < home ? (home - (targets[i] ?? home)) / (home - far) : 1) * (TRAVEL_END - TRAVEL_START);
 
   const dividerStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: interpolate(clamp(progress.value, 0, 0.75), [0, 1], [dividerRest, DIVIDER_OPEN]) }],
@@ -80,6 +91,7 @@ export function PillMenu<H extends string>({
               icon={icon}
               label={label}
               color={color}
+              arrive={arrival(i)}
               onMeasured={report}
               onPress={() => onPick(href)}
             />
@@ -90,7 +102,16 @@ export function PillMenu<H extends string>({
       <Animated.View style={[styles.divider, { backgroundColor: dividerColor }, dividerStyle]} pointerEvents="none" />
 
       {items.map((_, i) => (
-        <Bar key={i} index={i} progress={progress} from={home} to={targets[i] ?? home} color={color} />
+        <Bar
+          key={i}
+          index={i}
+          progress={progress}
+          from={home}
+          far={far}
+          to={targets[i] ?? home}
+          arrive={arrival(i)}
+          color={color}
+        />
       ))}
 
       <Pressable
@@ -106,30 +127,34 @@ export function PillMenu<H extends string>({
   );
 }
 
-/** One hamburger line: stacks into the glyph when closed, flies to its option's icon when open. */
+/** One hamburger line: rides left with the others, stops at its option and becomes its icon. */
 function Bar({
   index,
   progress,
   from,
+  far,
   to,
+  arrive,
   color,
 }: {
   index: number;
   progress: SharedValue<number>;
   from: number;
+  far: number;
   to: number;
+  arrive: number;
   color: string;
 }) {
   const style = useAnimatedStyle(() => {
     const p = progress.value;
-    const travel = clamp(p, 0.05, 0.7);
+    const group = interpolate(clamp(p, TRAVEL_START, TRAVEL_END), [0, 1], [from, far]);
+    const off = clamp(p, arrive, arrive + BREAK);
     return {
-      opacity: 1 - clamp(p, 0.55, 0.8),
+      opacity: 1 - off,
       transform: [
-        { translateX: interpolate(travel, [0, 1], [from, to]) - BAR_W / 2 },
-        // The lines close up into one row as they leave, then part sideways.
-        { translateY: (index - 1) * BAR_GAP * (1 - clamp(p, 0, 0.3)) },
-        { scaleX: interpolate(travel, [0, 0.5, 1], [1, 0.5, 1]) },
+        { translateX: Math.max(group, to) - BAR_W / 2 },
+        // Breaking off, the line drops into the row the icons sit on.
+        { translateY: (index - 1) * BAR_GAP * (1 - off) },
       ],
     };
   });
@@ -142,6 +167,7 @@ function Option({
   icon,
   label,
   color,
+  arrive,
   onMeasured,
   onPress,
 }: {
@@ -150,6 +176,8 @@ function Option({
   icon: FeatherIconName;
   label: string;
   color: string;
+  /** Progress at which this option's line breaks off here. */
+  arrive: number;
   onMeasured: (index: number, x: number) => void;
   onPress: () => void;
 }) {
@@ -160,11 +188,11 @@ function Option({
   }, [slotX, contentX, index, onMeasured]);
 
   const iconStyle = useAnimatedStyle(() => {
-    const t = clamp(progress.value, 0.55, 0.85);
+    const t = clamp(progress.value, arrive + 0.03, arrive + BREAK + 0.03);
     return { opacity: t, transform: [{ scale: 0.5 + t * 0.5 }] };
   });
   const labelStyle = useAnimatedStyle(() => {
-    const t = clamp(progress.value, 0.6, 1);
+    const t = clamp(progress.value, arrive + 0.08, arrive + BREAK + 0.1);
     return { opacity: t, transform: [{ translateX: (1 - t) * 6 }] };
   });
 
