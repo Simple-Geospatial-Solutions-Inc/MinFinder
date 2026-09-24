@@ -1,7 +1,7 @@
 // Parks, protected areas, conservancies, ecological reserves and First Nations reserves: a new
 // mine inside one is held for staff review whatever the account's history, so SGS never
 // publishes a collecting target in a park or a pin on reserve land without a person looking.
-// The boundaries come from data/sensitive-areas.json (see scripts/build-sensitive-areas.ts).
+// The boundaries come from assets/sensitive-areas.json (see scripts/build-sensitive-areas.ts).
 import { readFileSync } from "node:fs";
 
 export interface Area {
@@ -36,7 +36,7 @@ export function areaAt(areas: Area[], lat: number, lon: number): Area | null {
 // An R-tree if the list or the traffic ever grows by orders of magnitude.
 let loaded: Area[] | null = null;
 function areas(): Area[] {
-  loaded ??= JSON.parse(readFileSync(new URL("../data/sensitive-areas.json", import.meta.url), "utf8")).areas as Area[];
+  loaded ??= JSON.parse(readFileSync(new URL("../assets/sensitive-areas.json", import.meta.url), "utf8")).areas as Area[];
   return loaded;
 }
 

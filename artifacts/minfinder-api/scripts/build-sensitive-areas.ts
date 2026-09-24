@@ -1,4 +1,4 @@
-// Builds data/sensitive-areas.json: the areas where a new community mine is held for staff review
+// Builds assets/sensitive-areas.json: the areas where a new community mine is held for staff review
 // before it goes public (provincial parks, ecological reserves, protected areas, conservancies and
 // First Nations reserves). Run from artifacts/minfinder-api when the boundaries change, a few
 // times a year at most:
@@ -95,6 +95,6 @@ for (const layer of LAYERS) {
   console.log(`${layer.type}: ${kept} of ${features.length}`);
 }
 
-const file = new URL("../data/sensitive-areas.json", import.meta.url);
+const file = new URL("../assets/sensitive-areas.json", import.meta.url);
 writeFileSync(file, JSON.stringify({ built: new Date().toISOString().slice(0, 10), areas }));
 console.log(`wrote ${areas.length} areas`);

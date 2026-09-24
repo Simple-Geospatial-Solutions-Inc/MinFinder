@@ -44,7 +44,7 @@ branch on.
 A submission whose pin is inside a provincial park, ecological reserve, protected area,
 conservancy or First Nations reserve is stored as pending whatever the account's history, and
 its author sees `held_for` (e.g. `"Provincial park: GARIBALDI PARK"`) until staff approve it on
-/admin. Boundaries are in `data/sensitive-areas.json`, built from BC's open WFS by
+/admin. Boundaries are in `assets/sensitive-areas.json`, built from BC's open WFS by
 `node scripts/build-sensitive-areas.ts` (rerun when boundaries change, then deploy).
 
 ### Device attestation
