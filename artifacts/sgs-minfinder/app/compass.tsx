@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { CalibrationModal } from "@/components/CalibrationModal";
+import { CalibrationSheet } from "@/components/CalibrationSheet";
 import { CompassDial } from "@/components/CompassDial";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { useColors } from "@/hooks/useColors";
@@ -499,7 +499,7 @@ export default function CompassScreen() {
         </View>
       </ScrollView>
 
-      <CalibrationModal
+      <CalibrationSheet
         visible={showCalibration}
         rawHeading={rawHeadingRef.current}
         declination={declinationRef.current ?? declination}

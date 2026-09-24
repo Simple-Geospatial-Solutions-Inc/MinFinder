@@ -20,6 +20,8 @@ export const type = StyleSheet.create({
   label: { fontFamily: "Inter_600SemiBold", fontSize: 15, lineHeight: 20 },
   meta: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
   link: { fontFamily: "Inter_600SemiBold", fontSize: 14, lineHeight: 20 },
+  // Fine print only: store disclosures, the legal line.
+  fine: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 16 },
 });
 
 export const floating = {
@@ -186,6 +188,45 @@ export function Chip({
       {icon?.(fg)}
       <Text style={[styles.chipText, { color: fg }]}>{label}</Text>
     </Pressable>
+  );
+}
+
+/** Two or three exclusive options on a grey track; the chosen one lifts out on a card. */
+export function Segmented<V extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: readonly { value: V; label: string; disabled?: boolean }[];
+  value: V;
+  onChange: (value: V) => void;
+}) {
+  const colors = useColors();
+  return (
+    <View style={[styles.segTrack, { backgroundColor: colors.muted }]} accessibilityRole="radiogroup">
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <Pressable
+            key={o.value}
+            onPress={() => onChange(o.value)}
+            disabled={o.disabled}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: on, disabled: !!o.disabled }}
+            hitSlop={{ top: 4, bottom: 4 }}
+            style={({ pressed }) => [
+              styles.seg,
+              on && [{ backgroundColor: colors.card }, floating],
+              { opacity: o.disabled ? 0.45 : pressed ? 0.7 : 1 },
+            ]}
+          >
+            <Text style={[type.link, { color: on ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
+              {o.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
@@ -399,6 +440,8 @@ const styles = StyleSheet.create({
   },
   chipText: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
   notice: { flexDirection: "row", gap: 10, padding: 12, borderRadius: radius.md },
+  segTrack: { flexDirection: "row", padding: 4, borderRadius: radius.pill },
+  seg: { flex: 1, minHeight: 40, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
   section: { gap: 10 },
   sectionHead: { flexDirection: "row", alignItems: "center" },
   list: { borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, overflow: "hidden" },
