@@ -333,7 +333,7 @@ export default function MapScreen() {
   // withTiming follows the system's reduce-motion setting by default.
   const menuProgress = useSharedValue(0);
   useEffect(() => {
-    menuProgress.value = withTiming(menuOpen ? 1 : 0, { duration: 480, easing: Easing.bezier(0.2, 0, 0, 1) });
+    menuProgress.value = withTiming(menuOpen ? 1 : 0, { duration: 800, easing: Easing.bezier(0.2, 0, 0, 1) });
   }, [menuOpen, menuProgress]);
   // The typed query gives way as the divider sweeps over it; the glyph stays.
   const searchFieldStyle = useAnimatedStyle(() => ({
