@@ -90,6 +90,7 @@ export function openDb(path: string): DB {
   // Columns added after launch. SQLite has no ADD COLUMN IF NOT EXISTS.
   const cols = (db.prepare("PRAGMA table_info(mines)").all() as { name: string }[]).map((c) => c.name);
   if (!cols.includes("attest")) db.exec("ALTER TABLE mines ADD COLUMN attest TEXT"); // the upload's attestation verdict
+  if (!cols.includes("hold")) db.exec("ALTER TABLE mines ADD COLUMN hold TEXT"); // the sensitive area that held it for review
   return db;
 }
 

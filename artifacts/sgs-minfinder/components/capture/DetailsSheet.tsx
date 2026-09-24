@@ -407,7 +407,7 @@ export function DetailsSheet({
             </View>
           )}
         </View>
-        <Text style={[type.meta, sub]}>SGS reviews every mine. Photos of the opening help most.</Text>
+        <Text style={[type.meta, sub]}>SGS reviews every mine. Ones in parks, protected areas and First Nations reserves are checked before anyone else sees them. Photos of the opening help most.</Text>
       </BottomSheetScrollView>
     </Sheet>
   );

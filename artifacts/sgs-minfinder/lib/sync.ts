@@ -82,6 +82,8 @@ export interface Mine {
   on_site_up: number;
   photos: string[];
   seq: number;
+  /** "Provincial park: GARIBALDI PARK" while a mine in a sensitive area waits for review. */
+  held_for?: string | null;
 }
 
 export interface OutboxItem {

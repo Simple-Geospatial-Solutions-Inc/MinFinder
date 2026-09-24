@@ -48,6 +48,7 @@ function card(db: DB, m: Record<string, any>): string {
     <p class="meta"><a href="${map}" target="_blank">${m.lat.toFixed(5)}, ${m.lon.toFixed(5)}</a> · ±${Math.round(m.accuracy_m)} m · device check: ${esc(m.attest ?? "not recorded")}</p>
     ${m.notes ? `<p>${esc(m.notes)}</p>` : ""}
     ${hazards.length ? `<p class="meta">Hazards: ${esc(hazards.join(", "))}</p>` : ""}
+    ${m.hold && !m.approved ? `<p class="reports">Held: inside ${esc(m.hold)}. Check it isn't a heritage or cultural site, and that it's fine to publish there.</p>` : ""}
     ${reasons ? `<p class="reports">Reported: ${reasons}</p>` : ""}
     <div class="actions">
       ${m.approved ? "" : btn("approve", "Approve")}

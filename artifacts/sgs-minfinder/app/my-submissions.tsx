@@ -180,6 +180,7 @@ export default function MySubmissionsScreen() {
                 m.tier !== "pending" && m.tier !== "hidden" ? ` · ${m.net >= 0 ? "+" : "−"}${Math.abs(m.net)} votes` : ""
               }`}
               status={TIER_STATUS[m.tier]}
+              reason={m.held_for ? heldReason(m.held_for) : undefined}
             />
           ))}
         </ListSection>
@@ -258,6 +259,14 @@ function SignIn({
 }
 
 const FAILED = "That didn't go through. Check your connection and try again.";
+
+/** "Provincial park: GARIBALDI PARK" -> "Inside Garibaldi Park, a provincial park, so SGS checks it first." */
+function heldReason(heldFor: string): string {
+  const [kind, name = ""] = heldFor.split(": ");
+  const title = name.toLowerCase().replace(/(^|\s)\p{L}/gu, (c) => c.toUpperCase());
+  const what = kind.toLowerCase().replace("first nations", "First Nations");
+  return `Inside ${title}, ${/^[aeiou]/.test(what) ? "an" : "a"} ${what}, so SGS checks it first.`;
+}
 
 /** Blocks and account deletion, which Apple and Google both require in-app. */
 function Account({ blocked }: { blocked: number }) {

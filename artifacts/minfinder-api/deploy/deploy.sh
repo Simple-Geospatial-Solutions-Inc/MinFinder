@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # deploy.sh — ship the Community Mines API to the VPS and restart it.
 #
-# Copies src/, package.json and package-lock.json to /srv/minfinder-api/app, installs the
+# Copies src/, data/, package.json and package-lock.json to /srv/minfinder-api/app, installs the
 # production dependencies there with `npm ci` (so sharp gets its linux-x64 binaries, not the
 # ones on this machine), then restarts minfinder-api. One-time box setup is in the header of
 # minfinder-api.service; this only updates an already-installed service.
@@ -26,7 +26,7 @@ node --test test/*.test.ts >/dev/null || { echo "deploy: tests fail — not ship
 
 # Unpack into a fresh directory and swap it in, so a failed npm ci never leaves the live app
 # half-updated.
-tar -cf - src package.json package-lock.json | ssh_vps '
+tar -cf - src data package.json package-lock.json | ssh_vps '
   set -eu
   sudo rm -rf /srv/minfinder-api/app.new
   sudo mkdir -p /srv/minfinder-api/app.new

@@ -11,6 +11,7 @@ import { adminGate, adminPage } from "./adminPage.ts";
 import { AttestError, bodyHash, decodePlayToken, newChallenge, playVerdict, verifyAssertion, verifyAttestation } from "./attest.ts";
 import { ACTIONS, moderate, type Action } from "./moderation.ts";
 import { processPhoto } from "./photos.ts";
+import { sensitiveAreaAt } from "./sensitive.ts";
 import { bboxAround, distanceM, hamming, inBC, isPublic, LIMITS, tier, travelKmh, type Tier } from "./rules.ts";
 
 const MINE_TYPES = ["adit", "shaft", "open_pit", "trench", "prospect_pit", "tailings", "structure", "other"] as const;
@@ -87,6 +88,8 @@ function serialize(m: Row) {
     on_site_up: m.on_site_up,
     photos: JSON.parse(m.photo_ids),
     seq: m.seq,
+    // Why it's waiting, for its author. Pending mines are only ever sent to their author.
+    held_for: tierOf(m) === "pending" ? (m.hold ?? null) : null,
   };
 }
 
@@ -326,13 +329,15 @@ export function createApp({ db, photoDir }: AppOptions) {
         }
 
         const approvedBefore = db.prepare("SELECT COUNT(*) AS n FROM mines WHERE user_id = ? AND approved = 1 AND removed = 0").get(uid) as Row;
+        // Inside a park, protected area or reserve, staff look first, whoever it's from.
+        const hold = sensitiveAreaAt(s.lat, s.lon);
         db.prepare(
-          `INSERT INTO mines (id, user_id, lat, lon, user_lat, user_lon, accuracy_m, captured_at, type, name, commodity, notes, hazards, approved, created_at, seq, attest)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO mines (id, user_id, lat, lon, user_lat, user_lon, accuracy_m, captured_at, type, name, commodity, notes, hazards, approved, created_at, seq, attest, hold)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           s.id, uid, s.lat, s.lon, s.user_lat, s.user_lon, s.accuracy_m, s.captured_at, s.type,
           s.name || null, s.commodity || null, s.notes || null, JSON.stringify(s.hazards),
-          approvedBefore.n >= LIMITS.probationCount ? 1 : 0, now, nextSeq(db), verdict,
+          !hold && approvedBefore.n >= LIMITS.probationCount ? 1 : 0, now, nextSeq(db), verdict, hold,
         );
         const addPhoto = db.prepare("INSERT INTO photos (id, mine_id, idx, dhash) VALUES (?, ?, ?, ?)");
         processed.forEach((p, i) => addPhoto.run(photoIds[i], s.id, i, p.dhash.toString(16)));

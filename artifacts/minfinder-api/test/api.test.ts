@@ -231,3 +231,26 @@ test("attestation modes", async () => {
     delete process.env.ATTESTATION;
   }
 });
+
+test("mines in parks and reserves wait for review", async () => {
+  const fay = signIn(db(), "apple", "fay");
+  // Past probation: three approved mines, long ago and far away.
+  const uid = (db().prepare("SELECT id FROM users WHERE sub = 'fay'").get() as any).id;
+  for (let i = 0; i < 3; i++) {
+    db().prepare(
+      `INSERT INTO mines (id, user_id, lat, lon, user_lat, user_lon, accuracy_m, captured_at, type, approved, created_at, seq)
+       VALUES (?, ?, 55, ?, 55, ?, 5, 1, 'adit', 1, 1, 1)`,
+    ).run(randomUUID(), uid, -124 - i, -124 - i);
+  }
+  const garibaldi = { lat: 49.935, lon: -123.035, user_lat: 49.935, user_lon: -123.035, captured_at: Date.now() - 3_600_000 };
+  const held = await submit(fay.token, body(garibaldi));
+  assert.equal(held.status, 201, JSON.stringify(held.json));
+  assert.equal(held.json.mine.tier, "pending");
+  assert.equal(held.json.mine.held_for, "Provincial park: GARIBALDI PARK");
+
+  const outside = { lat: 49.35, lon: -121.0, user_lat: 49.35, user_lon: -121.0, captured_at: Date.now() - 30 * 3_600_000 };
+  const open = await submit(fay.token, body(outside));
+  assert.equal(open.status, 201, JSON.stringify(open.json));
+  assert.equal(open.json.mine.tier, "unverified", "outside any area, a trusted account publishes straight away");
+  assert.equal(open.json.mine.held_for, null);
+});
