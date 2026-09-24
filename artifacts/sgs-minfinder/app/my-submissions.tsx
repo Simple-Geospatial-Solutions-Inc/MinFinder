@@ -1,8 +1,10 @@
 import * as AppleAuthentication from "expo-apple-authentication";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useState } from "react";
 import {
+  Alert,
   Platform,
   RefreshControl,
   ScrollView,
@@ -21,13 +23,16 @@ import { useColors } from "@/hooks/useColors";
 import { signIn, useSignedIn, type Provider } from "@/lib/auth";
 import { formatShortDate } from "@/lib/format";
 import {
+  deleteAccount,
   discardOutboxItem,
+  getBlocks,
   getMySubmissions,
   getOutbox,
   MINE_TYPES,
   onSyncChange,
   signOutAndForget,
   sync,
+  unblockAll,
   uploadNow,
   type Mine,
   type MineType,
@@ -59,6 +64,7 @@ export default function MySubmissionsScreen() {
   const signedIn = useSignedIn();
   const [outbox, setOutbox] = useState<OutboxItem[] | null>(null);
   const [mine, setMine] = useState<Mine[]>([]);
+  const [blockedCount, setBlockedCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [signingIn, setSigningIn] = useState<Provider | null>(null);
   const [signInError, setSignInError] = useState<string | null>(null);
@@ -66,6 +72,7 @@ export default function MySubmissionsScreen() {
   const load = useCallback(() => {
     getOutbox().then(setOutbox).catch(() => setOutbox([]));
     getMySubmissions().then(setMine).catch(() => {});
+    getBlocks().then((b) => setBlockedCount(b.authors)).catch(() => {});
   }, []);
   useEffect(() => onSyncChange(load), [load]);
   useFocusEffect(
@@ -183,6 +190,8 @@ export default function MySubmissionsScreen() {
           Sign in to see what you&apos;ve already uploaded.
         </Text>
       )}
+
+      {signedIn && <Account blocked={blockedCount} />}
     </ScrollView>
   );
 }
@@ -235,7 +244,69 @@ function SignIn({
           {error}
         </Text>
       )}
+      <Text style={[type.meta, { color: colors.mutedForeground }]}>
+        By signing in you agree to the Terms of Use: nothing offensive, and no harassing other members. SGS removes
+        content and accounts that break them.
+      </Text>
+      <TextButton
+        label="Terms of Use"
+        accessibilityRole="link"
+        onPress={() => void WebBrowser.openBrowserAsync("https://sgss.ca/mobile-apps/minfinder/terms")}
+      />
     </View>
+  );
+}
+
+const FAILED = "That didn't go through. Check your connection and try again.";
+
+/** Blocks and account deletion, which Apple and Google both require in-app. */
+function Account({ blocked }: { blocked: number }) {
+  const colors = useColors();
+  const [busy, setBusy] = useState(false);
+
+  const unblock = () =>
+    unblockAll().catch(() => Alert.alert("Couldn't unblock", FAILED));
+
+  const remove = () =>
+    Alert.alert(
+      "Delete your account?",
+      "Your uploaded mines, their photos and your votes are deleted from SGS for good. Mines still on this phone stay here.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete account",
+          style: "destructive",
+          onPress: async () => {
+            setBusy(true);
+            try {
+              await deleteAccount();
+            } catch {
+              Alert.alert("Couldn't delete your account", FAILED);
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ],
+    );
+
+  return (
+    <ListSection title="Account">
+      {blocked > 0 && (
+        <ListRow>
+          <Text style={[type.label, { flex: 1, color: colors.foreground, alignSelf: "center" }]}>
+            {blocked === 1 ? "1 member blocked" : `${blocked} members blocked`}
+          </Text>
+          <TextButton label="Unblock all" onPress={() => void unblock()} />
+        </ListRow>
+      )}
+      <ListRow onPress={busy ? undefined : remove} accessibilityLabel="Delete account">
+        <View style={{ flex: 1 }}>
+          <Text style={[type.label, { color: colors.destructive }]}>{busy ? "Deleting…" : "Delete account"}</Text>
+          <Text style={[type.meta, { color: colors.mutedForeground }]}>Removes everything you've uploaded.</Text>
+        </View>
+      </ListRow>
+    </ListSection>
   );
 }
 

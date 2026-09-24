@@ -1,6 +1,7 @@
 import { randomUUID } from "expo-crypto";
 import { File } from "expo-file-system";
 import * as FileSystem from "expo-file-system/legacy";
+import * as Location from "expo-location";
 import * as Network from "expo-network";
 import { AppState } from "react-native";
 
@@ -180,9 +181,11 @@ export async function getMapMines(): Promise<MapMine[]> {
   const rows = await db.getAllAsync<{ json: string }>("SELECT json FROM community_mines");
   const mine = await getMySubmissions();
   const ownIds = new Set(mine.map((m) => m.id));
+  const blocked = new Set((await getBlocks()).mine_ids);
   const out = new Map<string, MapMine>();
   for (const r of rows) {
     const m = JSON.parse(r.json) as Mine;
+    if (blocked.has(m.id)) continue;
     out.set(m.id, { ...m, own: ownIds.has(m.id), queued: false });
   }
   // Pending and hidden ones never reach the public cache; the author still sees them.
@@ -223,7 +226,132 @@ export async function communityMinesNear(lat: number, lon: number, radiusM: numb
 
 export async function signOutAndForget(): Promise<void> {
   await signOut();
-  await kvSet("my_submissions", []);
+  for (const key of ["my_submissions", "my_votes", "pending_votes"]) await kvSet(key, key === "my_submissions" ? [] : {});
+  await kvSet("blocks", NO_BLOCKS);
+  notify();
+}
+
+/**
+ * Deletes the account on the server, then forgets it here. Captures still in the
+ * outbox stay on the phone: they're the user's, and upload if they sign in again.
+ */
+export async function deleteAccount(): Promise<void> {
+  await api("/me", { method: "DELETE" });
+  await signOutAndForget();
+}
+
+// --- Votes, reports, blocks --------------------------------------------------------
+
+export type VoteValue = -1 | 0 | 1;
+interface PendingVote {
+  value: VoteValue;
+  lat?: number;
+  lon?: number;
+  accuracy_m?: number;
+}
+
+/** What the user last pressed on each mine, uploaded or not. */
+export async function getMyVotes(): Promise<{ votes: Record<string, VoteValue>; pending: Set<string> }> {
+  const votes = (await kvGet<Record<string, VoteValue>>("my_votes")) ?? {};
+  const pending = (await kvGet<Record<string, PendingVote>>("pending_votes")) ?? {};
+  return { votes, pending: new Set(Object.keys(pending)) };
+}
+
+/**
+ * Records a vote and queues it, so it works with no signal. The last known
+ * position rides along: within 150 m of the mine, the server counts it double.
+ */
+export async function castVote(id: string, value: VoteValue): Promise<void> {
+  const votes = (await kvGet<Record<string, VoteValue>>("my_votes")) ?? {};
+  if (value === 0) delete votes[id];
+  else votes[id] = value;
+  await kvSet("my_votes", votes);
+
+  const pos = await Location.getLastKnownPositionAsync({ maxAge: 120_000, requiredAccuracy: 30 }).catch(() => null);
+  const pending = (await kvGet<Record<string, PendingVote>>("pending_votes")) ?? {};
+  pending[id] = pos
+    ? { value, lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy_m: pos.coords.accuracy ?? undefined }
+    : { value };
+  await kvSet("pending_votes", pending);
+  notify();
+  void sync();
+}
+
+async function pushVotes(): Promise<void> {
+  if (!(await isSignedIn())) return;
+  const db = await getUserDb();
+  const queued = (await kvGet<Record<string, PendingVote>>("pending_votes")) ?? {};
+  for (const [id, vote] of Object.entries(queued)) {
+    let drop = false;
+    try {
+      const { mine } = await api<{ mine: Mine }>(`/mines/${id}/vote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vote),
+      });
+      await db.runAsync("UPDATE community_mines SET json = ? WHERE id = ?", [JSON.stringify(mine), id]);
+      drop = true;
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.status >= 500 || RETRYABLE.has(e.status)) return; // try again next pass
+      drop = true; // gone, hidden, or the user's own: the server won't take it
+      const votes = (await kvGet<Record<string, VoteValue>>("my_votes")) ?? {};
+      delete votes[id];
+      await kvSet("my_votes", votes);
+    }
+    // Re-read: a newer press while this one was in flight must not be lost.
+    const now = (await kvGet<Record<string, PendingVote>>("pending_votes")) ?? {};
+    if (drop && JSON.stringify(now[id]) === JSON.stringify(vote)) {
+      delete now[id];
+      await kvSet("pending_votes", now);
+    }
+    notify();
+  }
+}
+
+export const REPORT_REASONS = [
+  ["not_a_mine", "It isn't a mine"],
+  ["wrong_location", "It's in the wrong place"],
+  ["photo_not_this_site", "The photos are of somewhere else"],
+  ["duplicate", "It's already on the map"],
+  ["inappropriate", "Offensive or inappropriate"],
+  ["dangerous", "It sends people somewhere dangerous"],
+  ["other", "Something else"],
+] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number][0];
+
+/** Online only: a report is a request for staff attention, not field data. */
+export async function reportMine(id: string, reason: ReportReason): Promise<void> {
+  await api(`/mines/${id}/report`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+}
+
+interface Blocks {
+  authors: number;
+  mine_ids: string[];
+}
+const NO_BLOCKS: Blocks = { authors: 0, mine_ids: [] };
+
+export async function getBlocks(): Promise<Blocks> {
+  return (await kvGet<Blocks>("blocks")) ?? NO_BLOCKS;
+}
+
+async function refreshBlocks(): Promise<void> {
+  await kvSet("blocks", await api<Blocks>("/me/blocks"));
+}
+
+/** Hides everything by this mine's author. Online only. */
+export async function blockAuthor(mineId: string): Promise<void> {
+  await api(`/mines/${mineId}/block`, { method: "POST" });
+  await refreshBlocks();
+  notify();
+}
+
+export async function unblockAll(): Promise<void> {
+  await api("/me/blocks", { method: "DELETE" });
+  await kvSet("blocks", NO_BLOCKS);
   notify();
 }
 
@@ -321,13 +449,14 @@ async function refreshMine(): Promise<void> {
   if (!(await isSignedIn())) return;
   const { mines } = await api<{ mines: Mine[] }>("/me/submissions");
   await kvSet("my_submissions", mines);
+  await refreshBlocks().catch((e) => console.warn("[sync] blocks", e)); // never hold up the list
   notify();
 }
 
 async function run(): Promise<void> {
   const net = await Network.getNetworkStateAsync();
   if (!net.isConnected || net.isInternetReachable === false) return;
-  for (const step of [pushOutbox, pull, refreshMine]) {
+  for (const step of [pushOutbox, pushVotes, pull, refreshMine]) {
     try {
       await step();
     } catch (e) {
