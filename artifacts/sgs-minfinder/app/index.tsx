@@ -325,7 +325,9 @@ export default function MapScreen() {
   }, []);
   // Community mines: the cached public set plus the user's own, re-read on every sync.
   const [mapMines, setMapMines] = useState<MapMine[]>([]);
-  const [openMine, setOpenMine] = useState<MapMine | null>(null);
+  // By id, so the open sheet follows the list as syncs refresh it (and closes if a block removes it).
+  const [openMineId, setOpenMine] = useState<string | null>(null);
+  const openMine = useMemo(() => mapMines.find((m) => m.id === openMineId) ?? null, [mapMines, openMineId]);
   useEffect(() => {
     const load = () => void getMapMines().then(setMapMines).catch((e) => console.warn("community mines", e));
     load();
@@ -363,7 +365,7 @@ export default function MapScreen() {
       if (!m) return;
       setQuickInfo(null);
       setSelected(null);
-      setOpenMine(m);
+      setOpenMine(m.id);
     },
     [mapMines],
   );

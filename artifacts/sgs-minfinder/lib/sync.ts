@@ -226,7 +226,7 @@ export async function communityMinesNear(lat: number, lon: number, radiusM: numb
 
 export async function signOutAndForget(): Promise<void> {
   await signOut();
-  for (const key of ["my_submissions", "my_votes", "pending_votes"]) await kvSet(key, key === "my_submissions" ? [] : {});
+  for (const key of ["my_submissions", "my_votes", "pending_votes", "server_votes"]) await kvSet(key, key === "my_submissions" ? [] : {});
   await kvSet("blocks", NO_BLOCKS);
   notify();
 }
@@ -250,11 +250,19 @@ interface PendingVote {
   accuracy_m?: number;
 }
 
-/** What the user last pressed on each mine, uploaded or not. */
-export async function getMyVotes(): Promise<{ votes: Record<string, VoteValue>; pending: Set<string> }> {
+/**
+ * What the user last pressed on each mine, and what the server had counted when
+ * it last answered, so a count can take the difference and move straight away.
+ */
+export async function getMyVotes(): Promise<{
+  votes: Record<string, VoteValue>;
+  counted: Record<string, VoteValue>;
+  pending: Set<string>;
+}> {
   const votes = (await kvGet<Record<string, VoteValue>>("my_votes")) ?? {};
+  const counted = (await kvGet<Record<string, VoteValue>>("server_votes")) ?? {};
   const pending = (await kvGet<Record<string, PendingVote>>("pending_votes")) ?? {};
-  return { votes, pending: new Set(Object.keys(pending)) };
+  return { votes, counted, pending: new Set(Object.keys(pending)) };
 }
 
 /**
@@ -290,6 +298,11 @@ async function pushVotes(): Promise<void> {
         body: JSON.stringify(vote),
       });
       await db.runAsync("UPDATE community_mines SET json = ? WHERE id = ?", [JSON.stringify(mine), id]);
+      // The cached counts now include this vote.
+      const counted = (await kvGet<Record<string, VoteValue>>("server_votes")) ?? {};
+      if (vote.value === 0) delete counted[id];
+      else counted[id] = vote.value;
+      await kvSet("server_votes", counted);
       drop = true;
     } catch (e) {
       if (!(e instanceof ApiError) || e.status >= 500 || RETRYABLE.has(e.status)) return; // try again next pass

@@ -69,7 +69,11 @@ export function CommunitySheet({ mine: current, onClose }: { mine: MapMine | nul
   const [view, setView] = useState<"info" | "report" | "reported">("info");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [vote, setVote] = useState<{ value: VoteValue; pending: boolean }>({ value: 0, pending: false });
+  const [vote, setVote] = useState<{ value: VoteValue; counted: VoteValue; pending: boolean }>({
+    value: 0,
+    counted: 0,
+    pending: false,
+  });
   const mine = useLast(current);
   const id = mine?.id;
 
@@ -82,7 +86,9 @@ export function CommunitySheet({ mine: current, onClose }: { mine: MapMine | nul
   useEffect(() => {
     if (!id) return;
     const load = () =>
-      void getMyVotes().then(({ votes, pending }) => setVote({ value: votes[id] ?? 0, pending: pending.has(id) }));
+      void getMyVotes().then(({ votes, counted, pending }) =>
+        setVote({ value: votes[id] ?? 0, counted: counted[id] ?? 0, pending: pending.has(id) }),
+      );
     load();
     return onSyncChange(load);
   }, [id]);
@@ -113,7 +119,7 @@ export function CommunitySheet({ mine: current, onClose }: { mine: MapMine | nul
   const press = (value: VoteValue) => {
     if (!signedIn) return needSignIn("vote");
     const next = vote.value === value ? 0 : value;
-    setVote({ value: next, pending: true });
+    setVote((v) => ({ ...v, value: next, pending: true }));
     void castVote(mine.id, next);
   };
 
@@ -259,7 +265,9 @@ export function CommunitySheet({ mine: current, onClose }: { mine: MapMine | nul
                   <View style={styles.voteHead}>
                     <Text style={[type.label, { color: colors.foreground }]}>Is it there?</Text>
                     <Text style={[type.meta, { color: colors.mutedForeground }]}>
-                      {mine.ups} yes · {mine.downs} no
+                      {/* The cached counts hold the vote the server last saw; swap in the current one. */}
+                      {mine.ups - +(vote.counted === 1) + +(vote.value === 1)} yes ·{" "}
+                      {mine.downs - +(vote.counted === -1) + +(vote.value === -1)} no
                     </Text>
                   </View>
                   <View style={styles.chips}>
