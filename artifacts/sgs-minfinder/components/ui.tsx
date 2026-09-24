@@ -12,7 +12,8 @@ import { useColors } from "@/hooks/useColors";
 // Sizes measured off AllTrails' own sheets (393 pt screen): 24 pt gutters,
 // 48 pt pill buttons, 14 pt meta text, big numbers with small units.
 export const GUTTER = 24;
-export const radius = { sm: 8, md: 12, lg: 16, pill: 999 } as const;
+// xl is half a 48 pt pill: sheets share the curve of the buttons and search bar on them.
+export const radius = { sm: 8, md: 12, lg: 16, xl: 24, pill: 999 } as const;
 
 export const type = StyleSheet.create({
   display: { fontFamily: "Inter_700Bold", fontSize: 22, lineHeight: 28 },
@@ -335,7 +336,7 @@ export function ListRow({
 }
 
 /**
- * The app's one bottom-sheet look: card fill, 16 pt corners, 32×5 handle.
+ * The app's one bottom-sheet look: card fill, 24 pt corners, 32×5 handle.
  * `backdrop` dims the map behind and closes the sheet on a tap outside it.
  *
  * With `open`, the sheet mounts at index 0 when it turns true (a sheet told to
@@ -373,7 +374,7 @@ export function Sheet({
   return (
     <BottomSheet
       ref={inner}
-      backgroundStyle={{ backgroundColor: colors.card, borderRadius: radius.lg }}
+      backgroundStyle={{ backgroundColor: colors.card, borderRadius: radius.xl }}
       handleIndicatorStyle={[styles.handle, { backgroundColor: colors.border }]}
       backdropComponent={backdrop ? renderBackdrop : undefined}
       style={floating}
@@ -446,7 +447,7 @@ const styles = StyleSheet.create({
   grow: { flex: 1 },
   pill: {
     height: 48,
-    borderRadius: 24,
+    borderRadius: radius.xl,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",

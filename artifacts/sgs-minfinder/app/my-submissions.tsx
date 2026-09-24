@@ -390,7 +390,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   signIn: { padding: 16, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, gap: 12 },
-  providerBtn: { height: 48, borderRadius: 24 },
+  providerBtn: { height: 48, borderRadius: radius.xl },
   steps: { gap: 14, paddingVertical: 6 },
   stepRow: { flexDirection: "row", alignItems: "center", gap: 14 },
   rowText: { flex: 1, gap: 4 },
