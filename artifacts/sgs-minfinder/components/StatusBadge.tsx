@@ -25,7 +25,7 @@ export function StatusBadge({
       <Text
         style={[
           styles.text,
-          { fontSize: isSmall ? 11 : 12 },
+          { fontSize: 12, lineHeight: 16 },
         ]}
         numberOfLines={1}
       >

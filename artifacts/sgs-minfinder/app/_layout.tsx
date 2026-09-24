@@ -28,7 +28,7 @@ SplashScreen.setOptions({ duration: 400, fade: true });
 const queryClient = new QueryClient();
 
 const HEADER_BG = colors.light.navyDeep;
-const HEADER_FG = "#F4F1EA";
+const HEADER_FG = colors.dark.foreground;
 const HEADER_ACCENT = colors.light.gold;
 
 function RootLayoutNav() {
