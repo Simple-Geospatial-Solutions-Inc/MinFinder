@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
   },
   textCol: { flex: 1 },
   title: { color: MAP.mapChromeForeground, fontFamily: "Inter_600SemiBold", fontSize: 15, lineHeight: 20 },
-  subtitle: { color: MAP.mapChromeMuted, fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 18 },
+  subtitle: { color: MAP.mapChromeMuted, fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
   hideBtn: {
     flexDirection: "row",
     alignItems: "center",

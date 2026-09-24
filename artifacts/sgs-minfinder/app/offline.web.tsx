@@ -1,35 +1,23 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+
+import { Feather } from "@/components/Icon";
+import { EmptyState, GUTTER } from "@/components/ui";
+import { useColors } from "@/hooks/useColors";
 
 export default function OfflineWeb() {
+  const colors = useColors();
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Offline maps</Text>
-      <Text style={styles.subtitle}>
-        Offline tile downloads are only available in the mobile app.
-      </Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <EmptyState
+        glyph={<Feather name="map" size={32} color={colors.foreground} />}
+        title="Offline maps"
+        body="Offline tile downloads are only available in the mobile app."
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#0E2444",
-    padding: 24,
-  },
-  title: {
-    color: "#E5C76B",
-    fontSize: 22,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
-  subtitle: {
-    color: "#F4F1EA",
-    fontSize: 14,
-    textAlign: "center",
-    maxWidth: 320,
-  },
+  container: { flex: 1, padding: GUTTER },
 });

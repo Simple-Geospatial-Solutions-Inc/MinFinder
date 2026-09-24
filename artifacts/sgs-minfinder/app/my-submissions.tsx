@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { MineGlyph } from "@/components/capture/MineGlyph";
 import { outboxStatus, StatusChip, TIER_STATUS, type Status } from "@/components/capture/StatusChip";
-import { GUTTER, ListRow, ListSection, PillButton, TextButton, type } from "@/components/ui";
+import { EmptyState, GUTTER, ListRow, ListSection, PillButton, radius, TextButton, type } from "@/components/ui";
 import { Feather } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
 import { signIn, useSignedIn, type Provider } from "@/lib/auth";
@@ -119,7 +119,7 @@ export default function MySubmissionsScreen() {
       )}
 
       {empty ? (
-        <EmptyState />
+        <FirstRun />
       ) : (
         <View style={styles.btnRow}>
           <PillButton label="Add a mine" icon="plus" onPress={() => router.push("/submit")} />
@@ -240,7 +240,7 @@ function SignIn({
 }
 
 /** First run: teach the flow, then offer it. */
-function EmptyState() {
+function FirstRun() {
   const colors = useColors();
   const steps = [
     ["map-pin", "Stand at the working and put the pin on it."],
@@ -248,14 +248,11 @@ function EmptyState() {
     ["upload-cloud", "Save. It uploads by itself once you have signal."],
   ] as const;
   return (
-    <View style={styles.empty}>
-      <View style={[styles.emptyGlyph, { backgroundColor: colors.muted }]}>
-        <MineGlyph type="adit" size={36} color={colors.foreground} />
-      </View>
-      <Text style={[type.display, { color: colors.foreground }]}>Found a working that isn&apos;t on the map?</Text>
-      <Text style={[type.label, { color: colors.mutedForeground }]}>
-        Add it for other MinFinder users. SGS reviews a new member&apos;s first three submissions.
-      </Text>
+    <EmptyState
+      glyph={<MineGlyph type="adit" size={36} color={colors.foreground} />}
+      title="Found a working that isn't on the map?"
+      body="Add it for other MinFinder users. SGS reviews a new member's first three submissions."
+    >
       <View style={styles.steps}>
         {steps.map(([icon, text]) => (
           <View key={icon} style={styles.stepRow}>
@@ -267,7 +264,7 @@ function EmptyState() {
       <View style={styles.btnRow}>
         <PillButton label="Add a mine" icon="plus" onPress={() => router.push("/submit")} />
       </View>
-    </View>
+    </EmptyState>
   );
 }
 
@@ -321,13 +318,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingBottom: 4,
   },
-  signIn: { padding: 16, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, gap: 12 },
+  signIn: { padding: 16, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, gap: 12 },
   providerBtn: { height: 48, borderRadius: 24 },
-  empty: { gap: 14, paddingTop: 8 },
-  emptyGlyph: { width: 64, height: 64, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   steps: { gap: 14, paddingVertical: 6 },
   stepRow: { flexDirection: "row", alignItems: "center", gap: 14 },
   rowText: { flex: 1, gap: 4 },
-  thumb: { width: 56, height: 56, borderRadius: 8 },
+  thumb: { width: 56, height: 56, borderRadius: radius.sm },
   thumbGlyph: { alignItems: "center", justifyContent: "center" },
 });

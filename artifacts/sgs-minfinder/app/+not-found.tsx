@@ -1,6 +1,8 @@
-import { Link, Stack } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { router, Stack } from "expo-router";
+import { StyleSheet, View } from "react-native";
 
+import { Feather } from "@/components/Icon";
+import { EmptyState, GUTTER, PillButton } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 
 export default function NotFoundScreen() {
@@ -8,38 +10,23 @@ export default function NotFoundScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Oops!" }} />
+      <Stack.Screen options={{ title: "Not found" }} />
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={[styles.title, { color: colors.foreground }]}>
-          This screen doesn&apos;t exist.
-        </Text>
-
-        <Link href="/" style={styles.link}>
-          <Text style={[styles.linkText, { color: colors.primary }]}>
-            Go to home screen!
-          </Text>
-        </Link>
+        <EmptyState
+          glyph={<Feather name="map-pin" size={32} color={colors.foreground} />}
+          title="This screen doesn't exist."
+          body="The link may be out of date."
+        >
+          <View style={styles.actions}>
+            <PillButton label="Back to the map" onPress={() => router.replace("/")} />
+          </View>
+        </EmptyState>
       </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: "bold",
-  },
-  link: {
-    marginTop: 15,
-    paddingVertical: 15,
-  },
-  linkText: {
-    fontSize: 14,
-  },
+  container: { flex: 1, justifyContent: "center", padding: GUTTER },
+  actions: { flexDirection: "row" },
 });

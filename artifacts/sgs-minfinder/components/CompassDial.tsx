@@ -3,6 +3,10 @@ import { StyleSheet, View } from "react-native";
 import { SvgXml } from "react-native-svg";
 
 import { COMPASS_ARROW_XML, COMPASS_DISC_XML } from "@/assets/compass/svg";
+import colorTokens from "@/constants/colors";
+
+// The housing sits on the always-dark compass screen.
+const DIAL = colorTokens.dark;
 
 interface CompassDialProps {
   size?: number;
@@ -47,10 +51,10 @@ export function CompassDial({ size = 280, heading, bearing }: CompassDialProps) 
 
 const styles = StyleSheet.create({
   body: {
-    backgroundColor: "#1A2436",
+    backgroundColor: DIAL.card,
     borderRadius: 32,
     borderWidth: 4,
-    borderColor: "#2A3850",
+    borderColor: DIAL.border,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",

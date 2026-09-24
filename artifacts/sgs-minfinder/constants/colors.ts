@@ -48,6 +48,8 @@ const colors = {
     mapChromeForeground: "#0E1A2B",
     mapChromeMuted: "#5F6B7A",
     scrim: "rgba(0,0,0,0.55)",
+    // Navy veil over the map: the loading overlay, the imagery credit.
+    navyScrim: "rgba(14,36,68,0.85)",
 
     // App-specific
     navy,
@@ -95,6 +97,7 @@ const colors = {
     mapChromeForeground: "#0E1A2B",
     mapChromeMuted: "#5F6B7A",
     scrim: "rgba(0,0,0,0.55)",
+    navyScrim: "rgba(14,36,68,0.85)",
 
     navy,
     navyDeep,

@@ -1,18 +1,10 @@
 import React, { useCallback, useState } from "react";
-import {
-  ActivityIndicator,
-  Linking,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Linking, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import * as Updates from "expo-updates";
 
 import { Feather } from "@/components/Icon";
+import { GUTTER, Notice, PillButton, radius, Segmented, type } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 import { useSubscription } from "@/lib/revenuecat";
 
@@ -134,76 +126,26 @@ export default function RedeemScreen() {
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={styles.scroll}
     >
-      {isPaid ? (
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
-          <Text style={[styles.cardText, { color: colors.foreground }]}>
-            MinFinder Pro is already active on this device.
-          </Text>
-        </View>
-      ) : null}
+      {isPaid && <Notice icon="shield-check">MinFinder Pro is already active on this device.</Notice>}
 
-      <Text style={[styles.body, { color: colors.mutedForeground }]}>
+      <Text style={[type.meta, { color: colors.mutedForeground }]}>
         Have a code for MinFinder Pro? Redeeming it unlocks compass navigation
         and full occurrence details.
       </Text>
 
       {Platform.OS === "ios" && (
-        <View
-          style={[
-            styles.segment,
-            { backgroundColor: colors.muted, borderColor: colors.border },
+        <Segmented
+          value={codeKind}
+          onChange={selectKind}
+          options={[
+            { value: "subscription", label: "Monthly or annual", disabled: busy },
+            { value: "lifetime", label: "Lifetime", disabled: busy },
           ]}
-        >
-          {(
-            [
-              { key: "subscription", label: "Monthly or annual" },
-              { key: "lifetime", label: "Lifetime" },
-            ] as const
-          ).map((tab) => {
-            const selected = codeKind === tab.key;
-            return (
-              <Pressable
-                key={tab.key}
-                onPress={() => selectKind(tab.key)}
-                disabled={busy}
-                accessibilityRole="tab"
-                accessibilityState={{ selected }}
-                style={({ pressed }) => [
-                  styles.segmentItem,
-                  selected && { backgroundColor: colors.primary },
-                  { opacity: pressed && !selected ? 0.6 : 1 },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.segmentText,
-                    {
-                      color: selected
-                        ? colors.primaryForeground
-                        : colors.mutedForeground,
-                    },
-                  ]}
-                >
-                  {tab.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        />
       )}
 
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
-      >
-        <Text style={[styles.cardText, { color: colors.foreground }]}>
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[type.title, { color: colors.foreground }]}>
           {Platform.OS !== "ios"
             ? "Codes are redeemed in the Play Store"
             : isLifetime
@@ -211,7 +153,7 @@ export default function RedeemScreen() {
               : "Subscription codes are redeemed here"}
         </Text>
 
-        <Text style={[styles.body, { color: colors.mutedForeground }]}>
+        <Text style={[type.meta, { color: colors.mutedForeground }]}>
           {Platform.OS !== "ios"
             ? "The Play Store accepts every kind of MinFinder code. You'll come straight back once it's applied."
             : isLifetime
@@ -219,55 +161,40 @@ export default function RedeemScreen() {
               : "A code for a free month, several months, or a year opens a sheet without leaving MinFinder."}
         </Text>
 
-        <Pressable
-          onPress={redeem}
-          disabled={busy}
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.actionBtn,
-            {
-              backgroundColor: colors.primary,
-              opacity: pressed || busy ? 0.6 : 1,
-            },
-          ]}
-        >
-          {busy ? (
-            <ActivityIndicator size="small" color={colors.primaryForeground} />
-          ) : (
-            <Feather
-              name={isLifetime ? "external-link" : "gift"}
-              size={16}
-              color={colors.primaryForeground}
-            />
-          )}
-          <Text
-            style={[styles.actionText, { color: colors.primaryForeground }]}
-          >
-            {actionLabel}
-          </Text>
-        </Pressable>
+        <View style={styles.btnRow}>
+          <PillButton
+            label={actionLabel}
+            icon={isLifetime || Platform.OS !== "ios" ? "external-link" : "gift"}
+            busy={busy}
+            onPress={() => void redeem()}
+          />
+        </View>
 
         {state.kind === "opened" && (
-          <Text style={[styles.body, { color: colors.mutedForeground }]}>
+          <Text style={[type.meta, { color: colors.mutedForeground }]} accessibilityLiveRegion="polite">
             Checking for your code&hellip; this can take up to a minute. If Pro
             hasn&apos;t appeared by then, reopen the app.
           </Text>
         )}
 
         {state.kind === "unlocked" && (
-          <Text style={[styles.body, { color: colors.foreground }]}>
-            MinFinder Pro is active. Restarting&hellip;
-          </Text>
+          <View style={[styles.status, { backgroundColor: colors.successSubtle }]} accessibilityLiveRegion="polite">
+            <Feather name="check" size={16} color={colors.success} />
+            <Text style={[type.meta, styles.statusText, { color: colors.success }]}>
+              MinFinder Pro is active. Restarting&hellip;
+            </Text>
+          </View>
         )}
 
         {state.kind === "error" && (
-          <Text style={[styles.body, { color: colors.destructive }]}>
-            {state.message}
-          </Text>
+          <View style={[styles.status, { backgroundColor: colors.dangerSubtle }]} accessibilityLiveRegion="polite">
+            <Feather name="alert-triangle" size={16} color={colors.danger} />
+            <Text style={[type.meta, styles.statusText, { color: colors.danger }]}>{state.message}</Text>
+          </View>
         )}
       </View>
 
-      <Text style={[styles.note, { color: colors.mutedForeground }]}>
+      <Text style={[type.fine, { color: colors.mutedForeground }]}>
         Codes are redeemed through your{" "}
         {Platform.OS === "ios" ? "Apple" : "Google"} account, so Pro stays with
         you if you reinstall MinFinder or move to a new device. Redeeming needs
@@ -278,39 +205,9 @@ export default function RedeemScreen() {
 }
 
 const styles = StyleSheet.create({
-  scroll: { padding: 20, gap: 16, paddingBottom: 40 },
-  body: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
-  card: { padding: 16, borderRadius: 12, borderWidth: 1, gap: 10 },
-  cardText: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
-  segment: {
-    flexDirection: "row",
-    padding: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 4,
-  },
-  segmentItem: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  segmentText: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 14,
-    textAlign: "center",
-  },
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 10,
-    marginTop: 2,
-  },
-  actionText: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
-  note: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 18 },
+  scroll: { paddingHorizontal: GUTTER, paddingTop: 16, gap: 16, paddingBottom: 40 },
+  card: { padding: 16, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, gap: 12 },
+  btnRow: { flexDirection: "row" },
+  status: { flexDirection: "row", gap: 10, padding: 12, borderRadius: radius.md },
+  statusText: { flex: 1 },
 });

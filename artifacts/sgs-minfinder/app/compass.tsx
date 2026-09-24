@@ -16,7 +16,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CalibrationSheet } from "@/components/CalibrationSheet";
 import { CompassDial } from "@/components/CompassDial";
 import { PaywallSheet } from "@/components/PaywallSheet";
-import { useColors } from "@/hooks/useColors";
+import { floating, PillButton, radius, type } from "@/components/ui";
+import colorTokens from "@/constants/colors";
 import { useEntitlement } from "@/hooks/useEntitlement";
 import {
   applyOffset,
@@ -55,7 +56,6 @@ const DIAL_CHROME = 44;
 
 export default function CompassScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width: winWidth, height: winHeight } = useWindowDimensions();
   // Once the status bar and the "Navigate" header come out of a 640-720dp
@@ -266,41 +266,23 @@ export default function CompassScreen() {
   // paywall flash on every cold start while CustomerInfo is still in flight.
   if (!isReady) {
     return (
-      <View style={[styles.loadingWrap, { backgroundColor: colors.navyDeep }]}>
-        <ActivityIndicator color={colors.gold} />
+      <View style={styles.loadingWrap}>
+        <ActivityIndicator color={DIAL.gold} />
       </View>
     );
   }
 
   if (!isPaid) {
     return (
-      <View style={[styles.errorWrap, { backgroundColor: colors.navyDeep }]}>
-        <Feather name="lock" size={28} color={colors.gold} />
-        <Text style={styles.errorText}>
+      <View style={styles.errorWrap}>
+        <Feather name="lock" size={28} color={DIAL.gold} />
+        <Text style={[type.label, styles.errorText]}>
           Compass navigation is a MinFinder Pro feature.
         </Text>
-        <Pressable
-          onPress={() => setShowPaywall(true)}
-          style={({ pressed }) => [
-            styles.unlockBtn,
-            { backgroundColor: colors.gold, opacity: pressed ? 0.85 : 1 },
-          ]}
-        >
-          <Text style={[styles.unlockBtnText, { color: colors.navyDeep }]}>
-            Unlock MinFinder Pro
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [
-            styles.errorBtn,
-            { borderColor: colors.gold, opacity: pressed ? 0.7 : 1 },
-          ]}
-        >
-          <Text style={[styles.errorBtnText, { color: colors.gold }]}>
-            Back to map
-          </Text>
-        </Pressable>
+        <View style={styles.errorActions}>
+          <PillButton label="Unlock MinFinder Pro" onPress={() => setShowPaywall(true)} />
+        </View>
+        <BackToMap />
         <PaywallSheet
           visible={showPaywall}
           feature="Navigate"
@@ -312,38 +294,18 @@ export default function CompassScreen() {
 
   if (loadError) {
     return (
-      <View
-        style={[
-          styles.errorWrap,
-          { backgroundColor: colors.navyDeep },
-        ]}
-      >
-        <Feather name="alert-circle" size={28} color={colors.gold} />
-        <Text style={styles.errorText}>{loadError}</Text>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [
-            styles.errorBtn,
-            { borderColor: colors.gold, opacity: pressed ? 0.7 : 1 },
-          ]}
-        >
-          <Text style={[styles.errorBtnText, { color: colors.gold }]}>
-            Back to map
-          </Text>
-        </Pressable>
+      <View style={styles.errorWrap}>
+        <Feather name="alert-circle" size={28} color={DIAL.gold} />
+        <Text style={[type.label, styles.errorText]}>{loadError}</Text>
+        <BackToMap />
       </View>
     );
   }
 
   if (!target) {
     return (
-      <View
-        style={[
-          styles.loadingWrap,
-          { backgroundColor: colors.navyDeep },
-        ]}
-      >
-        <ActivityIndicator color={colors.gold} />
+      <View style={styles.loadingWrap}>
+        <ActivityIndicator color={DIAL.gold} />
       </View>
     );
   }
@@ -361,7 +323,7 @@ export default function CompassScreen() {
   );
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.navyDeep }]}>
+    <View style={styles.root}>
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -393,10 +355,8 @@ export default function CompassScreen() {
               style={({ pressed }) => [
                 styles.cogBtn,
                 {
-                  backgroundColor: calibrated
-                    ? "rgba(252,186,25,0.18)"
-                    : "rgba(20,30,48,0.85)",
-                  borderColor: calibrated ? "#FCBA19" : "rgba(244,241,234,0.22)",
+                  backgroundColor: calibrated ? DIAL.warningSubtle : DIAL.card,
+                  borderColor: calibrated ? DIAL.gold : DIAL.border,
                   opacity: pressed ? 0.6 : 1,
                 },
               ]}
@@ -404,18 +364,18 @@ export default function CompassScreen() {
               <Feather
                 name="settings"
                 size={18}
-                color={calibrated ? "#FCBA19" : "#F4F1EA"}
+                color={calibrated ? DIAL.gold : DIAL.foreground}
               />
               {calibrated && <View style={styles.cogDot} />}
             </Pressable>
           </View>
         </View>
 
-        <Text style={[styles.targetMinfilno, { marginTop: sp(16) }]}>
+        <Text style={[type.display, styles.targetMinfilno, { marginTop: sp(16) }]}>
           {target.MINFILNO?.trim()}
         </Text>
 
-        <Text style={styles.targetName} numberOfLines={1}>
+        <Text style={[type.title, styles.targetName]} numberOfLines={1}>
           {target.NAME1 || "Unnamed"}
         </Text>
 
@@ -468,7 +428,7 @@ export default function CompassScreen() {
               setCoordFormat(next);
               saveCoordFormat(next);
             }}
-            hitSlop={10}
+            hitSlop={4}
             accessibilityRole="button"
             accessibilityLabel={`Switch coordinates to ${coordFormatLabel(
               otherFormat(coordFormat),
@@ -478,20 +438,16 @@ export default function CompassScreen() {
               { opacity: pressed ? 0.6 : 1 },
             ]}
           >
-            <Feather
-              name="arrow-left-right"
-              size={11}
-              color="rgba(244,241,234,0.8)"
-            />
-            <Text style={styles.formatToggleText}>
+            <Feather name="arrow-left-right" size={14} color={DIAL.foreground} />
+            <Text style={[type.link, { color: DIAL.foreground }]}>
               {coordFormatLabel(otherFormat(coordFormat))}
             </Text>
           </Pressable>
         </View>
 
         <View style={[styles.hintBox, { marginTop: sp(20) }]}>
-          <Feather name="info" size={14} color="rgba(244,241,234,0.65)" />
-          <Text style={styles.hintText}>
+          <Feather name="info" size={16} color={DIAL.mutedForeground} />
+          <Text style={[type.meta, styles.hintText]}>
             If the needle seems off, hold the phone flat and trace a figure-8 in
             the air a few times to recalibrate the compass. Keep away from metal
             objects and vehicles for best accuracy.
@@ -526,7 +482,7 @@ export default function CompassScreen() {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.metricBig}>
-      <Text style={styles.metricLabelBig}>{label}</Text>
+      <Text style={[type.meta, { color: DIAL.mutedForeground }]}>{label}</Text>
       <Text style={styles.metricValueBig}>{value}</Text>
     </View>
   );
@@ -535,14 +491,33 @@ function Metric({ label, value }: { label: string; value: string }) {
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}:</Text>
-      <Text style={styles.detailValue}>{value}</Text>
+      <Text style={[type.meta, { color: DIAL.mutedForeground }]}>{label}:</Text>
+      <Text style={[type.link, styles.num, { color: DIAL.foreground }]}>{value}</Text>
     </View>
   );
 }
 
+// TextButton won't do here: it takes the scheme's primary, navy on this navy
+// screen in light mode, and hugs the left edge where these sit centred.
+function BackToMap() {
+  return (
+    <Pressable
+      onPress={() => router.back()}
+      accessibilityRole="button"
+      hitSlop={{ left: 8, right: 8 }}
+      style={({ pressed }) => [styles.backBtn, { opacity: pressed ? 0.6 : 1 }]}
+    >
+      <Text style={[type.link, { color: DIAL.foreground }]}>Back to map</Text>
+    </Pressable>
+  );
+}
+
+// The compass is an instrument screen: dark in both colour schemes, the way
+// the map chrome is light in both.
+const DIAL = colorTokens.dark;
+
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, backgroundColor: DIAL.background },
   // flexGrow rather than flex: the content fills the screen when it fits and
   // grows past it — scrolling — when it doesn't.
   content: {
@@ -558,33 +533,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
+  loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: DIAL.background },
   errorWrap: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 14,
+    gap: 16,
     paddingHorizontal: 24,
+    backgroundColor: DIAL.background,
   },
-  errorText: {
-    color: "#F4F1EA",
-    fontSize: 16,
-    fontFamily: "Inter_500Medium",
-    textAlign: "center",
-  },
-  errorBtn: {
-    borderWidth: 1,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 999,
-  },
-  errorBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
-  unlockBtn: {
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-    borderRadius: 999,
-  },
-  unlockBtnText: { fontFamily: "Inter_700Bold", fontSize: 15 },
+  errorText: { color: DIAL.foreground, textAlign: "center" },
+  errorActions: { flexDirection: "row", alignSelf: "stretch" },
+  backBtn: { minHeight: 44, justifyContent: "center" },
   // Hugs the dial so the absolutely-positioned cog still lands on its corner
   // rather than the screen's.
   dialWrap: { alignItems: "center", position: "relative" },
@@ -599,11 +559,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
+    ...floating,
   },
   // Small gold "calibrated" indicator dot in the cog's corner.
   cogDot: {
@@ -613,21 +569,10 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: "#FCBA19",
+    backgroundColor: DIAL.gold,
   },
-  targetMinfilno: {
-    color: "#F4F1EA",
-    fontFamily: "Inter_700Bold",
-    fontSize: 22,
-    letterSpacing: 0.6,
-    textAlign: "center",
-  },
-  targetName: {
-    color: "#FCBA19",
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 16,
-    marginTop: 4,
-  },
+  targetMinfilno: { color: DIAL.foreground, textAlign: "center", fontVariant: ["tabular-nums"] },
+  targetName: { color: DIAL.gold, marginTop: 4 },
   metricsBig: {
     flexDirection: "row",
     alignItems: "center",
@@ -635,66 +580,42 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   metricBig: { alignItems: "center", minWidth: 110 },
-  metricLabelBig: {
-    color: "rgba(244,241,234,0.7)",
-    fontFamily: "Inter_500Medium",
-    fontSize: 12,
-    letterSpacing: 0.4,
-  },
+  // The one size off the type scale: the readout the whole screen exists for.
   metricValueBig: {
-    color: "#F4F1EA",
+    color: DIAL.foreground,
     fontFamily: "Inter_700Bold",
     fontSize: 28,
-    letterSpacing: 0.5,
-    marginTop: 2,
+    lineHeight: 34,
+    fontVariant: ["tabular-nums"],
   },
   metricsDivider: {
     width: 1,
     height: 36,
-    backgroundColor: "rgba(244,241,234,0.18)",
+    backgroundColor: DIAL.border,
   },
   detailsBlock: {
     alignItems: "center",
     gap: 8,
   },
+  // 36 tall plus a 4 pt slop: 44 to the touch.
   formatToggle: {
     marginTop: 4,
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 999,
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "rgba(244,241,234,0.25)",
-  },
-  formatToggleText: {
-    color: "rgba(244,241,234,0.8)",
-    fontFamily: "Inter_500Medium",
-    fontSize: 12,
+    borderColor: DIAL.border,
   },
   detailRow: { flexDirection: "row", gap: 6 },
-  detailLabel: {
-    color: "rgba(244,241,234,0.7)",
-    fontFamily: "Inter_500Medium",
-    fontSize: 14,
-  },
-  detailValue: {
-    color: "#F4F1EA",
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 14,
-  },
+  num: { fontVariant: ["tabular-nums"] },
   hintBox: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
     paddingHorizontal: 4,
   },
-  hintText: {
-    flex: 1,
-    color: "rgba(244,241,234,0.65)",
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
-    lineHeight: 17,
-  },
+  hintText: { flex: 1, color: DIAL.mutedForeground },
 });

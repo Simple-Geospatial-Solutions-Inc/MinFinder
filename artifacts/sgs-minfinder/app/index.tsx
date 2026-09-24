@@ -1362,7 +1362,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "rgba(14,36,68,0.85)",
+    backgroundColor: MAP.navyScrim,
     alignItems: "center",
     justifyContent: "center",
     gap: 12,

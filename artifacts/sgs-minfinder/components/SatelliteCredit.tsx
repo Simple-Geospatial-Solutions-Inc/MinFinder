@@ -2,6 +2,8 @@ import { Feather } from "@/components/Icon";
 import React, { useState } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 
+import { radius, type } from "@/components/ui";
+import colors from "@/constants/colors";
 import { SATELLITE_ATTRIBUTION } from "@/lib/satellite";
 
 /**
@@ -28,7 +30,7 @@ export function SatelliteCredit({ bottom, top }: { bottom?: number; top?: number
       hitSlop={8}
       style={[styles.chip, { bottom, top }]}
     >
-      <Feather name="info" size={10} color="#F4F1EA" />
+      <Feather name="info" size={12} color={MAP.background} />
       <Text style={styles.text} numberOfLines={expanded ? 3 : 1}>
         {expanded ? `${SATELLITE_ATTRIBUTION} · online only` : "Imagery: Esri"}
       </Text>
@@ -36,9 +38,12 @@ export function SatelliteCredit({ bottom, top }: { bottom?: number; top?: number
   );
 }
 
+// A caption on the map in both colour schemes.
+const MAP = colors.light;
+
 const styles = StyleSheet.create({
-  // Bottom-left corner, clear of the FAB column on the right. Deliberately
-  // quiet: a caption, not a control the eye is drawn to.
+  // Under the top chrome, where no sheet can cover it. Deliberately quiet: a
+  // caption, not a control the eye is drawn to.
   chip: {
     position: "absolute",
     left: 12,
@@ -46,16 +51,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 10,
-    backgroundColor: "rgba(14,36,68,0.6)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    backgroundColor: MAP.navyScrim,
   },
-  text: {
-    color: "#F4F1EA",
-    fontSize: 9,
-    lineHeight: 12,
-    fontFamily: "Inter_400Regular",
-    flexShrink: 1,
-  },
+  text: { ...type.fine, color: MAP.background, flexShrink: 1 },
 });

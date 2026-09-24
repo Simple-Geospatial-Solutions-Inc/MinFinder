@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 
+import { GUTTER, ListRow, ListSection, TextButton, type } from "@/components/ui";
 import { STATUS_MAP, STATUS_ORDER } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
 import { useSubscription } from "@/lib/revenuecat";
@@ -80,237 +81,183 @@ export default function AboutScreen() {
     setOpenStatus((prev) => (prev === code ? null : code));
   }, []);
 
+  const open = (url: string) => () => void WebBrowser.openBrowserAsync(url);
+
   return (
     <ScrollView
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={styles.scroll}
     >
-      <Text style={[styles.h1, { color: colors.foreground }]}>SGS MinFinder</Text>
-      <Text style={[styles.body, { color: colors.mutedForeground }]}>
-        A field-ready map of British Columbia MINFILE mineral occurrences.
-        Records are bundled in a local SQLite database so the app works
-        without a data connection. Pre-download map tiles for an area you
-        plan to visit and the basemap will be available offline too.
-      </Text>
+      <View style={styles.intro}>
+        <Text style={[type.display, { color: colors.foreground }]} accessibilityRole="header">
+          SGS MinFinder
+        </Text>
+        <Text style={[type.meta, { color: colors.mutedForeground }]}>
+          A field-ready map of British Columbia MINFILE mineral occurrences.
+          Records are bundled in a local SQLite database so the app works
+          without a data connection. Pre-download map tiles for an area you
+          plan to visit and the basemap will be available offline too.
+        </Text>
+      </View>
 
-      <Text style={[styles.h2, { color: colors.foreground }]}>Marker legend</Text>
-      <Text style={[styles.body, { color: colors.mutedForeground }]}>
-        MINFILE ranks each occurrence by how far exploration and development
-        have gone. Tap a status to see what it means.
-      </Text>
-      <View style={styles.legendList}>
+      <ListSection
+        title="Marker legend"
+        subtitle="MINFILE ranks each occurrence by how far exploration and development have gone. Tap a status to see what it means."
+      >
         {STATUS_ORDER.map((code) => {
           const info = STATUS_MAP[code];
           const isOpen = openStatus === code;
           return (
-            <View key={code}>
-              <Pressable
-                onPress={() => toggleStatus(code)}
-                accessibilityRole="button"
-                accessibilityState={{ expanded: isOpen }}
-                accessibilityLabel={info.label}
-                accessibilityHint={
-                  isOpen
-                    ? "Hide what this status means"
-                    : "Show what this status means"
-                }
-                style={({ pressed }) => [
-                  styles.legendRow,
-                  { opacity: pressed ? 0.7 : 1 },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.legendDot,
-                    { backgroundColor: info.color },
-                  ]}
+            <ListRow key={code}>
+              <View style={styles.cell}>
+                <Pressable
+                  onPress={() => toggleStatus(code)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: isOpen }}
+                  accessibilityLabel={info.label}
+                  accessibilityHint={isOpen ? "Hide what this status means" : "Show what this status means"}
+                  style={({ pressed }) => [styles.legendRow, { opacity: pressed ? 0.7 : 1 }]}
                 >
-                  <Text style={styles.legendDotText}>{info.short}</Text>
-                </View>
-                <Text style={[styles.legendLabel, { color: colors.foreground }]}>
-                  {info.label}
-                </Text>
-                <View style={styles.legendSpacer} />
-                <Feather
-                  name="chevron-down"
-                  size={16}
-                  color={colors.mutedForeground}
-                  style={isOpen ? styles.chevronOpen : undefined}
-                />
-              </Pressable>
-              {isOpen && info.description ? (
-                <Text
-                  style={[
-                    styles.legendDescription,
-                    { color: colors.mutedForeground },
-                  ]}
-                >
-                  {info.description}
-                </Text>
-              ) : null}
-            </View>
+                  {/* The pin as drawn on the map: white code on the status colour. */}
+                  <View style={[styles.legendDot, { backgroundColor: info.color, borderColor: colors.card }]}>
+                    <Text style={[styles.legendDotText, { color: colors.mapChrome }]}>{info.short}</Text>
+                  </View>
+                  <Text style={[type.label, styles.grow, { color: colors.foreground }]}>{info.label}</Text>
+                  <Feather
+                    name="chevron-down"
+                    size={16}
+                    color={colors.mutedForeground}
+                    style={isOpen ? styles.chevronOpen : undefined}
+                  />
+                </Pressable>
+                {isOpen && info.description ? (
+                  <Text style={[type.meta, styles.legendDescription, { color: colors.mutedForeground }]}>
+                    {info.description}
+                  </Text>
+                ) : null}
+              </View>
+            </ListRow>
           );
         })}
-      </View>
+      </ListSection>
 
-      <Text style={[styles.h2, { color: colors.foreground }]}>Data sources</Text>
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.cardText, { color: colors.foreground }]}>
-          MINFILE: BC Ministry of Energy, Mines and Low Carbon Innovation
-        </Text>
-        <Pressable
-          onPress={() => WebBrowser.openBrowserAsync("https://minfile.gov.bc.ca/")}
-          style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
-        >
-          <Feather name="external-link" size={14} color={colors.primary} />
-          <Text style={[styles.linkText, { color: colors.primary }]}>
-            minfile.gov.bc.ca
-          </Text>
-        </Pressable>
-        <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11, marginTop: 6 }]}>
-          SGS MinFinder is an independent app and is not affiliated with, endorsed by, or
-          operated by the Government of British Columbia or any government agency.
-        </Text>
-      </View>
+      <ListSection title="Data sources">
+        <ListRow>
+          <View style={styles.cell}>
+            <Text style={[type.label, { color: colors.foreground }]}>
+              MINFILE: BC Ministry of Energy, Mines and Low Carbon Innovation
+            </Text>
+            <TextButton
+              label="minfile.gov.bc.ca"
+              icon="external-link"
+              accessibilityRole="link"
+              onPress={open("https://minfile.gov.bc.ca/")}
+            />
+            <Text style={[type.fine, { color: colors.mutedForeground }]}>
+              SGS MinFinder is an independent app and is not affiliated with, endorsed by, or
+              operated by the Government of British Columbia or any government agency.
+            </Text>
+          </View>
+        </ListRow>
+        <ListRow>
+          <View style={styles.cell}>
+            <Text style={[type.label, { color: colors.foreground }]}>
+              Basemap: SGS MinFinder Topo, built from OpenStreetMap
+            </Text>
+            <Text style={[type.fine, { color: colors.mutedForeground }]}>
+              © OpenStreetMap contributors, © OpenMapTiles. Elevation, shaded relief
+              and contours from MRDEM-30 (Natural Resources Canada) and modified
+              Copernicus DEM data. Contains information licensed under the Open
+              Government Licence – Canada, and under the Open Government Licence –
+              British Columbia: forest tenure and oil & gas road segments,
+              recreation lines, parks and ecological reserves, and bedrock geology.
+            </Text>
+            <Text style={[type.fine, { color: colors.mutedForeground }]}>
+              Map engine: MapLibre, an open-source map renderer. Tiles are
+              self-hosted by Simple Geospatial Solutions, so downloaded regions
+              keep working with no connection.
+            </Text>
+            <Text style={[type.fine, { color: colors.mutedForeground }]}>
+              Resource roads are shown from tenure records. An active tenure means a
+              road was permitted and built — not that it is currently passable.
+            </Text>
+            <Text style={[type.fine, { color: colors.mutedForeground }]}>
+              Satellite view (optional, online only) — {SATELLITE_ATTRIBUTION}.
+              Imagery is streamed while you look at it and is never stored in
+              downloaded regions; where there is no connection the topo map shows
+              instead.
+            </Text>
+            <TextButton
+              label="OpenStreetMap copyright"
+              icon="external-link"
+              accessibilityRole="link"
+              onPress={open("https://www.openstreetmap.org/copyright")}
+            />
+            <TextButton
+              label="Open Government Licence – British Columbia"
+              icon="external-link"
+              accessibilityRole="link"
+              onPress={open("https://www2.gov.bc.ca/gov/content/data/open-data/open-government-licence-bc")}
+            />
+            <TextButton
+              label="Esri imagery attribution"
+              icon="external-link"
+              accessibilityRole="link"
+              onPress={open(SATELLITE_TERMS_URL)}
+            />
+          </View>
+        </ListRow>
+      </ListSection>
 
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.cardText, { color: colors.foreground }]}>
-          Basemap: SGS MinFinder Topo, built from OpenStreetMap
-        </Text>
-        <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11 }]}>
-          © OpenStreetMap contributors, © OpenMapTiles. Elevation, shaded relief
-          and contours from MRDEM-30 (Natural Resources Canada) and modified
-          Copernicus DEM data. Contains information licensed under the Open
-          Government Licence – Canada, and under the Open Government Licence –
-          British Columbia: forest tenure and oil & gas road segments,
-          recreation lines, parks and ecological reserves, and bedrock geology.
-        </Text>
-        <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11, marginTop: 6 }]}>
-          Map engine: MapLibre, an open-source map renderer. Tiles are
-          self-hosted by Simple Geospatial Solutions, so downloaded regions
-          keep working with no connection.
-        </Text>
-        <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11, marginTop: 6 }]}>
-          Resource roads are shown from tenure records. An active tenure means a
-          road was permitted and built — not that it is currently passable.
-        </Text>
-        <Text style={[styles.cardText, { color: colors.mutedForeground, fontSize: 11, marginTop: 6 }]}>
-          Satellite view (optional, online only) — {SATELLITE_ATTRIBUTION}.
-          Imagery is streamed while you look at it and is never stored in
-          downloaded regions; where there is no connection the topo map shows
-          instead.
-        </Text>
-        <Pressable
-          onPress={() => WebBrowser.openBrowserAsync("https://www.openstreetmap.org/copyright")}
-          style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
-        >
-          <Feather name="external-link" size={14} color={colors.primary} />
-          <Text style={[styles.linkText, { color: colors.primary }]}>
-            OpenStreetMap copyright
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => WebBrowser.openBrowserAsync("https://www2.gov.bc.ca/gov/content/data/open-data/open-government-licence-bc")}
-          style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
-        >
-          <Feather name="external-link" size={14} color={colors.primary} />
-          <Text style={[styles.linkText, { color: colors.primary }]}>
-            Open Government Licence – British Columbia
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => WebBrowser.openBrowserAsync(SATELLITE_TERMS_URL)}
-          style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
-        >
-          <Feather name="external-link" size={14} color={colors.primary} />
-          <Text style={[styles.linkText, { color: colors.primary }]}>
-            Esri imagery attribution
-          </Text>
-        </Pressable>
-      </View>
+      <ListSection title="Legal">
+        <ListRow onPress={open("https://sgss.ca/mobile-apps/minfinder/privacy")} accessibilityLabel="Privacy Policy">
+          <Text style={[type.label, styles.grow, { color: colors.foreground }]}>Privacy Policy</Text>
+        </ListRow>
+        <ListRow onPress={open("https://sgss.ca/mobile-apps/minfinder/terms")} accessibilityLabel="Terms of Use (EULA)">
+          <Text style={[type.label, styles.grow, { color: colors.foreground }]}>Terms of Use (EULA)</Text>
+        </ListRow>
+      </ListSection>
 
-      <Text style={[styles.h2, { color: colors.foreground }]}>Legal</Text>
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Pressable
-          onPress={() => WebBrowser.openBrowserAsync("https://sgss.ca/mobile-apps/minfinder/privacy")}
-          style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
-        >
-          <Feather name="external-link" size={14} color={colors.primary} />
-          <Text style={[styles.linkText, { color: colors.primary }]}>
-            Privacy Policy
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => WebBrowser.openBrowserAsync("https://sgss.ca/mobile-apps/minfinder/terms")}
-          style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.7 : 1 }]}
-        >
-          <Feather name="external-link" size={14} color={colors.primary} />
-          <Text style={[styles.linkText, { color: colors.primary }]}>
-            Terms of Use (EULA)
-          </Text>
-        </Pressable>
-      </View>
-
-      <Text style={[styles.h2, { color: colors.foreground }]}>MinFinder Pro</Text>
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.cardText, { color: colors.foreground }]}>
-          {isPaid
+      <ListSection
+        title="MinFinder Pro"
+        subtitle={
+          isPaid
             ? "Pro is active on this device."
-            : "Compass navigation and full occurrence details are Pro features."}
-        </Text>
-        <Pressable
-          onPress={() => router.push("/redeem")}
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.linkRow,
-            { opacity: pressed ? 0.7 : 1 },
-          ]}
-        >
-          <Feather name="gift" size={14} color={colors.primary} />
-          <Text style={[styles.linkText, { color: colors.primary }]}>
-            Redeem a promo code
-          </Text>
-        </Pressable>
-      </View>
+            : "Compass navigation and full occurrence details are Pro features."
+        }
+      >
+        <ListRow onPress={() => router.push("/redeem")} accessibilityLabel="Redeem a promo code">
+          <Feather name="gift" size={20} color={colors.foreground} />
+          <Text style={[type.label, styles.grow, { color: colors.foreground }]}>Redeem a promo code</Text>
+        </ListRow>
+      </ListSection>
 
-      <Text style={[styles.h2, { color: colors.foreground }]}>Version</Text>
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={styles.versionRow}>
-          <Text style={[styles.cardText, { color: colors.foreground }]}>
-            SGS MinFinder {appVersion}
-          </Text>
-          <Text style={[styles.versionMeta, { color: colors.mutedForeground }]}>
-            {bundleLabel}
-          </Text>
-        </View>
-
+      <ListSection title="Version">
+        <ListRow>
+          <Text style={[type.label, styles.grow, { color: colors.foreground }]}>SGS MinFinder {appVersion}</Text>
+          <Text style={[type.meta, { color: colors.mutedForeground }]}>{bundleLabel}</Text>
+        </ListRow>
         {Updates.isEnabled ? (
-          <>
-            <Pressable
-              onPress={
-                updateState.kind === "ready"
-                  ? () => Updates.reloadAsync()
+          <ListRow
+            onPress={
+              busy
+                ? undefined
+                : updateState.kind === "ready"
+                  ? () => void Updates.reloadAsync()
                   : checkForUpdate
-              }
-              disabled={busy}
-              accessibilityRole="button"
-              style={({ pressed }) => [
-                styles.linkRow,
-                { opacity: pressed || busy ? 0.6 : 1 },
-              ]}
-            >
-              {busy ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <Feather
-                  name={
-                    updateState.kind === "ready" ? "rotate-cw" : "download-cloud"
-                  }
-                  size={14}
-                  color={colors.primary}
-                />
-              )}
-              <Text style={[styles.linkText, { color: colors.primary }]}>
+            }
+          >
+            {busy ? (
+              <ActivityIndicator size="small" color={colors.foreground} />
+            ) : (
+              <Feather
+                name={updateState.kind === "ready" ? "rotate-cw" : "download-cloud"}
+                size={20}
+                color={colors.foreground}
+              />
+            )}
+            <View style={styles.cell}>
+              <Text style={[type.label, { color: colors.foreground }]}>
                 {updateState.kind === "checking"
                   ? "Checking…"
                   : updateState.kind === "downloading"
@@ -319,73 +266,40 @@ export default function AboutScreen() {
                       ? "Restart to finish updating"
                       : "Check for updates"}
               </Text>
-            </Pressable>
-
-            {(updateState.kind === "current" ||
-              updateState.kind === "ready" ||
-              updateState.kind === "error") && (
-              <Text
-                style={[
-                  styles.cardText,
-                  { color: colors.mutedForeground, fontSize: 11 },
-                ]}
-              >
-                {updateState.kind === "current"
-                  ? "You're running the latest version."
-                  : updateState.kind === "ready"
-                    ? "An update is ready and will be applied when you restart."
-                    : "Couldn't check right now. Connect to the internet and try again."}
-              </Text>
-            )}
-          </>
+              {(updateState.kind === "current" ||
+                updateState.kind === "ready" ||
+                updateState.kind === "error") && (
+                <Text style={[type.meta, { color: colors.mutedForeground }]} accessibilityLiveRegion="polite">
+                  {updateState.kind === "current"
+                    ? "You're running the latest version."
+                    : updateState.kind === "ready"
+                      ? "An update is ready and will be applied when you restart."
+                      : "Couldn't check right now. Connect to the internet and try again."}
+                </Text>
+              )}
+            </View>
+          </ListRow>
         ) : (
-          <Text
-            style={[
-              styles.cardText,
-              { color: colors.mutedForeground, fontSize: 11 },
-            ]}
-          >
-            Over-the-air updates are disabled in this build.
-          </Text>
+          <ListRow>
+            <Text style={[type.meta, styles.grow, { color: colors.mutedForeground }]}>
+              Over-the-air updates are disabled in this build.
+            </Text>
+          </ListRow>
         )}
-      </View>
+      </ListSection>
 
       {__DEV__ && (
-        <>
-          <Text style={[styles.h2, { color: colors.foreground }]}>
-            Developer
-          </Text>
-          <View
-            style={[
-              styles.card,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                borderStyle: "dashed",
-              },
-            ]}
-          >
-            <Text style={[styles.cardText, { color: colors.foreground }]}>
-              Subscription: {isPaid ? "Active (Pro)" : "Free"}
+        <ListSection title="Developer" subtitle={`Subscription: ${isPaid ? "Active (Pro)" : "Free"}`}>
+          <ListRow onPress={isLoading ? undefined : resetTestUser}>
+            <Feather name="trash-2" size={20} color={colors.foreground} />
+            <Text style={[type.label, styles.grow, { color: colors.foreground }]}>
+              Start fresh test user (reset purchases)
             </Text>
-            <Pressable
-              onPress={resetTestUser}
-              disabled={isLoading}
-              style={({ pressed }) => [
-                styles.linkRow,
-                { opacity: pressed || isLoading ? 0.6 : 1 },
-              ]}
-            >
-              <Feather name="trash-2" size={14} color={colors.gold} />
-              <Text style={[styles.linkText, { color: colors.gold }]}>
-                Start fresh test user (reset purchases)
-              </Text>
-            </Pressable>
-          </View>
-        </>
+          </ListRow>
+        </ListSection>
       )}
 
-      <Text style={[styles.footer, { color: colors.mutedForeground }]}>
+      <Text style={[type.fine, styles.footer, { color: colors.mutedForeground }]}>
         Use as a reference only. Always verify mine status, access, and
         safety information before visiting a site.
       </Text>
@@ -394,18 +308,11 @@ export default function AboutScreen() {
 }
 
 const styles = StyleSheet.create({
-  scroll: { padding: 20, gap: 16, paddingBottom: 40 },
-  h1: { fontSize: 24, fontFamily: "Inter_700Bold" },
-  h2: { fontSize: 16, fontFamily: "Inter_700Bold", marginTop: 8 },
-  body: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20 },
-  legendList: { gap: 8 },
-  legendRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 4,
-  },
-  legendSpacer: { flex: 1 },
+  scroll: { paddingHorizontal: GUTTER, paddingTop: 16, gap: 24, paddingBottom: 40 },
+  intro: { gap: 6 },
+  grow: { flex: 1 },
+  cell: { flex: 1, gap: 4 },
+  legendRow: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 44 },
   chevronOpen: { transform: [{ rotate: "180deg" }] },
   legendDot: {
     width: 30,
@@ -414,44 +321,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.95)",
   },
-  legendDotText: {
-    color: "#fff",
-    fontFamily: "Inter_700Bold",
-    fontSize: 10,
-  },
-  legendLabel: { fontSize: 14, fontFamily: "Inter_500Medium" },
-  legendDescription: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    lineHeight: 18,
-    // Aligns with the label: 30px dot + 12px row gap.
-    paddingLeft: 42,
-    paddingRight: 4,
-    paddingBottom: 4,
-  },
-  card: {
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 6,
-  },
-  cardText: { fontSize: 13, fontFamily: "Inter_500Medium" },
-  versionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  versionMeta: { fontSize: 11, fontFamily: "Inter_400Regular" },
-  linkRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  linkText: { fontSize: 13, fontFamily: "Inter_500Medium" },
-  footer: {
-    fontSize: 11,
-    fontFamily: "Inter_400Regular",
-    textAlign: "center",
-    marginTop: 8,
-  },
+  legendDotText: { fontFamily: "Inter_700Bold", fontSize: 12, lineHeight: 16 },
+  // Aligns with the label: 30px dot + 12px row gap.
+  legendDescription: { paddingLeft: 42, paddingBottom: 4 },
+  footer: { textAlign: "center" },
 });

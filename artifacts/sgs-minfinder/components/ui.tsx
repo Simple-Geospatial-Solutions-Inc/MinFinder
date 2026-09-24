@@ -230,6 +230,32 @@ export function Segmented<V extends string>({
   );
 }
 
+/** A screen with nothing in it yet: a glyph on a grey tile, what's missing, and how to fill it. */
+export function EmptyState({
+  glyph,
+  title,
+  body,
+  children,
+}: {
+  glyph: React.ReactNode;
+  title: string;
+  body?: string;
+  /** Steps or actions below the text. */
+  children?: React.ReactNode;
+}) {
+  const colors = useColors();
+  return (
+    <View style={styles.empty}>
+      <View style={[styles.emptyGlyph, { backgroundColor: colors.muted }]}>{glyph}</View>
+      <Text style={[type.display, { color: colors.foreground }]} accessibilityRole="header">
+        {title}
+      </Text>
+      {body && <Text style={[type.label, { color: colors.mutedForeground }]}>{body}</Text>}
+      {children}
+    </View>
+  );
+}
+
 /** An inline note: an icon and a sentence on a muted fill. */
 export function Notice({
   icon,
@@ -377,7 +403,7 @@ export function Stat({ value, unit, label }: { value: string; unit?: string; lab
         {value}
         {unit && <Text style={styles.statUnit}> {unit}</Text>}
       </Text>
-      <Text style={[type.meta, { color: colors.mutedForeground, fontSize: 13 }]}>{label}</Text>
+      <Text style={[type.meta, { color: colors.mutedForeground }]}>{label}</Text>
     </View>
   );
 }
@@ -440,6 +466,8 @@ const styles = StyleSheet.create({
   },
   chipText: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
   notice: { flexDirection: "row", gap: 10, padding: 12, borderRadius: radius.md },
+  empty: { gap: 14, paddingTop: 8 },
+  emptyGlyph: { width: 64, height: 64, borderRadius: radius.lg, alignItems: "center", justifyContent: "center" },
   segTrack: { flexDirection: "row", padding: 4, borderRadius: radius.pill },
   seg: { flex: 1, minHeight: 40, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
   section: { gap: 10 },

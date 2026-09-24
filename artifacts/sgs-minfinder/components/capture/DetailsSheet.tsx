@@ -419,7 +419,7 @@ function Field({ label, hint, children }: { label: string; hint: string; childre
     <View style={{ gap: 6 }}>
       <Text style={[type.label, { color: colors.foreground, fontSize: 14 }]}>{label}</Text>
       {children}
-      <Text style={[type.meta, { color: colors.mutedForeground, fontSize: 13 }]}>{hint}</Text>
+      <Text style={[type.meta, { color: colors.mutedForeground }]}>{hint}</Text>
     </View>
   );
 }
