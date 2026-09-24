@@ -13,7 +13,8 @@
       },
       "env": {
         "EXPO_PUBLIC_REVENUECAT_API_KEY": "test_PuMbDncUOVWUvvRhYcMUppJqAiQ",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "test_PuMbDncUOVWUvvRhYcMUppJqAiQ"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "test_PuMbDncUOVWUvvRhYcMUppJqAiQ",
+        "EXPO_PUBLIC_GCP_PROJECT_NUMBER": "233968986008"
       }
     },
     "preview": {
@@ -21,7 +22,8 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_REVENUECAT_API_KEY": "appl_YMbILuVsonPlIaCGSblEGUhdmTO",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_bDbqyBmOUitCXSDFhZslcjiOfoW"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_bDbqyBmOUitCXSDFhZslcjiOfoW",
+        "EXPO_PUBLIC_GCP_PROJECT_NUMBER": "233968986008"
       }
     },
     "production": {
@@ -29,7 +31,8 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_REVENUECAT_API_KEY": "appl_YMbILuVsonPlIaCGSblEGUhdmTO",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_bDbqyBmOUitCXSDFhZslcjiOfoW"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_bDbqyBmOUitCXSDFhZslcjiOfoW",
+        "EXPO_PUBLIC_GCP_PROJECT_NUMBER": "233968986008"
       }
     }
   },
