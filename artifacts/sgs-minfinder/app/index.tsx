@@ -5,7 +5,6 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-  type SharedValue,
 } from "react-native-reanimated";
 
 import { Feather, type FeatherIconName } from "@/components/Icon";
@@ -45,6 +44,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DetailsSheet } from "@/components/DetailsSheet";
 import { OfflineRegionPill } from "@/components/OfflineRegionPill";
+import { PillMenu } from "@/components/PillMenu";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { SatelliteCredit } from "@/components/SatelliteCredit";
 import { QuickInfoCard } from "@/components/QuickInfoCard";
@@ -328,23 +328,16 @@ export default function MapScreen() {
   // hands a free user over to the paywall.
   const [paywallFor, setPaywallFor] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  // The search pill's morph into the menu, 0 closed to 1 open. withTiming
-  // follows the system's reduce-motion setting by default.
+  const [pillWidth, setPillWidth] = useState(0);
+  // The search pill's morph into the menu, 0 closed to 1 open (see PillMenu).
+  // withTiming follows the system's reduce-motion setting by default.
   const menuProgress = useSharedValue(0);
   useEffect(() => {
-    menuProgress.value = withTiming(menuOpen ? 1 : 0, { duration: 320, easing: Easing.out(Easing.cubic) });
+    menuProgress.value = withTiming(menuOpen ? 1 : 0, { duration: 480, easing: Easing.bezier(0.2, 0, 0, 1) });
   }, [menuOpen, menuProgress]);
+  // The typed query gives way as the divider sweeps over it; the glyph stays.
   const searchFieldStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(menuProgress.value, [0, 0.5], [1, 0], Extrapolation.CLAMP),
-    transform: [{ translateX: menuProgress.value * 16 }],
-  }));
-  const dividerStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(menuProgress.value, [0.6, 1], [1, 0], Extrapolation.CLAMP),
-    transform: [{ translateX: menuProgress.value * MENU_SLIDE }],
-  }));
-  const menuButtonStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(menuProgress.value, [0, 0.6], [1, 0], Extrapolation.CLAMP),
-    transform: [{ translateX: menuProgress.value * MENU_SLIDE }],
+    opacity: interpolate(menuProgress.value, [0, 0.35], [1, 0], Extrapolation.CLAMP),
   }));
 
   // The downloaded region the user tapped on the Offline screen, plus every
@@ -995,14 +988,14 @@ export default function MapScreen() {
           accessible={false}
           style={styles.searchBar}
         >
-          <View style={styles.searchClip}>
+          <View style={styles.searchClip} onLayout={(e) => setPillWidth(e.nativeEvent.layout.width)}>
+            <Feather name="search" size={18} color={MAP.mapChromeForeground} />
             <Animated.View
               style={[styles.searchField, searchFieldStyle]}
               pointerEvents={menuOpen ? "none" : "box-none"}
               accessibilityElementsHidden={menuOpen}
               importantForAccessibility={menuOpen ? "no-hide-descendants" : "auto"}
             >
-              <Feather name="search" size={18} color={MAP.mapChromeForeground} />
               <TextInput
                 ref={searchInputRef}
                 placeholder="Search a name or MINFILE number"
@@ -1037,42 +1030,23 @@ export default function MapScreen() {
                 />
               )}
             </Animated.View>
-            {/* Opening, the divider slides right and pushes the menu button out,
-                and the field gives way to the menu's own options. */}
-            <Animated.View style={[styles.searchDivider, dividerStyle]} />
-            <Animated.View style={menuButtonStyle} pointerEvents={menuOpen ? "none" : "auto"}>
-              <IconButton
-                icon="menu"
-                label="Menu"
-                variant="plain"
-                color={MAP.mapChromeForeground}
-                onPress={() => {
-                  Keyboard.dismiss();
-                  setSearchActive(false);
-                  setMenuOpen(true);
-                }}
-              />
-            </Animated.View>
-            <View
-              style={styles.menuRow}
-              pointerEvents={menuOpen ? "box-none" : "none"}
-              accessibilityElementsHidden={!menuOpen}
-              importantForAccessibility={menuOpen ? "auto" : "no-hide-descendants"}
-            >
-              {MENU.map(([icon, label, href], i) => (
-                <MenuOption
-                  key={href}
-                  progress={menuProgress}
-                  index={i}
-                  icon={icon}
-                  label={label}
-                  onPress={() => {
-                    setMenuOpen(false);
-                    router.push(href);
-                  }}
-                />
-              ))}
-            </View>
+            <PillMenu
+              width={pillWidth}
+              progress={menuProgress}
+              open={menuOpen}
+              items={MENU}
+              color={MAP.mapChromeForeground}
+              dividerColor={MAP.border}
+              onOpen={() => {
+                Keyboard.dismiss();
+                setSearchActive(false);
+                setMenuOpen(true);
+              }}
+              onPick={(href) => {
+                setMenuOpen(false);
+                router.push(href);
+              }}
+            />
           </View>
         </Pressable>
 
@@ -1262,43 +1236,6 @@ const MENU = [
   ["info", "About", "/about"],
 ] as const satisfies readonly (readonly [FeatherIconName, string, string])[];
 
-// How far the divider travels: the gap and the 36 pt menu button it pushes out.
-const MENU_SLIDE = 4 + 36;
-
-/** One of the menu's options in the search pill, easing in from the left after the one before it. */
-function MenuOption({
-  progress,
-  index,
-  icon,
-  label,
-  onPress,
-}: {
-  progress: SharedValue<number>;
-  index: number;
-  icon: FeatherIconName;
-  label: string;
-  onPress: () => void;
-}) {
-  const style = useAnimatedStyle(() => {
-    const t = interpolate(progress.value, [0.2 + index * 0.1, 0.8 + index * 0.1], [0, 1], Extrapolation.CLAMP);
-    return { opacity: t, transform: [{ translateX: (t - 1) * 16 }] };
-  });
-  return (
-    <Animated.View style={[styles.menuOptionWrap, style]}>
-      <Pressable
-        onPress={onPress}
-        accessibilityRole="button"
-        style={({ pressed }) => [styles.menuOption, { opacity: pressed ? 0.6 : 1 }]}
-      >
-        <Feather name={icon} size={18} color={MAP.mapChromeForeground} />
-        <Text style={styles.menuOptionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
-          {label}
-        </Text>
-      </Pressable>
-    </Animated.View>
-  );
-}
-
 /**
  * A status filter on the map. On shows the status colour as a solid dot; off
  * hollows the dot and greys the label, so the state reads without colour.
@@ -1364,19 +1301,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     padding: 0,
   },
-  searchField: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4 },
-  searchDivider: { width: StyleSheet.hairlineWidth, height: 24, backgroundColor: MAP.border },
-  menuRow: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 8,
-    right: 8,
-    flexDirection: "row",
-  },
-  menuOptionWrap: { flex: 1 },
-  menuOption: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
-  menuOptionText: { color: MAP.mapChromeForeground, fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  // Stops short of PillMenu's divider and button: 4 + hairline + 4 + 36.
+  searchField: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4, marginRight: 45 },
   // Room for the chips' shadow, which the scroll view would otherwise clip.
   chipsScroll: { marginVertical: -4 },
   chipsRow: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 4 },
