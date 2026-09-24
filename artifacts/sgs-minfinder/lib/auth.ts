@@ -89,6 +89,11 @@ export async function api<T = any>(path: string, init: RequestInit = {}): Promis
   return body as T;
 }
 
+/** For requests that skip api(), like images: a pending mine's photos are its author's only. */
+export function authHeader(): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export type Provider = "apple" | "google";
 
 /** Returns false when the user backs out of the provider's sheet. */

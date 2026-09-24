@@ -5,6 +5,7 @@ import * as Network from "expo-network";
 import { AppState } from "react-native";
 
 import { api, ApiError, isSignedIn, signOut } from "@/lib/auth";
+import { distanceMeters } from "@/lib/geo";
 import { getUserDb, kvGet, kvSet } from "@/lib/userDb";
 
 /**
@@ -165,6 +166,48 @@ export async function getMyMines(): Promise<MyMine[]> {
     .map((o) => ({ ...o.data, name: o.data.name ?? null, uploaded: false }));
   const uploaded = (await getMySubmissions()).map((m) => ({ ...m, uploaded: true }));
   return [...queued, ...uploaded];
+}
+
+/** A mine on the home map: the public cache plus this user's own, uploaded or not. */
+export interface MapMine extends Mine {
+  own: boolean;
+  /** Still in the outbox: `photos` are file:// uris, not server photo ids. */
+  queued: boolean;
+}
+
+export async function getMapMines(): Promise<MapMine[]> {
+  const db = await getUserDb();
+  const rows = await db.getAllAsync<{ json: string }>("SELECT json FROM community_mines");
+  const mine = await getMySubmissions();
+  const ownIds = new Set(mine.map((m) => m.id));
+  const out = new Map<string, MapMine>();
+  for (const r of rows) {
+    const m = JSON.parse(r.json) as Mine;
+    out.set(m.id, { ...m, own: ownIds.has(m.id), queued: false });
+  }
+  // Pending and hidden ones never reach the public cache; the author still sees them.
+  for (const m of mine) if (!out.has(m.id)) out.set(m.id, { ...m, own: true, queued: false });
+  for (const o of await getOutbox()) {
+    if (o.state !== "queued") continue;
+    const d = o.data;
+    out.set(d.id, {
+      ...d,
+      name: d.name ?? null,
+      commodity: d.commodity ?? null,
+      notes: d.notes ?? null,
+      nudge_m: Math.round(distanceMeters(d.lat, d.lon, d.user_lat, d.user_lon)),
+      tier: "pending",
+      net: 0,
+      ups: 0,
+      downs: 0,
+      on_site_up: 0,
+      photos: o.photos,
+      seq: 0,
+      own: true,
+      queued: true,
+    });
+  }
+  return [...out.values()];
 }
 
 /** Public community mines near a point, from the local cache. */

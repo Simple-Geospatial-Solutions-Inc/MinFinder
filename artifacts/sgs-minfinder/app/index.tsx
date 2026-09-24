@@ -42,6 +42,7 @@ import {
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { CommunitySheet } from "@/components/CommunitySheet";
 import { DetailsSheet } from "@/components/DetailsSheet";
 import { OfflineRegionPill } from "@/components/OfflineRegionPill";
 import { PillMenu } from "@/components/PillMenu";
@@ -99,7 +100,15 @@ import {
   saveBasemap,
   type Basemap,
 } from "@/lib/satellite";
-import { loadStatuses, saveStatuses } from "@/lib/statusFilter";
+import {
+  DEFAULT_COMMUNITY,
+  loadCommunityFilter,
+  loadStatuses,
+  saveCommunityFilter,
+  saveStatuses,
+  type CommunityFilter,
+} from "@/lib/statusFilter";
+import { getMapMines, onSyncChange, type MapMine } from "@/lib/sync";
 
 const BC_REGION: Region = {
   latitude: 54.5,
@@ -217,6 +226,25 @@ const selectedRingStyle = {
   circleStrokeWidth: 4,
 } as unknown as CircleLayerStyle;
 
+// --- Community mines ----------------------------------------------------------
+// Hollow rings, so they never read as a MINFILE dot: navy once other members have
+// confirmed one (or SGS has verified it), grey until then.
+// ponytail: unclustered. Cluster like `occ` once there are enough to crowd BC.
+const COMMUNITY_NAVY = "#16365C";
+const COMMUNITY_GREY = "#5F6B7A";
+const communityRingStyle = {
+  circleColor: "#ffffff",
+  circleRadius: 9,
+  circleStrokeWidth: 4,
+  circleStrokeColor: ["case", ["get", "trusted"], COMMUNITY_NAVY, COMMUNITY_GREY],
+} as unknown as CircleLayerStyle;
+const communitySelectedStyle = {
+  circleColor: "rgba(0,0,0,0)",
+  circleRadius: 15,
+  circleStrokeColor: "#FCBA19",
+  circleStrokeWidth: 4,
+} as unknown as CircleLayerStyle;
+
 // --- Downloaded offline-region outlines ------------------------------------
 // Colors are hardcoded rather than themed: the basemap renders the same light
 // cartography in both app themes, so these are matched to the basemap, not to
@@ -295,6 +323,51 @@ export default function MapScreen() {
       cancelled = true;
     };
   }, []);
+  // Community mines: the cached public set plus the user's own, re-read on every sync.
+  const [mapMines, setMapMines] = useState<MapMine[]>([]);
+  const [openMine, setOpenMine] = useState<MapMine | null>(null);
+  useEffect(() => {
+    const load = () => void getMapMines().then(setMapMines).catch((e) => console.warn("community mines", e));
+    load();
+    return onSyncChange(load);
+  }, []);
+  const [community, setCommunity] = useState<CommunityFilter>(DEFAULT_COMMUNITY);
+  useEffect(() => {
+    void loadCommunityFilter().then(setCommunity);
+  }, []);
+  const toggleCommunity = useCallback((key: keyof CommunityFilter) => {
+    setCommunity((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      void saveCommunityFilter(next);
+      return next;
+    });
+  }, []);
+  // The user's own always show: they're the field notes they came back for.
+  const communityShape = useMemo<GeoJSON.FeatureCollection>(
+    () => ({
+      type: "FeatureCollection",
+      features: mapMines
+        .filter((m) => m.own || (m.tier === "unverified" ? community.unverified : community.community))
+        .map((m) => ({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [m.lon, m.lat] },
+          properties: { id: m.id, trusted: m.tier === "confirmed" || m.tier === "verified" },
+        })),
+    }),
+    [mapMines, community],
+  );
+  const onCommunityPress = useCallback(
+    (e: { nativeEvent?: { features?: GeoJSON.Feature[] } }) => {
+      const id = e.nativeEvent?.features?.[0]?.properties?.id;
+      const m = mapMines.find((x) => x.id === id);
+      if (!m) return;
+      setQuickInfo(null);
+      setSelected(null);
+      setOpenMine(m);
+    },
+    [mapMines],
+  );
+
   const [search, setSearch] = useState("");
   const [searchActive, setSearchActive] = useState(false);
 
@@ -546,7 +619,10 @@ export default function MapScreen() {
         cameraRef.current?.flyTo({ center: [lng, lat], zoom, duration: 400 });
       } else if (props.id != null) {
         const occ = occById.get(props.id);
-        if (occ) setQuickInfo(occ);
+        if (occ) {
+          setOpenMine(null);
+          setQuickInfo(occ);
+        }
       }
     },
     [occById],
@@ -939,6 +1015,16 @@ export default function MapScreen() {
           />
         </GeoJSONSource>
 
+        <GeoJSONSource id="community" data={communityShape} onPress={onCommunityPress}>
+          <Layer id="community-ring" type="circle" style={communityRingStyle} />
+          <Layer
+            id="community-selected"
+            type="circle"
+            filter={["==", ["get", "id"], openMine?.id ?? ""] as never}
+            style={communitySelectedStyle}
+          />
+        </GeoJSONSource>
+
         {/*
           The open pin on an un-clustered source, so its gold ring survives being
           zoomed out (see overlayShape). Declared after `occ` so it paints above
@@ -1069,6 +1155,24 @@ export default function MapScreen() {
               }}
             />
           ))}
+          <FilterChip
+            label="Community"
+            color={COMMUNITY_NAVY}
+            active={community.community}
+            onPress={() => {
+              setMenuOpen(false);
+              toggleCommunity("community");
+            }}
+          />
+          <FilterChip
+            label="Unverified"
+            color={COMMUNITY_GREY}
+            active={community.unverified}
+            onPress={() => {
+              setMenuOpen(false);
+              toggleCommunity("unverified");
+            }}
+          />
         </ScrollView>
       </View>
 
@@ -1115,7 +1219,7 @@ export default function MapScreen() {
       )}
 
       {/* The sheets own the bottom edge while they're open. */}
-      {!quickInfo && !selected && (
+      {!quickInfo && !selected && !openMine && (
         <>
           {Platform.OS !== "web" && (
             <View style={[styles.addMine, { bottom: insets.bottom + BOTTOM_INSET }]}>
@@ -1143,7 +1247,7 @@ export default function MapScreen() {
         </>
       )}
 
-      {permissionDenied && !quickInfo && !selected && (
+      {permissionDenied && !quickInfo && !selected && !openMine && (
         <View style={[styles.mapNotice, styles.mapNoticeBottom, { bottom: insets.bottom + BOTTOM_INSET + 60 }]}>
           <Feather name="alert-triangle" size={16} color={MAP.mapChromeForeground} />
           <Text style={styles.mapNoticeText}>Location is off, so the map starts on all of BC.</Text>
@@ -1210,6 +1314,8 @@ export default function MapScreen() {
           setQuickInfo(null);
         }}
       />
+
+      <CommunitySheet mine={openMine} onClose={() => setOpenMine(null)} />
 
       <DetailsSheet
         occurrence={selected}

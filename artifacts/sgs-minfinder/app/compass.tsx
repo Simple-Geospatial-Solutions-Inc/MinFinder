@@ -55,7 +55,8 @@ const DIAL_MIN = 160;
 const DIAL_CHROME = 44;
 
 export default function CompassScreen() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  // A MINFILE occurrence by id, or a community mine by its coordinates.
+  const { id, lat, lon, name } = useLocalSearchParams<{ id?: string; lat?: string; lon?: string; name?: string }>();
   const insets = useSafeAreaInsets();
   const { width: winWidth, height: winHeight } = useWindowDimensions();
   // Once the status bar and the "Navigate" header come out of a 640-720dp
@@ -112,6 +113,10 @@ export default function CompassScreen() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (lat && lon) {
+        setTarget({ LATITUDE: Number(lat), LONGITUDE: Number(lon), NAME1: name ?? null, MINFILNO: "Community mine" } as Occurrence);
+        return;
+      }
       if (!id) {
         setLoadError("No target selected.");
         return;
@@ -130,7 +135,7 @@ export default function CompassScreen() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, lat, lon, name]);
 
   useEffect(() => {
     let cancelled = false;
