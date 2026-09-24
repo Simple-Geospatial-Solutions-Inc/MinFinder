@@ -8,7 +8,7 @@ import { CaptureMap, MarkSheet, type LatLon, type Phase } from "@/components/cap
 import { DetailsSheet, type SavedMine } from "@/components/capture/DetailsSheet";
 import { useLiveFix, type LiveFix } from "@/components/capture/gps";
 import { StatusChip } from "@/components/capture/StatusChip";
-import { GUTTER, PillButton, Sheet, type } from "@/components/ui";
+import { GUTTER, PillButton, Sheet, type, useLast } from "@/components/ui";
 import { Feather } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
 import { useSignedIn } from "@/lib/auth";
@@ -100,20 +100,31 @@ export default function SubmitScreen() {
           }}
         />
       )}
-      {phase === "saved" && saved && <SavedSheet mine={saved} onDone={() => router.back()} onAnother={another} />}
+      <SavedSheet mine={phase === "saved" ? saved : null} onDone={() => router.back()} onAnother={another} />
     </View>
   );
 }
 
 /** The summary over the pin: what was saved, where it stands, what's next. */
-function SavedSheet({ mine, onDone, onAnother }: { mine: SavedMine; onDone: () => void; onAnother: () => void }) {
+function SavedSheet({
+  mine: current,
+  onDone,
+  onAnother,
+}: {
+  mine: SavedMine | null;
+  onDone: () => void;
+  onAnother: () => void;
+}) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const signedIn = useSignedIn();
+  // Held through the close animation after "Add another".
+  const mine = useLast(current);
+  if (!mine) return null;
   const label = MINE_TYPES.find(([k]) => k === mine.type)?.[1] ?? "Mine";
 
   return (
-    <Sheet index={0} enablePanDownToClose={false}>
+    <Sheet open={!!current} enablePanDownToClose={false}>
       <BottomSheetView style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.head}>
           <View style={[styles.okDisc, { backgroundColor: colors.successSubtle }]}>

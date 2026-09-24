@@ -3,7 +3,7 @@ import BottomSheet, {
   type BottomSheetBackdropProps,
   type BottomSheetProps,
 } from "@gorhom/bottom-sheet";
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Feather, type FeatherIconName } from "@/components/Icon";
@@ -270,29 +270,61 @@ export function ListRow({
 /**
  * The app's one bottom-sheet look: card fill, 16 pt corners, 32×5 handle.
  * `backdrop` dims the map behind and closes the sheet on a tap outside it.
+ *
+ * With `open`, the sheet mounts at index 0 when it turns true (a sheet told to
+ * open before it has measured itself drops the request) and animates shut
+ * before unmounting when it turns false. `onClose` then only reports closes
+ * the user started: a swipe, a backdrop tap.
  */
 export function Sheet({
   ref,
+  open,
   backdrop,
+  onClose,
   ...props
-}: BottomSheetProps & { ref?: React.Ref<BottomSheet>; backdrop?: boolean }) {
+}: BottomSheetProps & { ref?: React.Ref<BottomSheet>; open?: boolean; backdrop?: boolean }) {
   const colors = useColors();
+  const inner = useRef<BottomSheet>(null);
+  const [mounted, setMounted] = useState(open !== false);
+  if (open && !mounted) setMounted(true);
+  const openRef = useRef(open);
+  openRef.current = open;
+  useEffect(() => {
+    if (open === false) inner.current?.close();
+    // Reopened mid-close: take the sheet back up before onClose fires.
+    else if (open) inner.current?.snapToIndex(0);
+  }, [open]);
+  useImperativeHandle(ref, () => inner.current!, [mounted]);
+
   const renderBackdrop = useCallback(
     (p: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop {...p} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.25} pressBehavior="close" />
     ),
     [],
   );
+  if (!mounted) return null;
   return (
     <BottomSheet
-      ref={ref}
+      ref={inner}
       backgroundStyle={{ backgroundColor: colors.card, borderRadius: radius.lg }}
       handleIndicatorStyle={[styles.handle, { backgroundColor: colors.border }]}
       backdropComponent={backdrop ? renderBackdrop : undefined}
       style={floating}
+      onClose={() => {
+        if (open === undefined) return onClose?.();
+        setMounted(false);
+        if (openRef.current) onClose?.();
+      }}
       {...props}
     />
   );
+}
+
+/** The last non-null value, so a sheet keeps its content while it animates shut. */
+export function useLast<T>(value: T | null): T | null {
+  const [last, setLast] = useState(value);
+  if (value != null && value !== last) setLast(value);
+  return value ?? last;
 }
 
 /** "24 m" over "from you": the number carries the weight, the unit steps back. */

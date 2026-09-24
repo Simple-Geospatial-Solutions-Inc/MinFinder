@@ -1,13 +1,13 @@
 import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { LayoutAnimation, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Feather } from "@/components/Icon";
 import { StatusBadge } from "@/components/StatusBadge";
-import { GUTTER, IconButton, ListRow, ListSection, PillButton, Sheet, type } from "@/components/ui";
+import { GUTTER, IconButton, ListRow, ListSection, PillButton, Sheet, type, useLast } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 import { useEntitlement } from "@/hooks/useEntitlement";
 import { getNamesForOccurrence, type Occurrence, type OccurrenceName } from "@/lib/db";
@@ -31,7 +31,7 @@ function Row({ label, value }: { label: string; value: string | null | undefined
 }
 
 export function DetailsSheet({
-  occurrence,
+  occurrence: current,
   matchedName,
   onClose,
   onRequestUpgrade,
@@ -59,7 +59,10 @@ export function DetailsSheet({
   // of the map's in-memory dataset.
   const [names, setNames] = useState<OccurrenceName[]>([]);
   const [namesOpen, setNamesOpen] = useState(false);
-  const id = occurrence?.id ?? null;
+  // Held through the close animation, match and all.
+  const last = useLast(useMemo(() => current && { occurrence: current, matchedName }, [current, matchedName]));
+  const match = last?.matchedName ?? null;
+  const id = last?.occurrence.id ?? null;
 
   useEffect(() => {
     if (id == null) return;
@@ -72,7 +75,7 @@ export function DetailsSheet({
         setNames(rows);
         // Open the disclosure unprompted when the matched name is hiding in it,
         // so arriving here from a search never buries the reason why.
-        if (matchedName && rows.some((r) => r.rank > 2 && r.name === matchedName)) {
+        if (match && rows.some((r) => r.rank > 2 && r.name === match)) {
           setNamesOpen(true);
         }
       })
@@ -80,16 +83,15 @@ export function DetailsSheet({
     return () => {
       cancelled = true;
     };
-  }, [id, matchedName]);
+  }, [id, match]);
 
   const toggleNames = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setNamesOpen((prev) => !prev);
   }, []);
 
-  // Mounted per open, at index 0: a sheet that mounts closed and is told to
-  // open before it has measured itself drops the request.
-  if (!occurrence) return null;
+  if (!last) return null;
+  const { occurrence } = last;
 
   // Ranks 1 and 2 are already the title and subtitle.
   const otherNames = names.filter((n) => n.rank > 2);
@@ -106,7 +108,7 @@ export function DetailsSheet({
 
   return (
     <Sheet
-      index={0}
+      open={!!current}
       snapPoints={SNAPS}
       enableDynamicSizing={false}
       enablePanDownToClose
@@ -167,7 +169,7 @@ export function DetailsSheet({
                 // flowing list without breaking it into rows.
                 <Text
                   key={n.rank}
-                  style={n.name === matchedName ? [styles.matchedName, { color: colors.primary }] : undefined}
+                  style={n.name === match ? [styles.matchedName, { color: colors.primary }] : undefined}
                 >
                   {i > 0 ? " · " : ""}
                   {n.name}

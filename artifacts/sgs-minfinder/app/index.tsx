@@ -1,4 +1,12 @@
-import { BottomSheetView } from "@gorhom/bottom-sheet";
+import Animated, {
+  Easing,
+  Extrapolation,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+  type SharedValue,
+} from "react-native-reanimated";
 
 import { Feather, type FeatherIconName } from "@/components/Icon";
 import { router, useFocusEffect } from "expo-router";
@@ -43,14 +51,10 @@ import { QuickInfoCard } from "@/components/QuickInfoCard";
 import { SearchMatchesPill } from "@/components/SearchMatchesPill";
 import {
   floating,
-  GUTTER,
   IconButton,
-  ListRow,
-  ListSection,
   MapButton,
   PillButton,
   radius,
-  Sheet,
   type,
 } from "@/components/ui";
 import colorTokens from "@/constants/colors";
@@ -324,6 +328,24 @@ export default function MapScreen() {
   // hands a free user over to the paywall.
   const [paywallFor, setPaywallFor] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  // The search pill's morph into the menu, 0 closed to 1 open. withTiming
+  // follows the system's reduce-motion setting by default.
+  const menuProgress = useSharedValue(0);
+  useEffect(() => {
+    menuProgress.value = withTiming(menuOpen ? 1 : 0, { duration: 320, easing: Easing.out(Easing.cubic) });
+  }, [menuOpen, menuProgress]);
+  const searchFieldStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(menuProgress.value, [0, 0.5], [1, 0], Extrapolation.CLAMP),
+    transform: [{ translateX: menuProgress.value * 16 }],
+  }));
+  const dividerStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(menuProgress.value, [0.6, 1], [1, 0], Extrapolation.CLAMP),
+    transform: [{ translateX: menuProgress.value * MENU_SLIDE }],
+  }));
+  const menuButtonStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(menuProgress.value, [0, 0.6], [1, 0], Extrapolation.CLAMP),
+    transform: [{ translateX: menuProgress.value * MENU_SLIDE }],
+  }));
 
   // The downloaded region the user tapped on the Offline screen, plus every
   // cached region for the coverage toggle.
@@ -956,58 +978,102 @@ export default function MapScreen() {
         {userLoc && <UserLocation animated heading />}
       </MapLibreMap>
 
+      {/* A tap anywhere off the open menu folds it back into the search field. */}
+      {menuOpen && (
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => setMenuOpen(false)}
+          accessibilityRole="button"
+          accessibilityLabel="Close menu"
+        />
+      )}
+
       {/* Floating chrome: search pill and status filters, AllTrails-style. */}
       <View style={[styles.topBar, { top: insets.top + 8 }]} pointerEvents="box-none">
         <Pressable
-          onPress={() => searchInputRef.current?.focus()}
+          onPress={() => (menuOpen ? setMenuOpen(false) : searchInputRef.current?.focus())}
           accessible={false}
           style={styles.searchBar}
         >
-          <Feather name="search" size={18} color={MAP.mapChromeForeground} />
-          <TextInput
-            ref={searchInputRef}
-            placeholder="Search a name or MINFILE number"
-            placeholderTextColor={MAP.mapChromeMuted}
-            value={search}
-            onChangeText={(t) => {
-              setSearch(t);
-              setSearchActive(true);
-              // The highlight belongs to the query that was committed; editing
-              // the field invalidates it, and a pill reading "59 matches for
-              // SPAR" above a field saying SPARK is worse than no pill.
-              setHighlight(null);
-            }}
-            onFocus={() => setSearchActive(true)}
-            onSubmitEditing={onSubmitSearch}
-            style={styles.searchInput}
-            autoCorrect={false}
-            autoCapitalize="characters"
-            returnKeyType="search"
-          />
-          {search.length > 0 && (
-            <IconButton
-              icon="x"
-              label="Clear search"
-              variant="plain"
-              color={MAP.mapChromeForeground}
-              onPress={() => {
-                setSearch("");
-                setSearchResults(null);
-                setHighlight(null);
-              }}
-            />
-          )}
-          <View style={styles.searchDivider} />
-          <IconButton
-            icon="menu"
-            label="Menu"
-            variant="plain"
-            color={MAP.mapChromeForeground}
-            onPress={() => {
-              Keyboard.dismiss();
-              setMenuOpen(true);
-            }}
-          />
+          <View style={styles.searchClip}>
+            <Animated.View
+              style={[styles.searchField, searchFieldStyle]}
+              pointerEvents={menuOpen ? "none" : "box-none"}
+              accessibilityElementsHidden={menuOpen}
+              importantForAccessibility={menuOpen ? "no-hide-descendants" : "auto"}
+            >
+              <Feather name="search" size={18} color={MAP.mapChromeForeground} />
+              <TextInput
+                ref={searchInputRef}
+                placeholder="Search a name or MINFILE number"
+                placeholderTextColor={MAP.mapChromeMuted}
+                value={search}
+                onChangeText={(t) => {
+                  setSearch(t);
+                  setSearchActive(true);
+                  // The highlight belongs to the query that was committed; editing
+                  // the field invalidates it, and a pill reading "59 matches for
+                  // SPAR" above a field saying SPARK is worse than no pill.
+                  setHighlight(null);
+                }}
+                onFocus={() => setSearchActive(true)}
+                onSubmitEditing={onSubmitSearch}
+                style={styles.searchInput}
+                autoCorrect={false}
+                autoCapitalize="characters"
+                returnKeyType="search"
+              />
+              {search.length > 0 && (
+                <IconButton
+                  icon="x"
+                  label="Clear search"
+                  variant="plain"
+                  color={MAP.mapChromeForeground}
+                  onPress={() => {
+                    setSearch("");
+                    setSearchResults(null);
+                    setHighlight(null);
+                  }}
+                />
+              )}
+            </Animated.View>
+            {/* Opening, the divider slides right and pushes the menu button out,
+                and the field gives way to the menu's own options. */}
+            <Animated.View style={[styles.searchDivider, dividerStyle]} />
+            <Animated.View style={menuButtonStyle} pointerEvents={menuOpen ? "none" : "auto"}>
+              <IconButton
+                icon="menu"
+                label="Menu"
+                variant="plain"
+                color={MAP.mapChromeForeground}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setSearchActive(false);
+                  setMenuOpen(true);
+                }}
+              />
+            </Animated.View>
+            <View
+              style={styles.menuRow}
+              pointerEvents={menuOpen ? "box-none" : "none"}
+              accessibilityElementsHidden={!menuOpen}
+              importantForAccessibility={menuOpen ? "auto" : "no-hide-descendants"}
+            >
+              {MENU.map(([icon, label, href], i) => (
+                <MenuOption
+                  key={href}
+                  progress={menuProgress}
+                  index={i}
+                  icon={icon}
+                  label={label}
+                  onPress={() => {
+                    setMenuOpen(false);
+                    router.push(href);
+                  }}
+                />
+              ))}
+            </View>
+          </View>
         </Pressable>
 
         <ScrollView
@@ -1023,7 +1089,10 @@ export default function MapScreen() {
               label={STATUS_MAP[code].label}
               color={STATUS_MAP[code].color}
               active={statuses.includes(code)}
-              onPress={() => toggleStatus(code)}
+              onPress={() => {
+                setMenuOpen(false);
+                toggleStatus(code);
+              }}
             />
           ))}
         </ScrollView>
@@ -1178,36 +1247,6 @@ export default function MapScreen() {
         }}
       />
 
-      {menuOpen && (
-        <Sheet index={0} enablePanDownToClose backdrop onClose={() => setMenuOpen(false)}>
-          <BottomSheetView style={[styles.menu, { paddingBottom: insets.bottom + 16 }]}>
-            <ListSection
-              title="SGS MinFinder"
-              subtitle={
-                loadingDb
-                  ? "Loading…"
-                  : dbError
-                    ? "Occurrence data failed to load"
-                    : `${drawnRows.length.toLocaleString()} of ${allRows.length.toLocaleString()} BC MINFILE occurrences shown`
-              }
-            >
-              {MENU.map(([icon, label, href]) => (
-                <ListRow
-                  key={href}
-                  onPress={() => {
-                    setMenuOpen(false);
-                    router.push(href);
-                  }}
-                >
-                  <Feather name={icon} size={20} color={colors.foreground} />
-                  <Text style={[type.label, { color: colors.foreground, flex: 1 }]}>{label}</Text>
-                </ListRow>
-              ))}
-            </ListSection>
-          </BottomSheetView>
-        </Sheet>
-      )}
-
       <PaywallSheet
         visible={paywallFor != null}
         feature={paywallFor ?? ""}
@@ -1218,10 +1257,47 @@ export default function MapScreen() {
 }
 
 const MENU = [
-  ["download-cloud", "Offline maps", "/offline"],
-  ["inbox", "My submissions", "/my-submissions"],
+  ["download-cloud", "Offline", "/offline"],
+  ["inbox", "Submissions", "/my-submissions"],
   ["info", "About", "/about"],
 ] as const satisfies readonly (readonly [FeatherIconName, string, string])[];
+
+// How far the divider travels: the gap and the 36 pt menu button it pushes out.
+const MENU_SLIDE = 4 + 36;
+
+/** One of the menu's options in the search pill, easing in from the left after the one before it. */
+function MenuOption({
+  progress,
+  index,
+  icon,
+  label,
+  onPress,
+}: {
+  progress: SharedValue<number>;
+  index: number;
+  icon: FeatherIconName;
+  label: string;
+  onPress: () => void;
+}) {
+  const style = useAnimatedStyle(() => {
+    const t = interpolate(progress.value, [0.2 + index * 0.1, 0.8 + index * 0.1], [0, 1], Extrapolation.CLAMP);
+    return { opacity: t, transform: [{ translateX: (t - 1) * 16 }] };
+  });
+  return (
+    <Animated.View style={[styles.menuOptionWrap, style]}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.menuOption, { opacity: pressed ? 0.6 : 1 }]}
+      >
+        <Feather name={icon} size={18} color={MAP.mapChromeForeground} />
+        <Text style={styles.menuOptionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+          {label}
+        </Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
 
 /**
  * A status filter on the map. On shows the status colour as a solid dot; off
@@ -1262,16 +1338,23 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   topBar: { position: "absolute", left: 0, right: 0, gap: 8 },
   searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
     height: SEARCH_HEIGHT,
     marginHorizontal: 16,
-    paddingLeft: 16,
-    paddingRight: 4,
     borderRadius: SEARCH_HEIGHT / 2,
     backgroundColor: MAP.mapChrome,
     ...floating,
+  },
+  // Clips the menu button as the divider pushes it out; the bar itself can't
+  // clip without losing its shadow on iOS.
+  searchClip: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingLeft: 16,
+    paddingRight: 4,
+    borderRadius: SEARCH_HEIGHT / 2,
+    overflow: "hidden",
   },
   searchInput: {
     flex: 1,
@@ -1281,7 +1364,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     padding: 0,
   },
+  searchField: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4 },
   searchDivider: { width: StyleSheet.hairlineWidth, height: 24, backgroundColor: MAP.border },
+  menuRow: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 8,
+    right: 8,
+    flexDirection: "row",
+  },
+  menuOptionWrap: { flex: 1 },
+  menuOption: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
+  menuOptionText: { color: MAP.mapChromeForeground, fontFamily: "Inter_600SemiBold", fontSize: 14 },
   // Room for the chips' shadow, which the scroll view would otherwise clip.
   chipsScroll: { marginVertical: -4 },
   chipsRow: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 4 },
@@ -1347,5 +1442,4 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   dbOverlayText: { color: MAP.background, fontFamily: "Inter_500Medium", fontSize: 14 },
-  menu: { paddingHorizontal: GUTTER, paddingTop: 4 },
 });

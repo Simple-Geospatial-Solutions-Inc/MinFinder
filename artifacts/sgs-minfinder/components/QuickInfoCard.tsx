@@ -1,12 +1,12 @@
 import { BottomSheetView } from "@gorhom/bottom-sheet";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { StatusBadge } from "@/components/StatusBadge";
-import { GUTTER, IconButton, PillButton, Sheet, type } from "@/components/ui";
+import { GUTTER, IconButton, PillButton, Sheet, type, useLast } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 import { useEntitlement } from "@/hooks/useEntitlement";
 import type { Occurrence } from "@/lib/db";
@@ -38,18 +38,21 @@ export function QuickInfoCard({
   const insets = useSafeAreaInsets();
   const { isPaid } = useEntitlement();
   const [paywallFor, setPaywallFor] = useState<string | null>(null);
-  if (!occurrence) return null;
+  // Held through the close animation, match and all.
+  const last = useLast(useMemo(() => occurrence && { occurrence, matchedName }, [occurrence, matchedName]));
+  if (!last) return null;
+  const { occurrence: shown, matchedName: match } = last;
 
-  const minfilno = occurrence.MINFILNO?.trim() || "—";
+  const minfilno = shown.MINFILNO?.trim() || "—";
   const navigate = () => {
     if (!isPaid) return setPaywallFor("Navigate");
     onClose();
-    router.push({ pathname: "/compass", params: { id: String(occurrence.id) } });
+    router.push({ pathname: "/compass", params: { id: String(shown.id) } });
   };
 
   return (
     <>
-      <Sheet index={0} enablePanDownToClose onClose={onClose}>
+      <Sheet open={!!occurrence} enablePanDownToClose onClose={onClose}>
         <BottomSheetView style={[styles.body, { paddingBottom: insets.bottom + 16 }]}>
           <View style={styles.head}>
             <View style={styles.titleCol}>
@@ -57,12 +60,12 @@ export function QuickInfoCard({
                   primary name then has to stay visible below it — "CAMP CREEK" alone
                   would read as the occurrence's name, which is the opposite error. */}
               <Text style={[type.title, { color: colors.foreground }]} numberOfLines={1} accessibilityRole="header">
-                {matchedName || occurrence.NAME1 || "Unnamed"}
+                {match || shown.NAME1 || "Unnamed"}
               </Text>
               <View style={styles.metaRow}>
-                <StatusBadge code={occurrence.STATUS_C} />
+                <StatusBadge code={shown.STATUS_C} />
                 <Text style={[type.meta, { color: colors.mutedForeground, flexShrink: 1 }]} numberOfLines={1}>
-                  {matchedName ? `${occurrence.NAME1?.trim() || "Unnamed"} · ${minfilno}` : `MINFILE ${minfilno}`}
+                  {match ? `${shown.NAME1?.trim() || "Unnamed"} · ${minfilno}` : `MINFILE ${minfilno}`}
                 </Text>
               </View>
             </View>
