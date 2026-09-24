@@ -11,6 +11,9 @@ import { AppState, Platform } from "react-native";
 // Must exactly match the entitlement identifier configured in RevenueCat
 // (Dashboard → Entitlements). It is the key under info.entitlements.active.
 const ENTITLEMENT_ID = "SGS MinFinder Pro";
+// Dev builds only: EXPO_PUBLIC_DEV_PRO=1 in .env unlocks Pro screens without a
+// purchase. RevenueCat still sees a free user; release bundles drop this.
+const DEV_PRO = __DEV__ && process.env.EXPO_PUBLIC_DEV_PRO === "1";
 // RevenueCat uses platform-specific public SDK keys: Apple keys start with
 // `appl_`, Google keys with `goog_`. iOS keeps the original env var so the
 // existing build config is untouched; Android reads its own `goog_` key.
@@ -354,7 +357,7 @@ export function SubscriptionProvider({
 
   const value = useMemo<SubscriptionState>(
     () => ({
-      isPaid: entitlementActive(customerInfo),
+      isPaid: DEV_PRO || entitlementActive(customerInfo),
       isReady,
       isLoading,
       customerInfo,
