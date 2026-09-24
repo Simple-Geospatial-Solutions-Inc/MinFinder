@@ -180,9 +180,11 @@ test("submission, safeguards, voting and sync", async () => {
   const del = await fetch(`${base}/v1/me`, { method: "DELETE", headers: { authorization: `Bearer ${alice.token}` } });
   assert.equal(del.status, 204);
   assert.equal((await fetch(`${base}/v1/me/submissions`, { headers: { authorization: `Bearer ${alice.token}` } })).status, 401);
-  const row = db().prepare("SELECT removed, notes FROM mines WHERE id = ?").get(first.id) as any;
+  const row = db().prepare("SELECT removed, notes, user_id, lat, user_lat FROM mines WHERE id = ?").get(first.id) as any;
   assert.equal(row.removed, 1);
   assert.equal(row.notes, null);
+  assert.equal(row.user_id, null);
+  assert.equal(row.user_lat, row.lat, "where she stood is gone");
 });
 
 test("admin page", async () => {

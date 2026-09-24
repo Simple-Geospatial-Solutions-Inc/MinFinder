@@ -468,7 +468,10 @@ export function createApp({ db, photoDir }: AppOptions) {
       const touched = db.prepare("SELECT mine_id FROM votes WHERE user_id = ? UNION SELECT mine_id FROM reports WHERE user_id = ?").all(uid, uid) as Row[];
       for (const m of db.prepare("SELECT id FROM mines WHERE user_id = ?").all(uid) as Row[]) {
         // Keep the id as a tombstone so devices drop it; wipe everything the user wrote.
-        db.prepare("UPDATE mines SET removed = 1, name = NULL, commodity = NULL, notes = NULL, seq = ? WHERE id = ?").run(nextSeq(db), m.id);
+        // Where they stood goes too: the placeholder keeps only the pin and the kind.
+        db.prepare(
+          "UPDATE mines SET removed = 1, name = NULL, commodity = NULL, notes = NULL, hazards = '[]', user_lat = lat, user_lon = lon, attest = NULL, hold = NULL, seq = ? WHERE id = ?",
+        ).run(nextSeq(db), m.id);
         db.prepare("DELETE FROM photos WHERE mine_id = ?").run(m.id);
       }
       db.prepare("DELETE FROM users WHERE id = ?").run(uid); // cascades sessions, votes, reports
