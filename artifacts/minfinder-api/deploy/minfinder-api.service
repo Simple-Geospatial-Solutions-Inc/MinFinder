@@ -16,6 +16,9 @@
 #        GOOGLE_CLIENT_IDS=           # comma-separated: the Web client (Android tokens) and the iOS client
 #        MIN_APP_VERSION=1.2.0
 #        SUBMISSIONS_ENABLED=true     # the kill switch: false pauses uploads without a release
+#        ATTESTATION=log              # off | log | enforce (see README, "Device attestation")
+#        APPLE_APP_ID=                # <Apple team id>.ca.sgss.minfinder, for App Attest
+#        PLAY_INTEGRITY_KEY_FILE=/etc/minfinder-api/play-integrity.json  # service-account key, 0640 root:minfinder-api
 #        ADMIN_PASSWORD=              # /admin moderation page; generate with `openssl rand -base64 24`. Unset = no page
 #   4. Ship the code: artifacts/minfinder-api/deploy/deploy.sh (from the operator's machine)
 #   5. cp minfinder-api.service minfinder-api-backup.{service,timer} /etc/systemd/system/

@@ -26,6 +26,8 @@ branch on.
 | `GET health` | – | `{ ok: true }` |
 | `GET config` | – | `min_app_version`, `submissions_enabled` (the kill switch), `limits` |
 | `POST auth/apple`, `POST auth/google` | – | `{ id_token }` → `{ token }`. Send it as `Authorization: Bearer <token>`. |
+| `GET attest/challenge` | ✔ | `{ challenge }`, single use, valid 5 minutes. For registering an App Attest key. |
+| `POST attest/ios` | ✔ | `{ key_id, attestation, challenge }`: registers this install's App Attest key. |
 | `POST submissions` | ✔ | See the next section. |
 | `GET mines?since=<cursor>` | – | `{ cursor, more, mines, deleted }`. Call again while `more` is true. Keep `cursor` for the next sync. |
 | `GET me/submissions` | ✔ | The caller's own submissions, including ones still pending review. |
@@ -36,6 +38,17 @@ branch on.
 | `GET me/blocks` | ✔ | `{ authors, mine_ids }`: how many members the caller blocked, and the mines to hide. |
 | `DELETE me/blocks` | ✔ | Unblocks everyone. |
 | `DELETE me` | ✔ | Deletes the account. Its submissions become tombstones and its photos are deleted. |
+
+### Device attestation
+
+Submissions and votes may carry `X-Attest`, bound to the exact body sent (the `data` part for a
+submission): `ios <key_id> <assertion>` from App Attest, or `android <token>` from a Play
+Integrity standard request whose request hash is the body's SHA-256 in hex. Responses include
+`attest`, the verdict. `ATTESTATION` in the env sets the policy: `off`, `log` (the default:
+record the verdict on the mine, shown on /admin, never refuse) or `enforce` (refuse with
+`attestation_required`, `attestation_failed`, `attest_key_unknown` (register a new key and
+retry) or 503 `attestation_unavailable`). Enforce only once every build in use has the module
+and comes from the stores: Play doesn't recognise sideloaded or EAS internal builds.
 
 ### `POST submissions`
 

@@ -211,3 +211,23 @@ test("admin page", async () => {
     delete process.env.ADMIN_PASSWORD;
   }
 });
+
+test("attestation modes", async () => {
+  const erin = signIn(db(), "google", "erin");
+  const at = (n: number) => body({ lat: 49.2 + n / 10, lon: -117.9, user_lat: 49.2 + n / 10, user_lon: -117.9, captured_at: Date.now() - n * 7_200_000 });
+
+  // log (the default): accepted, and the missing check is written down for staff.
+  const logged = await submit(erin.token, at(1));
+  assert.equal(logged.status, 201, JSON.stringify(logged.json));
+  assert.equal(logged.json.attest, "none");
+  assert.equal((db().prepare("SELECT attest FROM mines WHERE id = ?").get(logged.json.mine.id) as any).attest, "none");
+
+  process.env.ATTESTATION = "enforce";
+  try {
+    const refused = await submit(erin.token, at(2));
+    assert.equal(refused.status, 403);
+    assert.equal(refused.json.error, "attestation_required");
+  } finally {
+    delete process.env.ATTESTATION;
+  }
+});

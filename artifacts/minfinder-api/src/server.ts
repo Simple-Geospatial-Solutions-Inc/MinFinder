@@ -8,6 +8,7 @@ import { z } from "zod";
 import { isProvider, sessionUser, signIn, verifyIdToken } from "./auth.ts";
 import { bump, MINE_SELECT, nextSeq, openDb, tx, type DB } from "./db.ts";
 import { adminGate, adminPage } from "./adminPage.ts";
+import { AttestError, bodyHash, decodePlayToken, newChallenge, playVerdict, verifyAssertion, verifyAttestation } from "./attest.ts";
 import { ACTIONS, moderate, type Action } from "./moderation.ts";
 import { processPhoto } from "./photos.ts";
 import { bboxAround, distanceM, hamming, inBC, isPublic, LIMITS, tier, travelKmh, type Tier } from "./rules.ts";
@@ -102,12 +103,20 @@ function nearby(db: DB, lat: number, lon: number, m: number, where: string, ...a
   ).filter((r) => distanceM(lat, lon, r.lat, r.lon) <= m);
 }
 
-async function readJson(req: IncomingMessage): Promise<unknown> {
+async function readBody(req: IncomingMessage, max = 16_384): Promise<string> {
   let body = "";
   for await (const chunk of req) {
     body += chunk;
-    if (body.length > 16_384) throw new HttpError(413, "body_too_large");
+    if (body.length > max) throw new HttpError(413, "body_too_large");
   }
+  return body;
+}
+
+async function readJson(req: IncomingMessage, max?: number): Promise<unknown> {
+  return jsonOf(await readBody(req, max));
+}
+
+function jsonOf(body: string): unknown {
   try {
     return JSON.parse(body || "{}");
   } catch {
@@ -148,6 +157,77 @@ export function createApp({ db, photoDir }: AppOptions) {
     return uid;
   }
 
+  const PACKAGE = process.env.ANDROID_PACKAGE ?? "ca.sgss.minfinder";
+  const PASSED = new Set(["ios", "android"]);
+
+  /**
+   * The verdict on a write's X-Attest header, over its exact body. Recorded on the mine; in
+   * ATTESTATION=enforce mode anything but a pass is refused.
+   */
+  async function attest(req: IncomingMessage, body: string): Promise<string> {
+    const mode = process.env.ATTESTATION ?? "log";
+    if (mode === "off") return "off";
+    const verdict = await attestVerdict(req, body).catch((e) =>
+      e instanceof AttestError ? `fail: ${e.message}` : `error: ${e instanceof Error ? e.message : e}`,
+    );
+    if (PASSED.has(verdict)) return verdict;
+    console.warn(`[attest] ${verdict}`);
+    if (mode === "enforce") {
+      if (verdict.startsWith("error")) throw new HttpError(503, "attestation_unavailable");
+      if (verdict === "none") throw new HttpError(403, "attestation_required", "update the app to upload");
+      if (verdict === "fail: unknown key") throw new HttpError(403, "attest_key_unknown");
+      throw new HttpError(403, "attestation_failed", verdict.slice(6));
+    }
+    return verdict;
+  }
+
+  async function attestVerdict(req: IncomingMessage, body: string): Promise<string> {
+    const [platform, a, b] = String(req.headers["x-attest"] ?? "").split(" ");
+    if (platform === "ios") {
+      const appId = process.env.APPLE_APP_ID;
+      if (!appId) throw new Error("APPLE_APP_ID not set");
+      const key = db.prepare("SELECT public_key, counter FROM attest_keys WHERE key_id = ?").get(a ?? "") as Row | undefined;
+      if (!key) throw new AttestError("unknown key");
+      // No await between the read and the write, so two requests can't both use one counter.
+      const counter = verifyAssertion({ assertion: b ?? "", clientData: body, publicKey: key.public_key, counter: key.counter, appId });
+      db.prepare("UPDATE attest_keys SET counter = ? WHERE key_id = ?").run(counter, a);
+      return "ios";
+    }
+    if (platform === "android") {
+      const keyFile = process.env.PLAY_INTEGRITY_KEY_FILE;
+      if (!keyFile) throw new Error("PLAY_INTEGRITY_KEY_FILE not set");
+      const why = playVerdict(await decodePlayToken(a ?? "", PACKAGE, keyFile), { packageName: PACKAGE, requestHash: bodyHash(body) });
+      if (why) throw new AttestError(why);
+      return "android";
+    }
+    return "none";
+  }
+
+  async function registerKey(req: IncomingMessage) {
+    requireUser(req);
+    const appId = process.env.APPLE_APP_ID;
+    if (!appId) throw new HttpError(503, "attestation_unavailable");
+    const r = parse(
+      z.object({ key_id: z.string().min(1).max(128), attestation: z.string().min(1).max(60_000), challenge: z.string().min(1).max(128) }),
+      await readJson(req, 65_536),
+    );
+    const issued = db
+      .prepare("DELETE FROM attest_challenges WHERE challenge = ? AND created_at > ? RETURNING challenge")
+      .get(r.challenge, Date.now() - 300_000);
+    if (!issued) throw new HttpError(400, "bad_challenge", "ask for a new challenge");
+    let key;
+    try {
+      key = verifyAttestation({ keyId: r.key_id, attestation: r.attestation, challenge: r.challenge, appId });
+    } catch (e) {
+      if (e instanceof AttestError) throw new HttpError(422, "attestation_invalid", e.message);
+      throw e;
+    }
+    db.prepare("INSERT OR REPLACE INTO attest_keys (key_id, public_key, counter, env, created_at) VALUES (?, ?, 0, ?, ?)").run(
+      r.key_id, key.publicKey, key.env, Date.now(),
+    );
+    return { status: 204, body: null };
+  }
+
   async function submit(req: IncomingMessage) {
     const uid = requireUser(req);
     if (process.env.SUBMISSIONS_ENABLED === "false") throw new HttpError(503, "submissions_paused");
@@ -176,6 +256,7 @@ export function createApp({ db, photoDir }: AppOptions) {
     }
     const s = parse(Submission, raw);
     const files = form.getAll("photo").filter((f): f is File => f instanceof File);
+    const verdict = await attest(req, String(form.get("data")));
 
     // A retry of an upload that already landed: answer with what we stored, before spending
     // any CPU on photos.
@@ -246,16 +327,16 @@ export function createApp({ db, photoDir }: AppOptions) {
 
         const approvedBefore = db.prepare("SELECT COUNT(*) AS n FROM mines WHERE user_id = ? AND approved = 1 AND removed = 0").get(uid) as Row;
         db.prepare(
-          `INSERT INTO mines (id, user_id, lat, lon, user_lat, user_lon, accuracy_m, captured_at, type, name, commodity, notes, hazards, approved, created_at, seq)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO mines (id, user_id, lat, lon, user_lat, user_lon, accuracy_m, captured_at, type, name, commodity, notes, hazards, approved, created_at, seq, attest)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           s.id, uid, s.lat, s.lon, s.user_lat, s.user_lon, s.accuracy_m, s.captured_at, s.type,
           s.name || null, s.commodity || null, s.notes || null, JSON.stringify(s.hazards),
-          approvedBefore.n >= LIMITS.probationCount ? 1 : 0, now, nextSeq(db),
+          approvedBefore.n >= LIMITS.probationCount ? 1 : 0, now, nextSeq(db), verdict,
         );
         const addPhoto = db.prepare("INSERT INTO photos (id, mine_id, idx, dhash) VALUES (?, ?, ?, ?)");
         processed.forEach((p, i) => addPhoto.run(photoIds[i], s.id, i, p.dhash.toString(16)));
-        return { status: 201, body: { mine: serialize(getMine(db, s.id)!) } };
+        return { status: 201, body: { mine: serialize(getMine(db, s.id)!), attest: verdict } };
       });
     } catch (e) {
       await Promise.all(photoIds.flatMap((id) => [unlink(photoPath(id, false)), unlink(photoPath(id, true))]).map((p) => p.catch(() => {})));
@@ -285,7 +366,9 @@ export function createApp({ db, photoDir }: AppOptions) {
 
   async function vote(req: IncomingMessage, id: string) {
     const uid = requireUser(req);
-    const v = parse(Vote, await readJson(req));
+    const raw = await readBody(req);
+    const v = parse(Vote, jsonOf(raw));
+    const verdict = await attest(req, raw);
     return tx(db, () => {
       const m = votable(uid, id);
       const n = db.prepare("SELECT COUNT(*) AS n FROM votes WHERE user_id = ? AND created_at > ?").get(uid, Date.now() - 86_400_000) as Row;
@@ -301,7 +384,7 @@ export function createApp({ db, photoDir }: AppOptions) {
         );
       }
       bump(db, id);
-      return { status: 200, body: { mine: serialize(getMine(db, id)!) } };
+      return { status: 200, body: { mine: serialize(getMine(db, id)!), attest: verdict } };
     });
   }
 
@@ -430,6 +513,14 @@ export function createApp({ db, photoDir }: AppOptions) {
         throw new HttpError(403, "banned");
       }
     }
+    if (method === "GET" && p === "/v1/attest/challenge") {
+      requireUser(req);
+      const challenge = newChallenge();
+      db.prepare("DELETE FROM attest_challenges WHERE created_at < ?").run(Date.now() - 300_000);
+      db.prepare("INSERT INTO attest_challenges (challenge, created_at) VALUES (?, ?)").run(challenge, Date.now());
+      return { status: 200, body: { challenge } };
+    }
+    if (method === "POST" && p === "/v1/attest/ios") return registerKey(req);
     if (method === "POST" && p === "/v1/submissions") return submit(req);
     if (method === "GET" && p === "/v1/mines") return { status: 200, body: pull(url) };
     if (method === "GET" && p === "/v1/me/submissions") {

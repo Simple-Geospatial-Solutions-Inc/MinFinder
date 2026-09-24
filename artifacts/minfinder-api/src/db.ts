@@ -68,6 +68,15 @@ CREATE TABLE IF NOT EXISTS blocks (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (user_id, author_id)
 );
+-- App Attest: one-time challenges for key registration, and each install's registered key.
+CREATE TABLE IF NOT EXISTS attest_challenges (challenge TEXT PRIMARY KEY, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS attest_keys (
+  key_id TEXT PRIMARY KEY,            -- base64, as the device names it
+  public_key TEXT NOT NULL,           -- PEM
+  counter INTEGER NOT NULL,           -- the last assertion's counter; must only go up
+  env TEXT NOT NULL,                  -- production | development
+  created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER NOT NULL);
 INSERT OR IGNORE INTO meta VALUES ('seq', 0);
 `;
@@ -78,6 +87,9 @@ export function openDb(path: string): DB {
   const db = new DatabaseSync(path);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   db.exec(SCHEMA);
+  // Columns added after launch. SQLite has no ADD COLUMN IF NOT EXISTS.
+  const cols = (db.prepare("PRAGMA table_info(mines)").all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes("attest")) db.exec("ALTER TABLE mines ADD COLUMN attest TEXT"); // the upload's attestation verdict
   return db;
 }
 

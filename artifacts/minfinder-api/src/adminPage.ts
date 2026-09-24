@@ -45,7 +45,7 @@ function card(db: DB, m: Record<string, any>): string {
   <div class="body">
     <h2>${esc(m.name || m.type)} <span class="tier">${t}</span></h2>
     <p class="meta">${esc(m.type)} · captured ${when(m.captured_at)} · author #${esc(m.user_id ?? "deleted")} · net ${m.net} (${m.ups}▲ ${m.downs}▼, ${m.on_site_up} on site)</p>
-    <p class="meta"><a href="${map}" target="_blank">${m.lat.toFixed(5)}, ${m.lon.toFixed(5)}</a> · ±${Math.round(m.accuracy_m)} m</p>
+    <p class="meta"><a href="${map}" target="_blank">${m.lat.toFixed(5)}, ${m.lon.toFixed(5)}</a> · ±${Math.round(m.accuracy_m)} m · device check: ${esc(m.attest ?? "not recorded")}</p>
     ${m.notes ? `<p>${esc(m.notes)}</p>` : ""}
     ${hazards.length ? `<p class="meta">Hazards: ${esc(hazards.join(", "))}</p>` : ""}
     ${reasons ? `<p class="reports">Reported: ${reasons}</p>` : ""}
