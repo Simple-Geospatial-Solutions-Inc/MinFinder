@@ -61,6 +61,13 @@ CREATE TABLE IF NOT EXISTS reports (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (mine_id, user_id)
 );
+-- "Don't show me anything this member adds." Private to the blocker; authors never learn of it.
+CREATE TABLE IF NOT EXISTS blocks (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, author_id)
+);
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER NOT NULL);
 INSERT OR IGNORE INTO meta VALUES ('seq', 0);
 `;

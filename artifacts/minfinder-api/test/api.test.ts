@@ -170,6 +170,12 @@ test("submission, safeguards, voting and sync", async () => {
   assert.deepEqual(pull1.mines, []);
   assert.deepEqual(pull1.deleted, [first.id]);
 
+  // Bob blocks Alice: her mines come back as ids for his app to hide; her id never does.
+  assert.equal((await post(alice.token, `/v1/mines/${first.id}/block`, {})).status, 403);
+  assert.equal((await post(bob.token, `/v1/mines/${first.id}/block`, {})).status, 204);
+  const blocks = (await (await fetch(`${base}/v1/me/blocks`, { headers: { authorization: `Bearer ${bob.token}` } })).json()) as any;
+  assert.deepEqual(blocks, { authors: 1, mine_ids: [first.id] });
+
   // Account deletion wipes Alice's submission and her session.
   const del = await fetch(`${base}/v1/me`, { method: "DELETE", headers: { authorization: `Bearer ${alice.token}` } });
   assert.equal(del.status, 204);
@@ -177,4 +183,31 @@ test("submission, safeguards, voting and sync", async () => {
   const row = db().prepare("SELECT removed, notes FROM mines WHERE id = ?").get(first.id) as any;
   assert.equal(row.removed, 1);
   assert.equal(row.notes, null);
+});
+
+test("admin page", async () => {
+  const dave = signIn(db(), "google", "dave");
+  const m = body({ lat: 49.3, lon: -117.6, user_lat: 49.3, user_lon: -117.6 });
+  assert.equal((await submit(dave.token, m)).status, 201);
+  const auth = (pw: string) => ({ authorization: `Basic ${Buffer.from(`staff:${pw}`).toString("base64")}` });
+
+  delete process.env.ADMIN_PASSWORD;
+  assert.equal((await fetch(`${base}/admin`, { headers: auth("x") })).status, 404, "no password set = no page");
+  process.env.ADMIN_PASSWORD = "correct horse";
+  try {
+    assert.equal((await fetch(`${base}/admin`)).status, 401);
+    assert.equal((await fetch(`${base}/admin`, { headers: auth("wrong") })).status, 401);
+    const page = await fetch(`${base}/admin`, { headers: auth("correct horse") });
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), new RegExp(m.id));
+
+    const act = (headers: Record<string, string>) =>
+      fetch(`${base}/admin/approve/${m.id}`, { method: "POST", redirect: "manual", headers: { ...auth("correct horse"), ...headers } });
+    assert.equal((await act({ origin: "https://evil.example" })).status, 403, "cross-site POST refused");
+    assert.equal((await act({})).status, 303);
+    const row = db().prepare("SELECT approved FROM mines WHERE id = ?").get(m.id) as any;
+    assert.equal(row.approved, 1);
+  } finally {
+    delete process.env.ADMIN_PASSWORD;
+  }
 });

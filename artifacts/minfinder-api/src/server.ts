@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { isProvider, sessionUser, signIn, verifyIdToken } from "./auth.ts";
 import { bump, MINE_SELECT, nextSeq, openDb, tx, type DB } from "./db.ts";
+import { adminGate, adminPage } from "./adminPage.ts";
+import { ACTIONS, moderate, type Action } from "./moderation.ts";
 import { processPhoto } from "./photos.ts";
 import { bboxAround, distanceM, hamming, inBC, isPublic, LIMITS, tier, travelKmh, type Tier } from "./rules.ts";
 
@@ -314,6 +316,62 @@ export function createApp({ db, photoDir }: AppOptions) {
     });
   }
 
+  // Hides every mine by that mine's author from the caller, now and later. The author's id never
+  // leaves the server: the app only gets back the mine ids to hide.
+  function block(req: IncomingMessage, id: string) {
+    const uid = requireUser(req);
+    const m = getMine(db, id);
+    if (!m || m.removed) throw new HttpError(404, "not_found");
+    if (m.user_id === uid) throw new HttpError(403, "own_mine", "you can't block yourself");
+    if (m.user_id !== null) {
+      db.prepare("INSERT OR IGNORE INTO blocks (user_id, author_id, created_at) VALUES (?, ?, ?)").run(uid, m.user_id, Date.now());
+    }
+    return { status: 204, body: null };
+  }
+
+  function blocked(req: IncomingMessage) {
+    const uid = requireUser(req);
+    const authors = (db.prepare("SELECT COUNT(*) AS n FROM blocks WHERE user_id = ?").get(uid) as Row).n;
+    const ids = db
+      .prepare("SELECT m.id FROM mines m JOIN blocks b ON b.author_id = m.user_id WHERE b.user_id = ? AND m.removed = 0")
+      .all(uid) as Row[];
+    return { status: 200, body: { authors, mine_ids: ids.map((r) => r.id) } };
+  }
+
+  async function admin(req: IncomingMessage, res: ServerResponse, url: URL) {
+    const denied = adminGate(req);
+    if (denied === 401) {
+      res.writeHead(401, { "WWW-Authenticate": 'Basic realm="MinFinder moderation", charset="UTF-8"' }).end();
+      return;
+    }
+    if (denied) throw new HttpError(denied, "not_found");
+    const p = url.pathname;
+    let m: RegExpMatchArray | null;
+    if (req.method === "GET" && p === "/admin") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+      res.end(adminPage(db, url.searchParams.get("msg")));
+      return;
+    }
+    if (req.method === "GET" && (m = p.match(/^\/admin\/photos\/([\w-]{1,64}?)(_t)?\.jpg$/))) {
+      const buf = await readFile(photoPath(m[1], !!m[2])).catch(() => null);
+      if (!buf) throw new HttpError(404, "not_found");
+      res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "private, no-store" }).end(buf);
+      return;
+    }
+    if (req.method === "POST" && (m = p.match(/^\/admin\/(\w+)\/([\w-]{1,64})$/)) && (ACTIONS as readonly string[]).includes(m[1])) {
+      let msg: string;
+      try {
+        msg = moderate(db, m[1] as Action, m[2]);
+      } catch (e) {
+        msg = e instanceof Error ? e.message : String(e);
+      }
+      req.resume();
+      res.writeHead(303, { Location: `/admin?msg=${encodeURIComponent(msg)}` }).end();
+      return;
+    }
+    throw new HttpError(404, "not_found");
+  }
+
   async function deleteMe(req: IncomingMessage) {
     const uid = requireUser(req);
     const photoIds = tx(db, () => {
@@ -380,6 +438,16 @@ export function createApp({ db, photoDir }: AppOptions) {
       return { status: 200, body: { mines: rows.map(serialize) } };
     }
     if (method === "DELETE" && p === "/v1/me") return deleteMe(req);
+    if (method === "GET" && p === "/v1/me/blocks") return blocked(req);
+    if (method === "DELETE" && p === "/v1/me/blocks") {
+      db.prepare("DELETE FROM blocks WHERE user_id = ?").run(requireUser(req));
+      return { status: 204, body: null };
+    }
+    if (method === "POST" && (m = p.match(/^\/v1\/mines\/([\w-]{1,64})\/block$/))) return block(req, m[1]);
+    if (p === "/admin" || p.startsWith("/admin/")) {
+      await admin(req, res, url);
+      return null;
+    }
     if (method === "POST" && (m = p.match(/^\/v1\/mines\/([\w-]{1,64})\/vote$/))) return vote(req, m[1]);
     if (method === "POST" && (m = p.match(/^\/v1\/mines\/([\w-]{1,64})\/report$/))) return report(req, m[1]);
     if (method === "GET" && (m = p.match(/^\/v1\/photos\/([\w-]{1,64}?)(_t)?\.jpg$/))) {

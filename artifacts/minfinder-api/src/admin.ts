@@ -1,4 +1,4 @@
-// Staff moderation from the box until the admin page lands in phase 4:
+// Staff moderation from the box (the same actions as the /admin page):
 //
 //   sudo -u minfinder-api env DATA_DIR=/var/lib/minfinder-api node /srv/minfinder-api/app/src/admin.ts <command>
 //
@@ -8,62 +8,31 @@
 //   verify <id>           staff-verify (the top tier)
 //   remove <id>           take it down; devices drop it on their next sync
 //   restore <id>          undo remove, and clear its reports
-//   ban <user_id>         ban the account and remove everything it submitted
-//
-// Every write bumps the mine's seq, which is what makes the change reach devices.
+//   ban <id>              ban the author of that submission and remove everything they submitted
 import { join } from "node:path";
-import { bump, MINE_SELECT, openDb } from "./db.ts";
+import { MINE_SELECT, openDb } from "./db.ts";
+import { ACTIONS, moderate, queue, reportReasons, type Action } from "./moderation.ts";
 
 const dataDir = process.env.DATA_DIR ?? "./data";
 const db = openDb(join(dataDir, "api.db"));
 const [cmd, arg] = process.argv.slice(2);
 
-function set(sql: string, id: string) {
-  const r = db.prepare(sql).run(id);
-  if (!r.changes) throw new Error(`no mine ${id}`);
-  bump(db, id);
-  console.log(`${cmd} ${id}: done`);
-}
-
-switch (cmd) {
-  case "queue":
-    console.table(
-      db
-        .prepare(`SELECT id, user_id, type, name, approved, net, reports, datetime(created_at / 1000, 'unixepoch') AS created
-                  FROM (${MINE_SELECT}) WHERE removed = 0 AND (approved = 0 OR reports > 0 OR net <= -3) ORDER BY created_at`)
-        .all(),
-    );
-    break;
-  case "show": {
-    const m = db.prepare(`${MINE_SELECT} WHERE m.id = ?`).get(arg);
-    if (!m) throw new Error(`no mine ${arg}`);
-    console.log(m);
-    console.log(db.prepare("SELECT reason, COUNT(*) AS n FROM reports WHERE mine_id = ? GROUP BY reason").all(arg));
-    for (const p of JSON.parse(String(m.photo_ids))) console.log(join(dataDir, "photos", `${p}.jpg`));
-    break;
-  }
-  case "approve":
-    set("UPDATE mines SET approved = 1 WHERE id = ?", arg);
-    break;
-  case "verify":
-    set("UPDATE mines SET approved = 1, staff_verified = 1 WHERE id = ?", arg);
-    break;
-  case "remove":
-    set("UPDATE mines SET removed = 1 WHERE id = ?", arg);
-    break;
-  case "restore":
-    db.prepare("DELETE FROM reports WHERE mine_id = ?").run(arg);
-    set("UPDATE mines SET removed = 0 WHERE id = ?", arg);
-    break;
-  case "ban": {
-    db.prepare("UPDATE users SET banned = 1 WHERE id = ?").run(Number(arg));
-    db.prepare("DELETE FROM sessions WHERE user_id = ?").run(Number(arg));
-    const ids = db.prepare("SELECT id FROM mines WHERE user_id = ? AND removed = 0").all(Number(arg)) as { id: string }[];
-    for (const { id } of ids) set("UPDATE mines SET removed = 1 WHERE id = ?", id);
-    console.log(`banned user ${arg}, removed ${ids.length} submissions`);
-    break;
-  }
-  default:
-    console.log("usage: admin.ts queue | show <id> | approve <id> | verify <id> | remove <id> | restore <id> | ban <user_id>");
-    process.exitCode = 1;
+if (cmd === "queue") {
+  console.table(
+    queue(db).map((m) => ({
+      id: m.id, user_id: m.user_id, type: m.type, name: m.name, approved: m.approved, net: m.net, reports: m.reports,
+      created: new Date(m.created_at).toISOString(),
+    })),
+  );
+} else if (cmd === "show" && arg) {
+  const m = db.prepare(`${MINE_SELECT} WHERE m.id = ?`).get(arg);
+  if (!m) throw new Error(`no mine ${arg}`);
+  console.log(m);
+  console.log(reportReasons(db, arg));
+  for (const p of JSON.parse(String(m.photo_ids))) console.log(join(dataDir, "photos", `${p}.jpg`));
+} else if ((ACTIONS as readonly string[]).includes(cmd) && arg) {
+  console.log(moderate(db, cmd as Action, arg));
+} else {
+  console.log(`usage: admin.ts queue | show <id> | ${ACTIONS.map((a) => `${a} <id>`).join(" | ")}`);
+  process.exitCode = 1;
 }

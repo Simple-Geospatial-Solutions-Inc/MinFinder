@@ -11,9 +11,10 @@ pnpm --filter @workspace/minfinder-api test    # node --test
 ```
 
 Deployment uses systemd behind Caddy on the VPS. The one-time setup is in the header of
-`deploy/minfinder-api.service`. After that, ship updates with `deploy/deploy.sh`. Until the
-phase 4 admin page exists, staff moderate with `src/admin.ts`; its commands are listed at the
-top of that file.
+`deploy/minfinder-api.service`. After that, ship updates with `deploy/deploy.sh`. Staff
+moderate at `https://api.sgss.ca/admin` (HTTP Basic, any username, the password is
+`ADMIN_PASSWORD` in the service's env file; the page 404s while that's unset) or from the box
+with `src/admin.ts`, whose commands are listed at the top of that file.
 
 ## API (`/v1`)
 
@@ -31,6 +32,9 @@ branch on.
 | `POST mines/:id/vote` | ✔ | `{ value: -1 \| 0 \| 1, lat?, lon?, accuracy_m? }`. Sending a position within 150 m makes it an on-site vote. |
 | `POST mines/:id/report` | ✔ | `{ reason }`: `not_a_mine`, `wrong_location`, `photo_not_this_site`, `duplicate`, `inappropriate`, `dangerous` or `other`. |
 | `GET photos/:id.jpg`, `GET photos/:id_t.jpg` | – / ✔ | The full photo or a 480 px thumbnail. A mine that's pending or hidden only shows photos to its author. |
+| `POST mines/:id/block` | ✔ | Hides everything by that mine's author from the caller. The author is never told. |
+| `GET me/blocks` | ✔ | `{ authors, mine_ids }`: how many members the caller blocked, and the mines to hide. |
+| `DELETE me/blocks` | ✔ | Unblocks everyone. |
 | `DELETE me` | ✔ | Deletes the account. Its submissions become tombstones and its photos are deleted. |
 
 ### `POST submissions`
