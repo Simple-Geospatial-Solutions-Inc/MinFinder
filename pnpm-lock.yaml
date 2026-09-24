@@ -280,6 +280,9 @@ importers:
 
   artifacts/sgs-minfinder:
     dependencies:
+      '@expo/app-integrity':
+        specifier: ~56.0.3
+        version: 56.0.3(expo@56.0.16)(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))
       '@gorhom/bottom-sheet':
         specifier: ^5.2.14
         version: 5.2.14(@types/react@19.2.14)(react-native-gesture-handler@2.31.2(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native-reanimated@4.3.1(react-native-worklets@0.8.3(@babel/core@7.29.0)(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
@@ -1020,6 +1023,12 @@ packages:
 
   '@expo-google-fonts/material-symbols@0.4.41':
     resolution: {integrity: sha512-BKNSJ6oFGWi+aXu6PF+1EdI43J8Ag+Sm7Ste1SXYmC2eYOJasyjXHkKjgkIieBB1eDZQJSPWuPv421Vg6N5tCQ==}
+
+  '@expo/app-integrity@56.0.3':
+    resolution: {integrity: sha512-GwiKp93dmGR/bs6ONfJKap1swkWz04yd3us7UdNQV5za76OLDrAAjh5bo+qSprbQV5p94Gwv2cNWEPpEc/zjDQ==}
+    peerDependencies:
+      expo: 56.0.16
+      react-native: 0.85.3
 
   '@expo/cli@56.1.20':
     resolution: {integrity: sha512-xWkKvOBkOE3G/PpU29fjmAjKpCIqTIVSxG8oA+E6pYUElcPZ9gRofAdTE321lUoJVHwEjKmpn93EHqsajItDTQ==}
@@ -5663,6 +5672,11 @@ snapshots:
   '@expo-google-fonts/inter@0.4.2': {}
 
   '@expo-google-fonts/material-symbols@0.4.41': {}
+
+  '@expo/app-integrity@56.0.3(expo@56.0.16)(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))':
+    dependencies:
+      expo: 56.0.16(@babel/core@7.29.0)(@expo/metro-runtime@56.0.17)(expo-router@56.2.15)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-worklets@0.8.3(@babel/core@7.29.0)(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
+      react-native: 0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3)
 
   '@expo/cli@56.1.20(@expo/metro-runtime@56.0.17)(expo-constants@56.0.21)(expo-font@56.0.7)(expo-router@56.2.15)(expo@56.0.16)(react-dom@19.2.3(react@19.2.3))(react-native@0.85.3(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)(typescript@5.9.3)':
     dependencies:

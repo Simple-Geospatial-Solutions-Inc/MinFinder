@@ -5,6 +5,7 @@ import * as Location from "expo-location";
 import * as Network from "expo-network";
 import { AppState } from "react-native";
 
+import { attestHeaders, forgetAttestKey } from "@/lib/attest";
 import { api, ApiError, isSignedIn, signOut } from "@/lib/auth";
 import { distanceMeters } from "@/lib/geo";
 import { getUserDb, kvGet, kvSet } from "@/lib/userDb";
@@ -292,11 +293,13 @@ async function pushVotes(): Promise<void> {
   for (const [id, vote] of Object.entries(queued)) {
     let drop = false;
     try {
-      const { mine } = await api<{ mine: Mine }>(`/mines/${id}/vote`, {
+      const body = JSON.stringify(vote);
+      const { mine, attest } = await api<{ mine: Mine; attest?: string }>(`/mines/${id}/vote`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(vote),
+        headers: { "Content-Type": "application/json", ...(await attestHeaders(body)) },
+        body,
       });
+      if (attest === "fail: unknown key") await forgetAttestKey();
       await db.runAsync("UPDATE community_mines SET json = ? WHERE id = ?", [JSON.stringify(mine), id]);
       // The cached counts now include this vote.
       const counted = (await kvGet<Record<string, VoteValue>>("server_votes")) ?? {};
@@ -305,6 +308,7 @@ async function pushVotes(): Promise<void> {
       await kvSet("server_votes", counted);
       drop = true;
     } catch (e) {
+      if (e instanceof ApiError && e.code === "attest_key_unknown") return void (await forgetAttestKey());
       if (!(e instanceof ApiError) || e.status >= 500 || RETRYABLE.has(e.status)) return; // try again next pass
       drop = true; // gone, hidden, or the user's own: the server won't take it
       const votes = (await kvGet<Record<string, VoteValue>>("my_votes")) ?? {};
@@ -387,17 +391,24 @@ async function pushOutbox(): Promise<void> {
     // Rounded here too for captures queued before gps.ts rounded the fix time.
     const data = JSON.parse(row.data);
     data.captured_at = Math.round(data.captured_at);
-    form.append("data", JSON.stringify(data));
+    const dataPart = JSON.stringify(data);
+    form.append("data", dataPart);
     for (const uri of JSON.parse(row.photos) as string[]) {
       // Expo's fetch (the global one) takes a File, not React Native's
       // { uri, name, type } parts: it reads the bytes and sends name and type.
       form.append("photo", new File(uri) as unknown as Blob);
     }
     try {
-      await api("/submissions", { method: "POST", body: form });
+      // Attested over the data part, the exact string the server hashes.
+      const r = await api<{ attest?: string }>("/submissions", { method: "POST", body: form, headers: await attestHeaders(dataPart) });
+      if (r?.attest === "fail: unknown key") await forgetAttestKey();
       // Only now, with the server's ack in hand, is it safe to let go of it.
       await discardOutboxItem(row.id);
     } catch (e) {
+      if (e instanceof ApiError && e.code === "attest_key_unknown") {
+        await forgetAttestKey(); // the next pass registers a new key and retries
+        return;
+      }
       if (e instanceof ApiError && e.status < 500 && !RETRYABLE.has(e.status)) {
         await db.runAsync(
           "UPDATE outbox SET state = 'rejected', error = ?, message = ? WHERE id = ?",

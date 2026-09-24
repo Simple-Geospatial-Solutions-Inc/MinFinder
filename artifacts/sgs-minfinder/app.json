@@ -3,7 +3,7 @@
     "name": "SGS MinFinder",
     "slug": "sgs-minfinder",
     "owner": "simple-geospatial-solutions",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon-square.png",
     "scheme": "sgs-minfinder",
@@ -24,7 +24,10 @@
         "NSLocationWhenInUseUsageDescription": "SGS MinFinder uses your location to center the map, to indicate the direction and distance to selected MINFILE occurrences, and to record where a mine you add was found.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "SGS MinFinder uses your location to center the map, to indicate the direction and distance to selected MINFILE occurrences, and to record where a mine you add was found."
       },
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "entitlements": {
+        "com.apple.developer.devicecheck.appattest-environment": "production"
+      }
     },
     "android": {
       "package": "ca.sgss.minfinder",

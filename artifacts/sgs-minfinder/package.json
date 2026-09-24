@@ -54,6 +54,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@expo/app-integrity": "~56.0.3",
     "@gorhom/bottom-sheet": "^5.2.14",
     "@maplibre/maplibre-react-native": "^11.3.6",
     "@react-native-google-signin/google-signin": "^16.1.5",
