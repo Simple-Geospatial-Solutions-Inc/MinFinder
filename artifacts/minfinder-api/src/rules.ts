@@ -1,24 +1,30 @@
-// Pure rules: distances, limits and the trust tier. No I/O here, so test/api.test.ts can pin
+// Pure rules: distances, limits and a report's status. No I/O here, so test/api.test.ts can pin
 // every threshold the pitch promised without a database or a network.
 //
 // The numbers are starting guesses (see the Community Mines pitch, "Open questions"). They live
 // on the server on purpose: retuning them after the beta is a deploy, not an app release.
 
 export const LIMITS = {
-  maxAccuracyM: 30, // GPS accuracy the shutter demands; re-checked here
-  maxNudgeM: 50, // pin may sit this far from where the phone stood
-  userRadiusM: 100, // one submission per user per this radius
-  duplicateRadiusM: 30, // someone else's public mine this close = confirm it, don't duplicate
-  onSiteVoteM: 150, // a vote cast this close counts as on-site
-  maxAgeDays: 30, // offline trips can queue captures this long
+  maxAccuracyM: 30, // GPS accuracy the app demands before it records a fix; re-checked here
+  maxNudgeM: 30, // a located working's pin may sit this far from where the phone stood
+  // A verdict on someone's point counts when the responder stood this close. Both fixes are at
+  // most maxAccuracyM out, so they can read up to 60 m apart at the same spot; 75 m is that
+  // plus a margin. Checks on not_found use the report's own search radius instead.
+  onSiteM: 75,
+  searchRadiiM: [50, 150, 300], // "I searched within ..." choices on a not_found
+  farAckM: 300, // a point further than this from the published one needs the author's say-so
+  maxFromPublishedM: 10_000, // further than this is a different mine
+  maxAgeDays: 30, // offline trips can queue captures and verdicts this long
   futureSkewMs: 5 * 60_000,
   maxTravelKmh: 150, // faster than this between one user's captures is not walking
   submissionsPerDay: 10,
-  votesPerDay: 60,
-  probationCount: 3, // an account's first N submissions wait for staff
+  responsesPerDay: 60,
+  probationCount: 3, // an account's first N contributions wait for staff
   photoDupMaxBits: 4, // dHash Hamming distance at or below this = same photo
   maxPhotos: 3,
   maxPhotoBytes: 12 * 1024 * 1024,
+  maxTextChars: 1000,
+  halfLifeDays: 730, // a verdict loses half its weight every two years
 } as const;
 
 // ponytail: BC's bounding box, not its outline — it admits slivers of AK, WA, ID, MT and AB.
@@ -37,40 +43,53 @@ export function distanceM(lat1: number, lon1: number, lat2: number, lon2: number
   return 2 * 6_371_000 * Math.asin(Math.sqrt(a));
 }
 
-// A lat/lon box that contains every point within `m` metres, so SQL can prefilter with an index
-// before distanceM() makes the exact call.
-export function bboxAround(lat: number, lon: number, m: number) {
-  const dLat = m / 111_320;
-  const dLon = m / (111_320 * Math.cos((lat * Math.PI) / 180));
-  return { minLat: lat - dLat, maxLat: lat + dLat, minLon: lon - dLon, maxLon: lon + dLon };
-}
-
 // Speed implied by two captures. The time floor stops two photos taken a second apart, a few
 // metres apart, from reading as supersonic.
 export function travelKmh(distM: number, dtMs: number): number {
   return distM / 1000 / (Math.max(Math.abs(dtMs), 60_000) / 3_600_000);
 }
 
-export type Tier = "pending" | "unverified" | "confirmed" | "verified" | "hidden";
+export type Status = "pending" | "unconfirmed" | "disputed" | "collapsed" | "confirmed" | "verified" | "hidden";
 
-export interface TierInput {
-  approved: boolean; // false while the author's probation holds it for review
+export interface StatusInput {
+  approved: boolean; // false while probation or a hold keeps it for staff
   staffVerified: boolean;
-  net: number; // sum of votes, on-site ones counting double
-  onSiteUp: number; // on-site upvotes from accounts other than the author
-  reports: number;
+  reports: number; // abuse flags, separate from accuracy verdicts
+  kind: "location" | "not_found" | "note";
+  capturedAt: number; // the author's fix: their capture is the first on-site confirm
+  verdicts: [value: number, capturedAt: number][]; // other visitors' on-site +1 / -1
 }
 
-export function tier(m: TierInput): Tier {
-  if (!m.approved) return "pending";
-  if (m.net <= -3 || m.reports >= 2) return "hidden";
-  if (m.staffVerified) return "verified";
-  if (m.net >= 3 && m.onSiteUp >= 1) return "confirmed";
-  return "unverified";
+/** How much a visit made at `at` still counts at `now`: 1 today, 0.5 after one half-life. */
+export function weight(at: number, now: number): number {
+  return 0.5 ** (Math.max(0, now - at) / (LIMITS.halfLifeDays * 86_400_000));
 }
 
-export function isPublic(t: Tier): boolean {
-  return t !== "pending" && t !== "hidden";
+// Agreement, not a score (iNaturalist's Research Grade): the share of weighted on-site visits that
+// agree with the report. Notes have no visits, so they stay unconfirmed and sort by "Helpful".
+export function status(c: StatusInput, now = Date.now()): Status {
+  if (!c.approved) return "pending";
+  if (c.reports >= 2) return "hidden";
+  if (c.staffVerified) return "verified";
+  if (c.kind === "note") return "unconfirmed";
+  const visits: [number, number][] = [[1, c.capturedAt], ...c.verdicts];
+  let agree = 0;
+  let total = 0;
+  for (const [v, at] of visits) {
+    const w = weight(at, now);
+    total += w;
+    if (v > 0) agree += w;
+  }
+  const share = agree / total;
+  const confirms = visits.filter(([v]) => v > 0).length;
+  if (visits.length >= 2 && share < 1 / 3) return "collapsed";
+  if (confirms >= 2 && share > 2 / 3) return "confirmed";
+  if (visits.length >= 2 && share <= 2 / 3) return "disputed";
+  return "unconfirmed";
+}
+
+export function isPublic(s: Status): boolean {
+  return s !== "pending" && s !== "hidden";
 }
 
 export function hamming(a: bigint, b: bigint): number {

@@ -6,41 +6,56 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { isProvider, sessionUser, signIn, verifyIdToken } from "./auth.ts";
-import { bump, MINE_SELECT, nextSeq, openDb, tx, type DB } from "./db.ts";
+import { bump, CONTRIBUTION_SELECT, nextSeq, openDb, tx, type DB } from "./db.ts";
 import { adminGate, adminPage } from "./adminPage.ts";
 import { AttestError, bodyHash, decodePlayToken, newChallenge, playVerdict, verifyAssertion, verifyAttestation } from "./attest.ts";
 import { ACTIONS, moderate, type Action } from "./moderation.ts";
 import { processPhoto } from "./photos.ts";
+import { publishedPoint } from "./minfile.ts";
 import { sensitiveAreaAt } from "./sensitive.ts";
-import { bboxAround, distanceM, hamming, inBC, isPublic, LIMITS, tier, travelKmh, type Tier } from "./rules.ts";
+import { distanceM, hamming, inBC, isPublic, LIMITS, status, travelKmh, type Status } from "./rules.ts";
 
-const MINE_TYPES = ["adit", "shaft", "open_pit", "trench", "prospect_pit", "tailings", "structure", "other"] as const;
-const HAZARDS = ["open_shaft", "unstable_portal", "flooded", "bad_air", "other"] as const;
-const REPORT_REASONS = ["not_a_mine", "wrong_location", "photo_not_this_site", "duplicate", "inappropriate", "dangerous", "other"] as const;
+const LABELS = ["adit", "shaft", "portal", "trench", "dump", "headframe", "ruins", "other"] as const;
+const REPORT_REASONS = ["spam", "inappropriate", "photo_not_this_site", "dangerous", "other"] as const;
 
-const Submission = z.object({
+const Base = {
   id: z.string().uuid(),
-  lat: z.number().finite(),
-  lon: z.number().finite(),
+  minfilno: z.string().trim().min(1).max(16),
+  visit_id: z.string().uuid().optional(),
+  text: z.string().trim().max(LIMITS.maxTextChars).optional(),
+};
+// Recorded at the mine, maybe uploaded days later from signal.
+const OnSite = {
   user_lat: z.number().finite(),
   user_lon: z.number().finite(),
   accuracy_m: z.number().positive(),
   mocked: z.literal(false), // Android's mock-location flag; the app refuses to capture when true
   captured_at: z.number().int(), // epoch ms, taken from the GPS fix rather than the phone clock
-  type: z.enum(MINE_TYPES),
-  name: z.string().trim().max(80).optional(),
-  commodity: z.string().trim().max(40).optional(),
-  hazards: z.array(z.enum(HAZARDS)).max(HAZARDS.length).default([]),
-  notes: z.string().trim().max(500).optional(),
   safety_ack: z.literal(true),
-});
+};
+const Submission = z.discriminatedUnion("kind", [
+  z.object({
+    ...Base, ...OnSite, kind: z.literal("location"),
+    lat: z.number().finite(), lon: z.number().finite(), label: z.enum(LABELS), far_ack: z.boolean().default(false),
+  }),
+  z.object({
+    ...Base, ...OnSite, kind: z.literal("not_found"),
+    search_radius_m: z.number().refine((r) => (LIMITS.searchRadiiM as readonly number[]).includes(r), "not an offered radius"),
+  }),
+  z.object({ ...Base, kind: z.literal("note"), text: z.string().trim().min(1).max(LIMITS.maxTextChars) }),
+]);
 
-const Vote = z.object({
-  value: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
-  lat: z.number().finite().optional(),
-  lon: z.number().finite().optional(),
-  accuracy_m: z.number().positive().optional(),
-});
+// A visitor's verdict (value plus the fix it was given at), or a "Helpful" on a note.
+const Response = z.union([
+  z.object({ helpful: z.boolean() }).strict(),
+  z.object({
+    value: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
+    lat: z.number().finite().optional(),
+    lon: z.number().finite().optional(),
+    accuracy_m: z.number().positive().optional(),
+    captured_at: z.number().int().optional(),
+  }),
+]);
 
 const Report = z.object({ reason: z.enum(REPORT_REASONS) });
 
@@ -58,52 +73,51 @@ class HttpError extends Error {
 
 type Row = Record<string, any>;
 
-function tierOf(m: Row): Tier {
-  return tier({
-    approved: !!m.approved,
-    staffVerified: !!m.staff_verified,
-    net: m.net,
-    onSiteUp: m.on_site_up,
-    reports: m.reports,
+function statusOf(c: Row): Status {
+  return status({
+    approved: !!c.approved,
+    staffVerified: !!c.staff_verified,
+    reports: c.reports,
+    kind: c.kind,
+    capturedAt: c.captured_at,
+    verdicts: JSON.parse(c.verdicts),
   });
 }
 
-// The public face of a mine. No user id: voters see "a community member", never who.
-function serialize(m: Row) {
+// The public face of a report. No user id: readers see "a visitor", never who.
+function serialize(c: Row) {
+  const verdicts = JSON.parse(c.verdicts) as [number, number][];
+  const s = statusOf(c);
+  const visits = c.kind === "note" ? [] : [c.captured_at, ...verdicts.map((v) => v[1])];
   return {
-    id: m.id,
-    lat: m.lat,
-    lon: m.lon,
-    type: m.type,
-    name: m.name,
-    commodity: m.commodity,
-    hazards: JSON.parse(m.hazards),
-    notes: m.notes,
-    captured_at: m.captured_at,
-    nudge_m: Math.round(distanceM(m.lat, m.lon, m.user_lat, m.user_lon)),
-    tier: tierOf(m),
-    net: m.net,
-    ups: m.ups,
-    downs: m.downs,
-    on_site_up: m.on_site_up,
-    photos: JSON.parse(m.photo_ids),
-    seq: m.seq,
-    // Why it's waiting, for its author. Pending mines are only ever sent to their author.
-    held_for: tierOf(m) === "pending" ? (m.hold ?? null) : null,
+    id: c.id,
+    minfilno: c.minfilno,
+    kind: c.kind,
+    label: c.label,
+    // A search's position is where the searcher stood, which never leaves the server.
+    lat: c.kind === "location" ? c.lat : null,
+    lon: c.kind === "location" ? c.lon : null,
+    accuracy_m: c.accuracy_m,
+    captured_at: c.captured_at,
+    search_radius_m: c.search_radius_m,
+    distance_m: c.distance_m === null ? null : Math.round(c.distance_m),
+    visit_id: c.visit_id,
+    text: c.text,
+    status: s,
+    // The author's own capture is the first confirm.
+    confirms: c.kind === "note" ? 0 : 1 + verdicts.filter((v) => v[0] > 0).length,
+    disputes: verdicts.filter((v) => v[0] < 0).length,
+    last_visit_at: visits.length ? Math.max(...visits) : null,
+    helpful: c.helpful,
+    photos: JSON.parse(c.photo_ids),
+    seq: c.seq,
+    // Why it's waiting, for its author. Pending reports are only ever sent to their author.
+    held_for: s === "pending" ? (c.hold ?? null) : null,
   };
 }
 
-function getMine(db: DB, id: string): Row | undefined {
-  return db.prepare(`${MINE_SELECT} WHERE m.id = ?`).get(id) as Row | undefined;
-}
-
-function nearby(db: DB, lat: number, lon: number, m: number, where: string, ...args: unknown[]): Row[] {
-  const b = bboxAround(lat, lon, m);
-  return (
-    db
-      .prepare(`${MINE_SELECT} WHERE m.lat BETWEEN ? AND ? AND m.lon BETWEEN ? AND ? AND m.removed = 0 AND ${where}`)
-      .all(b.minLat, b.maxLat, b.minLon, b.maxLon, ...(args as any[])) as Row[]
-  ).filter((r) => distanceM(lat, lon, r.lat, r.lon) <= m);
+function getContribution(db: DB, id: string): Row | undefined {
+  return db.prepare(`${CONTRIBUTION_SELECT} WHERE c.id = ?`).get(id) as Row | undefined;
 }
 
 async function readBody(req: IncomingMessage, max = 16_384): Promise<string> {
@@ -263,20 +277,45 @@ export function createApp({ db, photoDir }: AppOptions) {
 
     // A retry of an upload that already landed: answer with what we stored, before spending
     // any CPU on photos.
-    const existing = db.prepare("SELECT user_id FROM mines WHERE id = ?").get(s.id) as Row | undefined;
+    const existing = db.prepare("SELECT user_id FROM contributions WHERE id = ?").get(s.id) as Row | undefined;
     if (existing) {
       if (existing.user_id !== uid) throw new HttpError(409, "id_taken");
-      return { status: 200, body: { mine: serialize(getMine(db, s.id)!) } };
+      return { status: 200, body: { contribution: serialize(getContribution(db, s.id)!) } };
     }
 
-    if (files.length < 1 || files.length > LIMITS.maxPhotos) throw new HttpError(400, "photos", `send 1 to ${LIMITS.maxPhotos} photos`);
-    if (files.some((f) => f.size > LIMITS.maxPhotoBytes)) throw new HttpError(413, "photo_too_large");
-    if (s.accuracy_m > LIMITS.maxAccuracyM) throw new HttpError(422, "gps_inaccurate", `GPS accuracy must be ${LIMITS.maxAccuracyM} m or better`);
-    if (!inBC(s.lat, s.lon) || !inBC(s.user_lat, s.user_lon)) throw new HttpError(422, "outside_bc");
-    if (distanceM(s.lat, s.lon, s.user_lat, s.user_lon) > LIMITS.maxNudgeM) throw new HttpError(422, "pin_too_far", `the pin must be within ${LIMITS.maxNudgeM} m of where you stood`);
+    const published = publishedPoint(s.minfilno);
+    if (!published) throw new HttpError(422, "unknown_mine", "no MINFILE occurrence with coordinates has that number");
     const now = Date.now();
-    if (s.captured_at > now + LIMITS.futureSkewMs) throw new HttpError(422, "captured_in_future");
-    if (s.captured_at < now - LIMITS.maxAgeDays * 86_400_000) throw new HttpError(422, "capture_too_old", `captures older than ${LIMITS.maxAgeDays} days can't be uploaded`);
+    type Place = { lat: number | null; lon: number | null; user_lat: number | null; user_lon: number | null; accuracy_m: number | null; captured_at: number; distance_m: number | null };
+    let at: Place;
+
+    if (s.kind === "note") {
+      if (files.length) throw new HttpError(400, "photos", "photos are taken on site, with a location or a search");
+      at = { lat: null, lon: null, user_lat: null, user_lon: null, accuracy_m: null, captured_at: now, distance_m: null };
+    } else {
+      if (files.length > LIMITS.maxPhotos) throw new HttpError(400, "photos", `send up to ${LIMITS.maxPhotos} photos`);
+      if (files.some((f) => f.size > LIMITS.maxPhotoBytes)) throw new HttpError(413, "photo_too_large");
+      if (s.accuracy_m > LIMITS.maxAccuracyM) throw new HttpError(422, "gps_inaccurate", `GPS accuracy must be ${LIMITS.maxAccuracyM} m or better`);
+      if (!inBC(s.user_lat, s.user_lon)) throw new HttpError(422, "outside_bc");
+      if (s.captured_at > now + LIMITS.futureSkewMs) throw new HttpError(422, "captured_in_future");
+      if (s.captured_at < now - LIMITS.maxAgeDays * 86_400_000) throw new HttpError(422, "capture_too_old", `captures older than ${LIMITS.maxAgeDays} days can't be uploaded`);
+      // A located working is its pin; a search is where the searcher stood.
+      const [lat, lon] = s.kind === "location" ? [s.lat, s.lon] : [s.user_lat, s.user_lon];
+      const d = distanceM(lat, lon, published.lat, published.lon);
+      if (s.kind === "location") {
+        if (!inBC(lat, lon)) throw new HttpError(422, "outside_bc");
+        if (distanceM(lat, lon, s.user_lat, s.user_lon) > LIMITS.maxNudgeM) throw new HttpError(422, "pin_too_far", `the pin must be within ${LIMITS.maxNudgeM} m of where you stood`);
+        if (d > LIMITS.maxFromPublishedM) {
+          throw new HttpError(422, "different_mine", `over ${LIMITS.maxFromPublishedM / 1000} km from the published location: probably a different mine`, { distance_m: Math.round(d) });
+        }
+        if (d > LIMITS.farAckM && !s.far_ack) {
+          throw new HttpError(422, "far_unconfirmed", `over ${LIMITS.farAckM} m from the published location; confirm it's the same mine`, { distance_m: Math.round(d) });
+        }
+      } else if (d > s.search_radius_m) {
+        throw new HttpError(422, "not_at_published", `you must be inside your ${s.search_radius_m} m search radius of the published location`, { distance_m: Math.round(d) });
+      }
+      at = { lat, lon, user_lat: s.user_lat, user_lon: s.user_lon, accuracy_m: s.accuracy_m, captured_at: s.captured_at, distance_m: d };
+    }
 
     let processed;
     try {
@@ -293,103 +332,125 @@ export function createApp({ db, photoDir }: AppOptions) {
       // Everything from here is synchronous, so the checks and the insert are atomic against
       // any other request in this process.
       return tx(db, () => {
-        const again = db.prepare("SELECT user_id FROM mines WHERE id = ?").get(s.id) as Row | undefined;
+        const again = db.prepare("SELECT user_id FROM contributions WHERE id = ?").get(s.id) as Row | undefined;
         if (again) {
           if (again.user_id !== uid) throw new HttpError(409, "id_taken");
           throw new HttpError(200, "already_stored"); // raced with its own retry; photos cleaned below
         }
 
-        const today = db.prepare("SELECT COUNT(*) AS n FROM mines WHERE user_id = ? AND created_at > ?").get(uid, now - 86_400_000) as Row;
-        if (today.n >= LIMITS.submissionsPerDay) throw new HttpError(429, "daily_limit", `${LIMITS.submissionsPerDay} submissions a day`);
+        const today = db.prepare("SELECT COUNT(*) AS n FROM contributions WHERE user_id = ? AND created_at > ?").get(uid, now - 86_400_000) as Row;
+        if (today.n >= LIMITS.submissionsPerDay) throw new HttpError(429, "daily_limit", `${LIMITS.submissionsPerDay} reports a day`);
 
-        if (nearby(db, s.lat, s.lon, LIMITS.userRadiusM, "m.user_id = ?", uid).length) {
-          throw new HttpError(409, "too_close_to_yours", `you already submitted a mine within ${LIMITS.userRadiusM} m`);
-        }
-        const dup = nearby(db, s.lat, s.lon, LIMITS.duplicateRadiusM, "m.user_id IS NOT ?", uid).find((r) => isPublic(tierOf(r)));
-        if (dup) throw new HttpError(409, "duplicate", "a community mine is already here; confirm it instead", { mine_id: dup.id });
-
-        // Impossible travel: compare against this user's captures either side in time.
-        const neighbours = db
-          .prepare(
-            `SELECT * FROM (SELECT user_lat, user_lon, captured_at FROM mines WHERE user_id = ? AND captured_at <= ? ORDER BY captured_at DESC LIMIT 1)
-             UNION ALL SELECT * FROM (SELECT user_lat, user_lon, captured_at FROM mines WHERE user_id = ? AND captured_at > ? ORDER BY captured_at ASC LIMIT 1)`,
-          )
-          .all(uid, s.captured_at, uid, s.captured_at) as Row[];
-        for (const n of neighbours) {
-          if (travelKmh(distanceM(n.user_lat, n.user_lon, s.user_lat, s.user_lon), n.captured_at - s.captured_at) > LIMITS.maxTravelKmh) {
-            throw new HttpError(422, "impossible_travel", "this capture is too far from your previous one for the time between them");
+        // Impossible travel: compare against this user's on-site captures either side in time.
+        if (at.user_lat !== null && at.user_lon !== null) {
+          const neighbours = db
+            .prepare(
+              `SELECT * FROM (SELECT user_lat, user_lon, captured_at FROM contributions WHERE user_id = ? AND user_lat IS NOT NULL AND captured_at <= ? ORDER BY captured_at DESC LIMIT 1)
+               UNION ALL SELECT * FROM (SELECT user_lat, user_lon, captured_at FROM contributions WHERE user_id = ? AND user_lat IS NOT NULL AND captured_at > ? ORDER BY captured_at ASC LIMIT 1)`,
+            )
+            .all(uid, at.captured_at, uid, at.captured_at) as Row[];
+          for (const n of neighbours) {
+            if (travelKmh(distanceM(n.user_lat, n.user_lon, at.user_lat, at.user_lon), n.captured_at - at.captured_at) > LIMITS.maxTravelKmh) {
+              throw new HttpError(422, "impossible_travel", "this capture is too far from your previous one for the time between them");
+            }
           }
         }
 
         // ponytail: linear scan of every stored hash. Fine into the tens of thousands of photos;
         // a BK-tree or multi-index hashing if it ever isn't.
-        const hashes = (db.prepare("SELECT dhash FROM photos").all() as Row[]).map((r) => BigInt("0x" + r.dhash));
-        if (processed.some((p) => hashes.some((h) => hamming(h, p.dhash) <= LIMITS.photoDupMaxBits))) {
-          throw new HttpError(409, "photo_reused", "one of these photos is already on another submission");
+        if (processed.length) {
+          const hashes = (db.prepare("SELECT dhash FROM photos").all() as Row[]).map((r) => BigInt("0x" + r.dhash));
+          if (processed.some((p) => hashes.some((h) => hamming(h, p.dhash) <= LIMITS.photoDupMaxBits))) {
+            throw new HttpError(409, "photo_reused", "one of these photos is already on another report");
+          }
         }
 
-        const approvedBefore = db.prepare("SELECT COUNT(*) AS n FROM mines WHERE user_id = ? AND approved = 1 AND removed = 0").get(uid) as Row;
-        // Inside a park, protected area or reserve, staff look first, whoever it's from.
-        const hold = sensitiveAreaAt(s.lat, s.lon);
+        const approvedBefore = db.prepare("SELECT COUNT(*) AS n FROM contributions WHERE user_id = ? AND approved = 1 AND removed = 0").get(uid) as Row;
+        // A located working inside a park, protected area or reserve is more precise than
+        // MINFILE, so staff look first, whoever it's from.
+        const hold = s.kind === "location" ? sensitiveAreaAt(s.lat, s.lon) : null;
         db.prepare(
-          `INSERT INTO mines (id, user_id, lat, lon, user_lat, user_lon, accuracy_m, captured_at, type, name, commodity, notes, hazards, approved, created_at, seq, attest, hold)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO contributions (id, user_id, minfilno, kind, label, lat, lon, user_lat, user_lon, accuracy_m, captured_at,
+             search_radius_m, distance_m, far_ack, visit_id, text, approved, created_at, seq, attest, hold)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
-          s.id, uid, s.lat, s.lon, s.user_lat, s.user_lon, s.accuracy_m, s.captured_at, s.type,
-          s.name || null, s.commodity || null, s.notes || null, JSON.stringify(s.hazards),
+          s.id, uid, s.minfilno, s.kind, s.kind === "location" ? s.label : null, at.lat, at.lon, at.user_lat, at.user_lon,
+          at.accuracy_m, at.captured_at, s.kind === "not_found" ? s.search_radius_m : null, at.distance_m,
+          s.kind === "location" && s.far_ack ? 1 : 0, s.visit_id ?? null, s.text || null,
           !hold && approvedBefore.n >= LIMITS.probationCount ? 1 : 0, now, nextSeq(db), verdict, hold,
         );
-        const addPhoto = db.prepare("INSERT INTO photos (id, mine_id, idx, dhash) VALUES (?, ?, ?, ?)");
+        const addPhoto = db.prepare("INSERT INTO photos (id, contribution_id, idx, dhash) VALUES (?, ?, ?, ?)");
         processed.forEach((p, i) => addPhoto.run(photoIds[i], s.id, i, p.dhash.toString(16)));
-        return { status: 201, body: { mine: serialize(getMine(db, s.id)!), attest: verdict } };
+        return { status: 201, body: { contribution: serialize(getContribution(db, s.id)!), attest: verdict } };
       });
     } catch (e) {
       await Promise.all(photoIds.flatMap((id) => [unlink(photoPath(id, false)), unlink(photoPath(id, true))]).map((p) => p.catch(() => {})));
-      if (e instanceof HttpError && e.code === "already_stored") return { status: 200, body: { mine: serialize(getMine(db, s.id)!) } };
+      if (e instanceof HttpError && e.code === "already_stored") return { status: 200, body: { contribution: serialize(getContribution(db, s.id)!) } };
       throw e;
     }
   }
 
   function pull(url: URL) {
     const since = Math.max(0, Number(url.searchParams.get("since")) || 0);
-    const rows = db.prepare(`${MINE_SELECT} WHERE m.seq > ? ORDER BY m.seq LIMIT 1000`).all(since) as Row[];
-    const mines = [];
+    const rows = db.prepare(`${CONTRIBUTION_SELECT} WHERE c.seq > ? ORDER BY c.seq LIMIT 1000`).all(since) as Row[];
+    const contributions = [];
     const deleted = [];
     for (const r of rows) {
-      if (!r.removed && isPublic(tierOf(r))) mines.push(serialize(r));
+      if (!r.removed && isPublic(statusOf(r))) contributions.push(serialize(r));
       else if (since > 0) deleted.push(r.id); // a first sync has nothing to delete
     }
-    return { cursor: rows.length ? rows[rows.length - 1].seq : since, more: rows.length === 1000, mines, deleted };
+    return { cursor: rows.length ? rows[rows.length - 1].seq : since, more: rows.length === 1000, contributions, deleted };
   }
 
-  function votable(uid: number, id: string): Row {
-    const m = getMine(db, id);
-    if (!m || m.removed || !isPublic(tierOf(m))) throw new HttpError(404, "not_found");
-    if (m.user_id === uid) throw new HttpError(403, "own_mine", "you can't vote on or report your own submission");
-    return m;
+  function respondable(uid: number, id: string): Row {
+    const c = getContribution(db, id);
+    if (!c || c.removed || !isPublic(statusOf(c))) throw new HttpError(404, "not_found");
+    if (c.user_id === uid) throw new HttpError(403, "own_report", "you can't respond to or report your own report");
+    return c;
   }
 
-  async function vote(req: IncomingMessage, id: string) {
+  // A verdict only counts from someone who was there: the fix it came with must put them within
+  // 75 m of a located working, or inside a not_found's search radius of the published spot.
+  // Anyone, anywhere, can mark a note Helpful.
+  async function respond(req: IncomingMessage, id: string) {
     const uid = requireUser(req);
     const raw = await readBody(req);
-    const v = parse(Vote, jsonOf(raw));
+    const r = parse(Response, jsonOf(raw));
     const verdict = await attest(req, raw);
+    const now = Date.now();
     return tx(db, () => {
-      const m = votable(uid, id);
-      const n = db.prepare("SELECT COUNT(*) AS n FROM votes WHERE user_id = ? AND created_at > ?").get(uid, Date.now() - 86_400_000) as Row;
-      if (n.n >= LIMITS.votesPerDay) throw new HttpError(429, "daily_limit", `${LIMITS.votesPerDay} votes a day`);
-      if (v.value === 0) {
-        db.prepare("DELETE FROM votes WHERE mine_id = ? AND user_id = ?").run(id, uid);
+      const c = respondable(uid, id);
+      const n = db.prepare("SELECT COUNT(*) AS n FROM responses WHERE user_id = ? AND created_at > ?").get(uid, now - 86_400_000) as Row;
+      if (n.n >= LIMITS.responsesPerDay) throw new HttpError(429, "daily_limit", `${LIMITS.responsesPerDay} responses a day`);
+      if ("helpful" in r) {
+        if (c.kind !== "note") throw new HttpError(400, "invalid", "only notes take Helpful; confirm or dispute on site instead");
+        db.prepare(
+          `INSERT INTO responses (contribution_id, user_id, helpful, captured_at, created_at) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT DO UPDATE SET helpful = excluded.helpful, created_at = excluded.created_at`,
+        ).run(id, uid, r.helpful ? 1 : 0, now, now);
+      } else if (c.kind === "note") {
+        throw new HttpError(400, "invalid", "a note can be marked Helpful, not confirmed");
+      } else if (r.value === 0) {
+        db.prepare("DELETE FROM responses WHERE contribution_id = ? AND user_id = ?").run(id, uid);
       } else {
-        const onSite =
-          v.lat !== undefined && v.lon !== undefined && (v.accuracy_m ?? Infinity) <= LIMITS.maxAccuracyM &&
-          distanceM(v.lat, v.lon, m.lat, m.lon) <= LIMITS.onSiteVoteM;
-        db.prepare("INSERT OR REPLACE INTO votes (mine_id, user_id, value, on_site, created_at) VALUES (?, ?, ?, ?, ?)").run(
-          id, uid, v.value, onSite ? 1 : 0, Date.now(),
-        );
+        if (r.lat === undefined || r.lon === undefined || r.captured_at === undefined) {
+          throw new HttpError(422, "not_on_site", "confirming needs your GPS fix at the site");
+        }
+        if ((r.accuracy_m ?? Infinity) > LIMITS.maxAccuracyM) throw new HttpError(422, "gps_inaccurate", `GPS accuracy must be ${LIMITS.maxAccuracyM} m or better`);
+        if (r.captured_at > now + LIMITS.futureSkewMs) throw new HttpError(422, "captured_in_future");
+        if (r.captured_at < now - LIMITS.maxAgeDays * 86_400_000) throw new HttpError(422, "capture_too_old");
+        const p = c.kind === "location" ? { lat: c.lat as number, lon: c.lon as number } : publishedPoint(c.minfilno)!;
+        const radius: number = c.kind === "location" ? LIMITS.onSiteM : c.search_radius_m;
+        if (distanceM(r.lat, r.lon, p.lat, p.lon) > radius) {
+          throw new HttpError(422, "not_on_site", `you must be within ${radius} m to confirm or dispute this`);
+        }
+        db.prepare(
+          `INSERT INTO responses (contribution_id, user_id, value, captured_at, created_at) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT DO UPDATE SET value = excluded.value, captured_at = excluded.captured_at, created_at = excluded.created_at`,
+        ).run(id, uid, r.value, r.captured_at, now);
       }
       bump(db, id);
-      return { status: 200, body: { mine: serialize(getMine(db, id)!), attest: verdict } };
+      return { status: 200, body: { contribution: serialize(getContribution(db, id)!), attest: verdict } };
     });
   }
 
@@ -397,20 +458,20 @@ export function createApp({ db, photoDir }: AppOptions) {
     const uid = requireUser(req);
     const r = parse(Report, await readJson(req));
     return tx(db, () => {
-      votable(uid, id);
-      db.prepare("INSERT OR IGNORE INTO reports (mine_id, user_id, reason, created_at) VALUES (?, ?, ?, ?)").run(id, uid, r.reason, Date.now());
+      respondable(uid, id);
+      db.prepare("INSERT OR IGNORE INTO reports (contribution_id, user_id, reason, created_at) VALUES (?, ?, ?, ?)").run(id, uid, r.reason, Date.now());
       bump(db, id);
       return { status: 204, body: null };
     });
   }
 
-  // Hides every mine by that mine's author from the caller, now and later. The author's id never
-  // leaves the server: the app only gets back the mine ids to hide.
+  // Hides every report by that report's author from the caller, now and later. The author's id
+  // never leaves the server: the app only gets back the report ids to hide.
   function block(req: IncomingMessage, id: string) {
     const uid = requireUser(req);
-    const m = getMine(db, id);
+    const m = getContribution(db, id);
     if (!m || m.removed) throw new HttpError(404, "not_found");
-    if (m.user_id === uid) throw new HttpError(403, "own_mine", "you can't block yourself");
+    if (m.user_id === uid) throw new HttpError(403, "own_report", "you can't block yourself");
     if (m.user_id !== null) {
       db.prepare("INSERT OR IGNORE INTO blocks (user_id, author_id, created_at) VALUES (?, ?, ?)").run(uid, m.user_id, Date.now());
     }
@@ -421,9 +482,9 @@ export function createApp({ db, photoDir }: AppOptions) {
     const uid = requireUser(req);
     const authors = (db.prepare("SELECT COUNT(*) AS n FROM blocks WHERE user_id = ?").get(uid) as Row).n;
     const ids = db
-      .prepare("SELECT m.id FROM mines m JOIN blocks b ON b.author_id = m.user_id WHERE b.user_id = ? AND m.removed = 0")
+      .prepare("SELECT c.id FROM contributions c JOIN blocks b ON b.author_id = c.user_id WHERE b.user_id = ? AND c.removed = 0")
       .all(uid) as Row[];
-    return { status: 200, body: { authors, mine_ids: ids.map((r) => r.id) } };
+    return { status: 200, body: { authors, ids: ids.map((r) => r.id) } };
   }
 
   async function admin(req: IncomingMessage, res: ServerResponse, url: URL) {
@@ -437,7 +498,7 @@ export function createApp({ db, photoDir }: AppOptions) {
     let m: RegExpMatchArray | null;
     if (req.method === "GET" && p === "/admin") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-      res.end(adminPage(db, url.searchParams.get("msg")));
+      res.end(adminPage(db, url.searchParams.get("msg"), url.searchParams.has("failed")));
       return;
     }
     if (req.method === "GET" && (m = p.match(/^\/admin\/photos\/([\w-]{1,64}?)(_t)?\.jpg$/))) {
@@ -448,13 +509,15 @@ export function createApp({ db, photoDir }: AppOptions) {
     }
     if (req.method === "POST" && (m = p.match(/^\/admin\/(\w+)\/([\w-]{1,64})$/)) && (ACTIONS as readonly string[]).includes(m[1])) {
       let msg: string;
+      let failed = "";
       try {
         msg = moderate(db, m[1] as Action, m[2]);
       } catch (e) {
         msg = e instanceof Error ? e.message : String(e);
+        failed = "&failed=1";
       }
       req.resume();
-      res.writeHead(303, { Location: `/admin?msg=${encodeURIComponent(msg)}` }).end();
+      res.writeHead(303, { Location: `/admin?msg=${encodeURIComponent(msg)}${failed}` }).end();
       return;
     }
     throw new HttpError(404, "not_found");
@@ -463,19 +526,27 @@ export function createApp({ db, photoDir }: AppOptions) {
   async function deleteMe(req: IncomingMessage) {
     const uid = requireUser(req);
     const photoIds = tx(db, () => {
-      const ids = (db.prepare("SELECT p.id FROM photos p JOIN mines m ON m.id = p.mine_id WHERE m.user_id = ?").all(uid) as Row[]).map((r) => r.id);
-      // Their votes and reports move other mines' scores, so those mines need a new seq too.
-      const touched = db.prepare("SELECT mine_id FROM votes WHERE user_id = ? UNION SELECT mine_id FROM reports WHERE user_id = ?").all(uid, uid) as Row[];
-      for (const m of db.prepare("SELECT id FROM mines WHERE user_id = ?").all(uid) as Row[]) {
+      const ids = (
+        db.prepare("SELECT p.id FROM photos p JOIN contributions c ON c.id = p.contribution_id WHERE c.user_id = ?").all(uid) as Row[]
+      ).map((r) => r.id);
+      // Their responses and reports move other reports' status, so those need a new seq too.
+      const touched = db
+        .prepare("SELECT contribution_id FROM responses WHERE user_id = ? UNION SELECT contribution_id FROM reports WHERE user_id = ?")
+        .all(uid, uid) as Row[];
+      for (const c of db.prepare("SELECT id FROM contributions WHERE user_id = ?").all(uid) as Row[]) {
         // Keep the id as a tombstone so devices drop it; wipe everything the user wrote.
-        // Where they stood goes too: the placeholder keeps only the pin and the kind.
+        // Where they stood goes too: the placeholder keeps only the mine, the kind and a
+        // location's pin (a search's position is where they stood, so it goes).
         db.prepare(
-          "UPDATE mines SET removed = 1, name = NULL, commodity = NULL, notes = NULL, hazards = '[]', user_lat = lat, user_lon = lon, attest = NULL, hold = NULL, seq = ? WHERE id = ?",
-        ).run(nextSeq(db), m.id);
-        db.prepare("DELETE FROM photos WHERE mine_id = ?").run(m.id);
+          `UPDATE contributions SET removed = 1, text = NULL, visit_id = NULL, attest = NULL, hold = NULL,
+             lat = CASE WHEN kind = 'location' THEN lat END, lon = CASE WHEN kind = 'location' THEN lon END,
+             user_lat = CASE WHEN kind = 'location' THEN lat END, user_lon = CASE WHEN kind = 'location' THEN lon END, seq = ?
+           WHERE id = ?`,
+        ).run(nextSeq(db), c.id);
+        db.prepare("DELETE FROM photos WHERE contribution_id = ?").run(c.id);
       }
-      db.prepare("DELETE FROM users WHERE id = ?").run(uid); // cascades sessions, votes, reports
-      for (const t of touched) bump(db, t.mine_id);
+      db.prepare("DELETE FROM users WHERE id = ?").run(uid); // cascades sessions, responses, reports
+      for (const t of touched) bump(db, t.contribution_id);
       return ids;
     });
     await Promise.all(photoIds.flatMap((id) => [unlink(photoPath(id, false)), unlink(photoPath(id, true))]).map((p) => p.catch(() => {})));
@@ -483,13 +554,14 @@ export function createApp({ db, photoDir }: AppOptions) {
   }
 
   async function photo(req: IncomingMessage, res: ServerResponse, id: string, thumb: boolean) {
-    const row = db.prepare("SELECT mine_id FROM photos WHERE id = ?").get(id) as Row | undefined;
-    const m = row && getMine(db, row.mine_id);
-    if (!m) throw new HttpError(404, "not_found");
-    // Pending and hidden mines' photos are visible to their author only.
-    if (!isPublic(tierOf(m)) && sessionUser(db, req.headers.authorization) !== m.user_id) throw new HttpError(404, "not_found");
+    const row = db.prepare("SELECT contribution_id FROM photos WHERE id = ?").get(id) as Row | undefined;
+    const c = row && getContribution(db, row.contribution_id);
+    if (!c) throw new HttpError(404, "not_found");
+    // Pending and hidden reports' photos are visible to their author only.
+    const open = isPublic(statusOf(c));
+    if (!open && sessionUser(db, req.headers.authorization) !== c.user_id) throw new HttpError(404, "not_found");
     const buf = await readFile(photoPath(id, thumb));
-    res.writeHead(200, { "Content-Type": "image/jpeg", "Content-Length": buf.length, "Cache-Control": isPublic(tierOf(m)) ? "public, max-age=86400" : "private, no-store" });
+    res.writeHead(200, { "Content-Type": "image/jpeg", "Content-Length": buf.length, "Cache-Control": open ? "public, max-age=86400" : "private, no-store" });
     res.end(buf);
   }
 
@@ -530,11 +602,11 @@ export function createApp({ db, photoDir }: AppOptions) {
     }
     if (method === "POST" && p === "/v1/attest/ios") return registerKey(req);
     if (method === "POST" && p === "/v1/submissions") return submit(req);
-    if (method === "GET" && p === "/v1/mines") return { status: 200, body: pull(url) };
+    if (method === "GET" && p === "/v1/contributions") return { status: 200, body: pull(url) };
     if (method === "GET" && p === "/v1/me/submissions") {
       const uid = requireUser(req);
-      const rows = db.prepare(`${MINE_SELECT} WHERE m.user_id = ? AND m.removed = 0 ORDER BY m.created_at DESC`).all(uid) as Row[];
-      return { status: 200, body: { mines: rows.map(serialize) } };
+      const rows = db.prepare(`${CONTRIBUTION_SELECT} WHERE c.user_id = ? AND c.removed = 0 ORDER BY c.created_at DESC`).all(uid) as Row[];
+      return { status: 200, body: { contributions: rows.map(serialize) } };
     }
     if (method === "DELETE" && p === "/v1/me") return deleteMe(req);
     if (method === "GET" && p === "/v1/me/blocks") return blocked(req);
@@ -542,13 +614,13 @@ export function createApp({ db, photoDir }: AppOptions) {
       db.prepare("DELETE FROM blocks WHERE user_id = ?").run(requireUser(req));
       return { status: 204, body: null };
     }
-    if (method === "POST" && (m = p.match(/^\/v1\/mines\/([\w-]{1,64})\/block$/))) return block(req, m[1]);
+    if (method === "POST" && (m = p.match(/^\/v1\/contributions\/([\w-]{1,64})\/block$/))) return block(req, m[1]);
     if (p === "/admin" || p.startsWith("/admin/")) {
       await admin(req, res, url);
       return null;
     }
-    if (method === "POST" && (m = p.match(/^\/v1\/mines\/([\w-]{1,64})\/vote$/))) return vote(req, m[1]);
-    if (method === "POST" && (m = p.match(/^\/v1\/mines\/([\w-]{1,64})\/report$/))) return report(req, m[1]);
+    if (method === "POST" && (m = p.match(/^\/v1\/contributions\/([\w-]{1,64})\/respond$/))) return respond(req, m[1]);
+    if (method === "POST" && (m = p.match(/^\/v1\/contributions\/([\w-]{1,64})\/report$/))) return report(req, m[1]);
     if (method === "GET" && (m = p.match(/^\/v1\/photos\/([\w-]{1,64}?)(_t)?\.jpg$/))) {
       await photo(req, res, m[1], !!m[2]);
       return null;

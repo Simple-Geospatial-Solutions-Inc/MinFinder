@@ -45,7 +45,7 @@ node --disable-warning=ExperimentalWarning --input-type=module -e '
   const n = (sql) => Object.values(db.prepare(sql).get())[0];
   const photos = db.prepare("SELECT id FROM photos").all();
   const missing = photos.filter((p) => !existsSync(join(dir, "photos", p.id + ".jpg")) || !existsSync(join(dir, "photos", p.id + "_t.jpg")));
-  console.log(`backup ${file}: integrity ${check}; ${n("SELECT COUNT(*) FROM mines WHERE removed = 0")} live mines, ` +
+  console.log(`backup ${file}: integrity ${check}; ${n("SELECT COUNT(*) FROM contributions WHERE removed = 0")} live reports, ` +
     `${n("SELECT COUNT(*) FROM users")} users, ${photos.length} photos (${missing.length} missing files)`);
   if (check !== "ok" || missing.length) process.exit(1);
 ' "$DIR"
