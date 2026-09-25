@@ -115,8 +115,7 @@ Choose "All or some functionality is restricted", then add one set of instructio
   `minfinder.review@gmail.com`), with 2-step verification off so a sign-in from Google's review
   location isn't blocked. Put its details in Play Console only, never in this repo.
 - **A comment on KELOWNA from a staff account**, approved in `/admin`. Reviewers can't mark their
-  own comment Helpful or flag it, so they need someone else's to try those. The seeded ones in the
-  app are dev-only and don't exist on the server.
+  own comment Helpful or flag it, so they need someone else's to try those.
 - **The on-site video:** a screen recording at a real mine of marking an adit (including the "more
   than 300 m away" confirmation), a "Couldn't find it" search, and confirming another member's
   point. Upload it unlisted and put the link in both notes.

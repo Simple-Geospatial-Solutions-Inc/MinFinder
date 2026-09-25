@@ -297,22 +297,19 @@ async function pushResponses(): Promise<void> {
   for (const [id, sent] of Object.entries(queued)) {
     let failure: string | null = null;
     try {
-      // DEV ONLY: the seeded KELOWNA comments aren't on the server; keep the press on the phone.
-      if (!(__DEV__ && id.startsWith("dev-"))) {
-        const body = JSON.stringify(sent);
-        const { contribution, attest } = await api<{ contribution: Contribution; attest?: string }>(`/contributions/${id}/respond`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(await attestHeaders(body)) },
-          body,
-        });
-        if (attest === "fail: unknown key") await forgetAttestKey();
-        await db.runAsync("UPDATE contributions SET json = ? WHERE id = ?", [JSON.stringify(contribution), id]);
-        // The count that just came back includes this press.
-        if ("helpful" in sent) {
-          const mine = (await kvGet<Record<string, MyResponse>>("my_responses")) ?? {};
-          mine[id] = { ...mine[id], helpfulSent: sent.helpful };
-          await kvSet("my_responses", mine);
-        }
+      const body = JSON.stringify(sent);
+      const { contribution, attest } = await api<{ contribution: Contribution; attest?: string }>(`/contributions/${id}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await attestHeaders(body)) },
+        body,
+      });
+      if (attest === "fail: unknown key") await forgetAttestKey();
+      await db.runAsync("UPDATE contributions SET json = ? WHERE id = ?", [JSON.stringify(contribution), id]);
+      // The count that just came back includes this press.
+      if ("helpful" in sent) {
+        const mine = (await kvGet<Record<string, MyResponse>>("my_responses")) ?? {};
+        mine[id] = { ...mine[id], helpfulSent: sent.helpful };
+        await kvSet("my_responses", mine);
       }
     } catch (e) {
       if (e instanceof ApiError && e.code === "attest_key_unknown") return void (await forgetAttestKey());
@@ -529,32 +526,8 @@ async function retryOffline(): Promise<void> {
   await sync();
 }
 
-// DEV ONLY, remove before release: other members' comments on KELOWNA
-// (082ENW058), written straight into this phone's cache so the Comments tab
-// can be seen with someone else's posts. Never sent to the API.
-async function seedDevComments() {
-  const day = 86_400_000;
-  const now = Date.now();
-  const notes: [string, string, number, number][] = [
-    ["Gravel access road off the highway is gated in spring. Walked in from the pullout, about 15 minutes.", "dev-kelowna-1", 12, 4],
-    ["Old workings are mostly overgrown now. Look for the cut bank on the east side of the pit.", "dev-kelowna-2", 95, 2],
-    ["Private land around the north edge, ask before crossing.", "dev-kelowna-3", 400, 0],
-  ];
-  const db = await getUserDb();
-  for (const [text, id, ago, helpful] of notes) {
-    const c: Contribution = {
-      id, minfilno: "082ENW058", kind: "note", label: null, lat: null, lon: null, accuracy_m: null,
-      captured_at: now - ago * day, search_radius_m: null, distance_m: null, visit_id: null, text,
-      status: "unconfirmed", confirms: 0, disputes: 0, last_visit_at: null, helpful, photos: [], seq: 0,
-    };
-    await db.runAsync("INSERT OR REPLACE INTO contributions (id, minfilno, json) VALUES (?, ?, ?)", [id, c.minfilno, JSON.stringify(c)]);
-  }
-  notify();
-}
-
 /** Wires the triggers. Mounted once, in app/_layout.tsx. */
 export function startSync(): () => void {
-  if (__DEV__) void seedDevComments().catch((e) => console.warn("[dev] seed comments", e));
   void retryOffline();
   const app = AppState.addEventListener("change", (s) => {
     if (s === "active") void retryOffline();
