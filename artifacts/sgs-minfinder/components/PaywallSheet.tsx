@@ -54,7 +54,7 @@ export function PaywallSheet({
   onClose,
 }: {
   visible: boolean;
-  /** Short label for the feature the user tried to use, e.g. "Navigate" or "Full details". */
+  /** What the user tried to use, as it reads after "Unlock": "navigation", "full details". */
   feature: string;
   onClose: () => void;
 }) {
@@ -102,10 +102,11 @@ export function PaywallSheet({
 
         <View style={styles.intro}>
           <Text style={[type.display, { color: colors.foreground }]} accessibilityRole="header">
-            {feature} is a Pro feature
+            Unlock {feature}
           </Text>
           <Text style={[type.meta, { color: colors.mutedForeground }]}>
-            Upgrade to MinFinder Pro to unlock navigation, full occurrence details, and more.
+            MinFinder Pro adds compass navigation to any mine, its full geology and coordinates, and the exact points
+            other visitors have marked.
           </Text>
         </View>
 
@@ -114,7 +115,7 @@ export function PaywallSheet({
         ) : packages.length === 0 ? (
           <View style={[styles.empty, { backgroundColor: colors.muted }]}>
             <Text style={[type.meta, { color: colors.foreground }]}>
-              No subscription options available right now. Please try again later.
+              Couldn't load the plans. They need a connection to the app store: try again when you have signal.
             </Text>
           </View>
         ) : (
@@ -137,7 +138,12 @@ export function PaywallSheet({
           </ListSection>
         )}
 
-        {isLoading && <ActivityIndicator color={colors.foreground} style={styles.loader} />}
+        {isLoading && (
+          <View style={styles.busy} accessibilityLiveRegion="polite">
+            <ActivityIndicator color={colors.foreground} />
+            <Text style={[type.meta, { color: colors.mutedForeground }]}>Waiting for the app store…</Text>
+          </View>
+        )}
 
         <View style={styles.links}>
           <TextButton label="Restore purchases" onPress={() => !isLoading && void handleRestore()} />
@@ -180,6 +186,8 @@ export function PaywallSheet({
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1500);
               }}
+              accessibilityRole="button"
+              accessibilityLabel="Copy App User ID"
               style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
             >
               <Text selectable style={[type.fine, { color: colors.foreground }]}>
@@ -201,6 +209,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   badge: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   intro: { gap: 6 },
+  busy: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 },
   loader: { paddingVertical: 8 },
   empty: { borderRadius: radius.md, padding: 16 },
   price: { fontVariant: ["tabular-nums"] },

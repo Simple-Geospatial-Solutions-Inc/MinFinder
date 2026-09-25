@@ -6,7 +6,7 @@ import {
 import * as SecureStore from "expo-secure-store";
 import { useSyncExternalStore } from "react";
 
-/** The Community Mines API (artifacts/minfinder-api). Override per EAS profile. */
+/** The field-reports API (artifacts/minfinder-api). Override per EAS profile. */
 export const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.sgss.ca";
 
 // OAuth client ids are public by design; the server checks each id token's `aud`

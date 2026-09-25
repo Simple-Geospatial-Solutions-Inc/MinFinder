@@ -16,11 +16,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { MineGlyph } from "@/components/capture/MineGlyph";
-import { outboxStatus, StatusChip, TIER_STATUS, type Status } from "@/components/capture/StatusChip";
+import { outboxStatus, reportStatus, StatusChip, type Status } from "@/components/capture/StatusChip";
 import { EmptyState, GUTTER, ListRow, ListSection, PillButton, radius, TextButton, type } from "@/components/ui";
 import { Feather } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
 import { signIn, useSignedIn, type Provider } from "@/lib/auth";
+import { getNamesByMinfilno } from "@/lib/db";
 import { formatShortDate } from "@/lib/format";
 import {
   deleteAccount,
@@ -28,28 +29,34 @@ import {
   getBlocks,
   getMySubmissions,
   getOutbox,
-  MINE_TYPES,
+  LABEL_TEXT,
   onSyncChange,
   signOutAndForget,
   sync,
   unblockAll,
   uploadNow,
-  type Mine,
-  type MineType,
+  type Contribution,
+  type Label,
   type OutboxItem,
+  type Submission,
 } from "@/lib/sync";
 
-const TYPE_LABEL = Object.fromEntries(MINE_TYPES) as Record<MineType, string>;
+/** What a report is, in a word or two: "Adit", "Couldn't find it", "Comment". */
+const what = (r: Pick<Submission, "kind"> & { label?: Label | null }) =>
+  r.kind === "location" ? LABEL_TEXT[r.label!] : r.kind === "not_found" ? "Couldn't find it" : "Comment";
+const when = (d: Submission) => (d.kind === "note" ? null : d.captured_at);
 
 // The server's rejection codes (artifacts/minfinder-api/README.md), in words.
 const REJECTED: Record<string, string> = {
-  too_close_to_yours: "You already have a mine within 100 m of this one.",
-  duplicate: "Another member had already added this mine.",
-  photo_reused: "One of the photos was already used for another mine.",
-  id_taken: "This capture clashed with another. Add it again.",
+  unknown_mine: "That MINFILE number isn't in the published list any more.",
+  photo_reused: "One of the photos was already used on another report.",
+  id_taken: "This report clashed with another. Add it again.",
   gps_inaccurate: "The GPS fix wasn't accurate enough.",
-  outside_bc: "Only mines in British Columbia can be added.",
-  pin_too_far: "The pin was more than 50 m from where you stood.",
+  outside_bc: "Only mines in British Columbia can be reported.",
+  pin_too_far: "The pin was more than 30 m from where you stood.",
+  far_unconfirmed: "It's over 300 m from the published location and wasn't confirmed as the same mine.",
+  different_mine: "It's over 10 km from the published location, so it's probably a different mine.",
+  not_at_published: "You weren't inside your search radius of the published location.",
   captured_in_future: "The capture time was in the future. Check the phone's date and time.",
   capture_too_old: "Captures older than 30 days can't be uploaded.",
   impossible_travel: "Too far from your previous capture for the time between them.",
@@ -63,7 +70,8 @@ export default function MySubmissionsScreen() {
   const insets = useSafeAreaInsets();
   const signedIn = useSignedIn();
   const [outbox, setOutbox] = useState<OutboxItem[] | null>(null);
-  const [mine, setMine] = useState<Mine[]>([]);
+  const [mine, setMine] = useState<Contribution[]>([]);
+  const [names, setNames] = useState<Map<string, string>>(new Map());
   const [blockedCount, setBlockedCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [signingIn, setSigningIn] = useState<Provider | null>(null);
@@ -95,6 +103,13 @@ export default function MySubmissionsScreen() {
     }
   };
 
+  // Every report names its mine; one lookup for the lot.
+  const nos = [...new Set([...(outbox ?? []).map((o) => o.data.minfilno), ...mine.map((m) => m.minfilno)])].sort().join(",");
+  useEffect(() => {
+    void getNamesByMinfilno(nos ? nos.split(",") : []).then(setNames).catch(() => {});
+  }, [nos]);
+  const nameOf = (no: string) => names.get(no) ?? `MINFILE ${no}`;
+
   const queued = outbox?.filter((o) => o.state === "queued") ?? [];
   const rejected = outbox?.filter((o) => o.state === "rejected") ?? [];
   const empty = outbox !== null && outbox.length === 0 && mine.length === 0;
@@ -125,13 +140,7 @@ export default function MySubmissionsScreen() {
         <SignIn busy={signingIn} error={signInError} onSignIn={onSignIn} waiting={queued.length} />
       )}
 
-      {empty ? (
-        <FirstRun />
-      ) : (
-        <View style={styles.btnRow}>
-          <PillButton label="Add a mine" icon="plus" onPress={() => router.push("/submit")} />
-        </View>
-      )}
+      {empty && <FirstRun />}
 
       {queued.length > 0 && (
         <ListSection
@@ -142,9 +151,9 @@ export default function MySubmissionsScreen() {
             <Row
               key={o.id}
               photo={o.photos[0]}
-              type={o.data.type}
-              title={o.data.name || TYPE_LABEL[o.data.type]}
-              meta={`${TYPE_LABEL[o.data.type]} · ${formatShortDate(o.data.captured_at)}`}
+              label={o.data.kind === "location" ? o.data.label : null}
+              title={nameOf(o.data.minfilno)}
+              meta={`${what(o.data)} · ${formatShortDate(when(o.data) ?? o.created_at)}`}
               status={outboxStatus(o, signedIn)}
               reason={o.error === "upload_failed" && o.message ? `Error: ${o.message}` : undefined}
             />
@@ -158,11 +167,11 @@ export default function MySubmissionsScreen() {
             <Row
               key={o.id}
               photo={o.photos[0]}
-              type={o.data.type}
-              title={o.data.name || TYPE_LABEL[o.data.type]}
-              meta={`${TYPE_LABEL[o.data.type]} · ${formatShortDate(o.data.captured_at)}`}
+              label={o.data.kind === "location" ? o.data.label : null}
+              title={nameOf(o.data.minfilno)}
+              meta={`${what(o.data)} · ${formatShortDate(when(o.data) ?? o.created_at)}`}
               status={outboxStatus(o, signedIn)}
-              reason={REJECTED[o.error ?? ""] ?? (o.message || "The server didn't accept this capture.")}
+              reason={REJECTED[o.error ?? ""] ?? (o.message || "The server didn't accept this report.")}
               onDiscard={() => void discardOutboxItem(o.id)}
             />
           ))}
@@ -174,12 +183,12 @@ export default function MySubmissionsScreen() {
           {mine.map((m) => (
             <Row
               key={m.id}
-              type={m.type}
-              title={m.name || TYPE_LABEL[m.type]}
-              meta={`${TYPE_LABEL[m.type]} · ${formatShortDate(m.captured_at)}${
-                m.tier !== "pending" && m.tier !== "hidden" ? ` · ${m.net >= 0 ? "+" : "−"}${Math.abs(m.net)} votes` : ""
+              label={m.label}
+              title={nameOf(m.minfilno)}
+              meta={`${what(m)} · ${formatShortDate(m.captured_at)}${
+                m.kind === "note" ? (m.helpful ? ` · ${m.helpful} found it helpful` : "") : m.disputes ? ` · ${m.disputes} disagree` : ""
               }`}
-              status={TIER_STATUS[m.tier]}
+              status={reportStatus({ ...m, queued: false })}
               reason={m.held_for ? heldReason(m.held_for) : undefined}
             />
           ))}
@@ -213,7 +222,7 @@ function SignIn({
   return (
     <View style={[styles.signIn, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[type.title, { color: colors.foreground }]} accessibilityRole="header">
-        {waiting > 0 ? `Sign in to upload ${waiting === 1 ? "your mine" : `${waiting} mines`}` : "Sign in to add mines"}
+        {waiting > 0 ? `Sign in to upload ${waiting === 1 ? "your report" : `${waiting} reports`}` : "Sign in to send reports"}
       </Text>
       <Text style={[type.meta, { color: colors.mutedForeground }]}>
         Browsing never needs an account. We keep an anonymous ID from Apple or Google, never your name or email.
@@ -279,7 +288,7 @@ function Account({ blocked }: { blocked: number }) {
   const remove = () =>
     Alert.alert(
       "Delete your account?",
-      "Your uploaded mines, their photos and your votes are deleted from SGS for good. Mines still on this phone stay here.",
+      "Your uploaded reports, their photos and your confirmations are deleted from SGS for good. Reports still on this phone stay here.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -319,19 +328,19 @@ function Account({ blocked }: { blocked: number }) {
   );
 }
 
-/** First run: teach the flow, then offer it. */
+/** First run: reports start from a mine, so teach where to find the button. */
 function FirstRun() {
   const colors = useColors();
   const steps = [
-    ["map-pin", "Stand at the working and put the pin on it."],
-    ["camera", "Photograph the opening and its surroundings."],
-    ["upload-cloud", "Save. It uploads by itself once you have signal."],
+    ["map-pin", "Open a mine on the map and choose Details."],
+    ["plus", "On the Reports tab, add what you found or that you couldn't find it. Comments have their own tab."],
+    ["upload-cloud", "It saves on the phone and uploads by itself once you have signal."],
   ] as const;
   return (
     <EmptyState
       glyph={<MineGlyph type="adit" size={36} color={colors.foreground} />}
-      title="Found a working that isn't on the map?"
-      body="Add it for other MinFinder users. SGS reviews a new member's first three submissions."
+      title="Been to a MINFILE mine?"
+      body="Correct its location, say you couldn't find it, or leave a comment for the next visitor. Other visitors confirm what you report."
     >
       <View style={styles.steps}>
         {steps.map(([icon, text]) => (
@@ -342,7 +351,7 @@ function FirstRun() {
         ))}
       </View>
       <View style={styles.btnRow}>
-        <PillButton label="Add a mine" icon="plus" onPress={() => router.push("/submit")} />
+        <PillButton label="Go to the map" icon="map" onPress={() => router.back()} />
       </View>
     </EmptyState>
   );
@@ -350,7 +359,7 @@ function FirstRun() {
 
 function Row({
   photo,
-  type: kind,
+  label,
   title,
   meta,
   status,
@@ -358,7 +367,8 @@ function Row({
   onDiscard,
 }: {
   photo?: string;
-  type: MineType;
+  /** A located working's label, for the glyph; otherwise a report icon. */
+  label: Label | null;
   title: string;
   meta: string;
   status: Status;
@@ -372,7 +382,11 @@ function Row({
         <Image source={{ uri: photo }} style={styles.thumb} />
       ) : (
         <View style={[styles.thumb, styles.thumbGlyph, { backgroundColor: colors.muted }]}>
-          <MineGlyph type={kind} size={24} color={colors.foreground} />
+          {label ? (
+            <MineGlyph type={label} size={24} color={colors.foreground} />
+          ) : (
+            <Feather name="message-square" size={22} color={colors.foreground} />
+          )}
         </View>
       )}
       <View style={styles.rowText}>

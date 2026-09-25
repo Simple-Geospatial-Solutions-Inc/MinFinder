@@ -8,7 +8,7 @@ import type { FeatherIconName } from "@/components/Icon";
 // authority; checking here only saves a capture the server would refuse.
 export const MAX_ACCURACY_M = 30;
 export const MAX_FIX_AGE_MS = 60_000;
-export const MAX_NUDGE_M = 50;
+export const MAX_NUDGE_M = 30;
 
 export type GpsState = "denied" | "searching" | "mocked" | "stale" | "weak" | "locked";
 
@@ -27,7 +27,7 @@ export interface LiveFix {
  * reduces it to one state the UI can explain. Ticks once a second so a fix that
  * stops updating goes stale on screen, not just on paper.
  */
-export function useLiveFix() {
+export function useLiveFix({ haptic = true }: { haptic?: boolean } = {}) {
   const [loc, setLoc] = useState<Location.LocationObject | null>(null);
   const [denied, setDenied] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -83,7 +83,7 @@ export function useLiveFix() {
   // screen and still know.
   const wasLocked = useRef(false);
   useEffect(() => {
-    if (state === "locked" && !wasLocked.current) {
+    if (haptic && state === "locked" && !wasLocked.current) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
     wasLocked.current = state === "locked";

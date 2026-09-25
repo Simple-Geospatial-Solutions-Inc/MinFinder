@@ -13,8 +13,9 @@ import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AccessibilityInfo,
+    AccessibilityInfo,
   ActivityIndicator,
+  BackHandler,
   Keyboard,
   Platform,
   Pressable,
@@ -42,7 +43,6 @@ import {
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { CommunitySheet } from "@/components/CommunitySheet";
 import { DetailsSheet } from "@/components/DetailsSheet";
 import { OfflineRegionPill } from "@/components/OfflineRegionPill";
 import { PillMenu } from "@/components/PillMenu";
@@ -54,13 +54,13 @@ import {
   floating,
   IconButton,
   MapButton,
-  PillButton,
   radius,
   type,
 } from "@/components/ui";
 import colorTokens from "@/constants/colors";
 import { STATUS_MAP, STATUS_ORDER, getStatusInfo } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
+import { useEntitlement } from "@/hooks/useEntitlement";
 import {
   hitIsAlias,
   hitTitle,
@@ -100,15 +100,8 @@ import {
   saveBasemap,
   type Basemap,
 } from "@/lib/satellite";
-import {
-  DEFAULT_COMMUNITY,
-  loadCommunityFilter,
-  loadStatuses,
-  saveCommunityFilter,
-  saveStatuses,
-  type CommunityFilter,
-} from "@/lib/statusFilter";
-import { getMapMines, onSyncChange, type MapMine } from "@/lib/sync";
+import { loadStatuses, saveStatuses } from "@/lib/statusFilter";
+import { getReports, onSyncChange, type Report } from "@/lib/sync";
 
 const BC_REGION: Region = {
   latitude: 54.5,
@@ -124,7 +117,7 @@ const SEARCH_HEIGHT = 48;
 const CHIP_HEIGHT = 36;
 const TOP_BAR_HEIGHT = 8 + SEARCH_HEIGHT + 8 + CHIP_HEIGHT;
 const REGION_PILL_HEIGHT = 56;
-// The bottom row (Add a mine, map buttons) sits this far above the safe area.
+// The bottom row (the map buttons) sits this far above the safe area.
 const BOTTOM_INSET = 24;
 // What fitBounds keeps clear at the bottom: the 48 pt row plus a margin.
 const BOTTOM_CHROME = BOTTOM_INSET + 48 + 24;
@@ -226,9 +219,10 @@ const selectedRingStyle = {
   circleStrokeWidth: 4,
 } as unknown as CircleLayerStyle;
 
-// --- Community mines ----------------------------------------------------------
-// Hollow rings, so they never read as a MINFILE dot: navy once other members have
-// confirmed one (or SGS has verified it), grey until then.
+// --- Field-report points --------------------------------------------------------
+// Where members marked a mine's workings. Hollow rings, so they never read as a
+// MINFILE dot: navy once other visitors have confirmed one (or SGS has verified
+// it), grey until then.
 // ponytail: unclustered. Cluster like `occ` once there are enough to crowd BC.
 const COMMUNITY_NAVY = "#16365C";
 const COMMUNITY_GREY = "#5F6B7A";
@@ -238,6 +232,11 @@ const communityRingStyle = {
   circleStrokeWidth: 4,
   circleStrokeColor: ["case", ["get", "trusted"], COMMUNITY_NAVY, COMMUNITY_GREY],
 } as unknown as CircleLayerStyle;
+const communityLinkStyle = {
+  lineColor: COMMUNITY_NAVY,
+  lineWidth: 1.5,
+  lineDasharray: [2, 2],
+} as unknown as LineLayerStyle;
 const communitySelectedStyle = {
   circleColor: "rgba(0,0,0,0)",
   circleRadius: 15,
@@ -323,53 +322,6 @@ export default function MapScreen() {
       cancelled = true;
     };
   }, []);
-  // Community mines: the cached public set plus the user's own, re-read on every sync.
-  const [mapMines, setMapMines] = useState<MapMine[]>([]);
-  // By id, so the open sheet follows the list as syncs refresh it (and closes if a block removes it).
-  const [openMineId, setOpenMine] = useState<string | null>(null);
-  const openMine = useMemo(() => mapMines.find((m) => m.id === openMineId) ?? null, [mapMines, openMineId]);
-  useEffect(() => {
-    const load = () => void getMapMines().then(setMapMines).catch((e) => console.warn("community mines", e));
-    load();
-    return onSyncChange(load);
-  }, []);
-  const [community, setCommunity] = useState<CommunityFilter>(DEFAULT_COMMUNITY);
-  useEffect(() => {
-    void loadCommunityFilter().then(setCommunity);
-  }, []);
-  const toggleCommunity = useCallback((key: keyof CommunityFilter) => {
-    setCommunity((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      void saveCommunityFilter(next);
-      return next;
-    });
-  }, []);
-  // The user's own always show: they're the field notes they came back for.
-  const communityShape = useMemo<GeoJSON.FeatureCollection>(
-    () => ({
-      type: "FeatureCollection",
-      features: mapMines
-        .filter((m) => m.own || (m.tier === "unverified" ? community.unverified : community.community))
-        .map((m) => ({
-          type: "Feature",
-          geometry: { type: "Point", coordinates: [m.lon, m.lat] },
-          properties: { id: m.id, trusted: m.tier === "confirmed" || m.tier === "verified" },
-        })),
-    }),
-    [mapMines, community],
-  );
-  const onCommunityPress = useCallback(
-    (e: { nativeEvent?: { features?: GeoJSON.Feature[] } }) => {
-      const id = e.nativeEvent?.features?.[0]?.properties?.id;
-      const m = mapMines.find((x) => x.id === id);
-      if (!m) return;
-      setQuickInfo(null);
-      setSelected(null);
-      setOpenMine(m.id);
-    },
-    [mapMines],
-  );
-
   const [search, setSearch] = useState("");
   const [searchActive, setSearchActive] = useState(false);
 
@@ -559,6 +511,73 @@ export default function MapScreen() {
     return m;
   }, [allRows]);
 
+  // Field-report points: exact coordinates, so like MINFILE's own they're Pro.
+  // The user's own always show: they're the field notes they came back for.
+  const { isPaid } = useEntitlement();
+  const [reportPoints, setReportPoints] = useState<Report[]>([]);
+  useEffect(() => {
+    const load = () =>
+      void getReports()
+        .then((rs) => setReportPoints(rs.filter((r) => r.kind === "location")))
+        .catch((e) => console.warn("field reports", e));
+    load();
+    return onSyncChange(load);
+  }, []);
+  const communityShape = useMemo<GeoJSON.FeatureCollection>(() => {
+    const trusted = (r: Report) => r.status === "confirmed" || r.status === "verified";
+    return {
+      type: "FeatureCollection",
+      features: isPaid
+        ? reportPoints
+            // Everything visitors haven't voted down; the ring colour tells confirmed from not yet.
+            .filter((r) => r.own || (r.status !== "collapsed" && r.status !== "hidden"))
+            .map((r) => ({
+              type: "Feature",
+              geometry: { type: "Point", coordinates: [r.lon!, r.lat!] },
+              properties: { id: r.id, minfilno: r.minfilno, trusted: trusted(r) },
+            }))
+        : [],
+    };
+  }, [reportPoints, isPaid]);
+  const occByMinfilno = useMemo(() => {
+    const m = new Map<string, Occurrence>();
+    for (const r of allRows) if (r.MINFILNO) m.set(r.MINFILNO.trim(), r);
+    return m;
+  }, [allRows]);
+  // A point belongs to a MINFILE mine: tapping it opens that mine, reports and all.
+  const onCommunityPress = useCallback(
+    (e: { nativeEvent?: { features?: GeoJSON.Feature[] } }) => {
+      const occ = occByMinfilno.get(e.nativeEvent?.features?.[0]?.properties?.minfilno);
+      if (!occ) return;
+      setQuickInfo(null);
+      setPickedMatch(null);
+      setSelected(occ);
+    },
+    [occByMinfilno],
+  );
+  // While a mine is open, a dashed line runs from its published pin to each point.
+  const openMine = quickInfo ?? selected;
+  const openMinfilno = openMine?.MINFILNO?.trim() ?? "";
+  const linkShape = useMemo<GeoJSON.FeatureCollection>(
+    () => ({
+      type: "FeatureCollection",
+      features:
+        openMine?.LATITUDE != null && openMine.LONGITUDE != null
+          ? communityShape.features
+              .filter((f) => f.properties?.minfilno === openMinfilno)
+              .map((f) => ({
+                type: "Feature",
+                properties: {},
+                geometry: {
+                  type: "LineString",
+                  coordinates: [[openMine.LONGITUDE!, openMine.LATITUDE!], (f.geometry as GeoJSON.Point).coordinates],
+                },
+              }))
+          : [],
+    }),
+    [communityShape, openMine, openMinfilno],
+  );
+
   // The pin currently previewed (quickInfo) or opened (selected) gets a ring.
   const selectedId = quickInfo?.id ?? selected?.id ?? null;
 
@@ -621,10 +640,7 @@ export default function MapScreen() {
         cameraRef.current?.flyTo({ center: [lng, lat], zoom, duration: 400 });
       } else if (props.id != null) {
         const occ = occById.get(props.id);
-        if (occ) {
-          setOpenMine(null);
-          setQuickInfo(occ);
-        }
+        if (occ) setQuickInfo(occ);
       }
     },
     [occById],
@@ -773,6 +789,22 @@ export default function MapScreen() {
     setPickedMatch(hitIsAlias(row) ? row.matchedName : null);
     setTimeout(() => setSelected(toOccurrence(row)), 350);
   }, []);
+
+  // Android Back closes the topmost thing on the map before it leaves the app:
+  // the paywall, then the details sheet, then the peek card, then the menu.
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+        if (paywallFor != null) setPaywallFor(null);
+        else if (selected) setSelected(null);
+        else if (quickInfo) setQuickInfo(null);
+        else if (menuOpen) setMenuOpen(false);
+        else return false;
+        return true;
+      });
+      return () => sub.remove();
+    }, [paywallFor, selected, quickInfo, menuOpen]),
+  );
 
   // Tapping a region on the Offline screen hands it over through lib/mapFocus
   // (see that file for why not route params) and pops back here. The request is
@@ -1017,12 +1049,15 @@ export default function MapScreen() {
           />
         </GeoJSONSource>
 
+        <GeoJSONSource id="community-links" data={linkShape}>
+          <Layer id="community-links" type="line" style={communityLinkStyle} />
+        </GeoJSONSource>
         <GeoJSONSource id="community" data={communityShape} onPress={onCommunityPress}>
           <Layer id="community-ring" type="circle" style={communityRingStyle} />
           <Layer
             id="community-selected"
             type="circle"
-            filter={["==", ["get", "id"], openMine?.id ?? ""] as never}
+            filter={["==", ["get", "minfilno"], openMinfilno] as never}
             style={communitySelectedStyle}
           />
         </GeoJSONSource>
@@ -1157,24 +1192,6 @@ export default function MapScreen() {
               }}
             />
           ))}
-          <FilterChip
-            label="Community"
-            color={COMMUNITY_NAVY}
-            active={community.community}
-            onPress={() => {
-              setMenuOpen(false);
-              toggleCommunity("community");
-            }}
-          />
-          <FilterChip
-            label="Unverified"
-            color={COMMUNITY_GREY}
-            active={community.unverified}
-            onPress={() => {
-              setMenuOpen(false);
-              toggleCommunity("unverified");
-            }}
-          />
         </ScrollView>
       </View>
 
@@ -1221,13 +1238,8 @@ export default function MapScreen() {
       )}
 
       {/* The sheets own the bottom edge while they're open. */}
-      {!quickInfo && !selected && !openMine && (
+      {!quickInfo && !selected && (
         <>
-          {Platform.OS !== "web" && (
-            <View style={[styles.addMine, { bottom: insets.bottom + BOTTOM_INSET }]}>
-              <PillButton label="Add a mine" icon="plus" grow={false} onPress={() => router.push("/submit")} />
-            </View>
-          )}
           <View style={[styles.mapButtons, { bottom: insets.bottom + BOTTOM_INSET }]}>
             {Platform.OS !== "web" && (
               <MapButton
@@ -1249,7 +1261,7 @@ export default function MapScreen() {
         </>
       )}
 
-      {permissionDenied && !quickInfo && !selected && !openMine && (
+      {permissionDenied && !quickInfo && !selected && (
         <View style={[styles.mapNotice, styles.mapNoticeBottom, { bottom: insets.bottom + BOTTOM_INSET + 60 }]}>
           <Feather name="alert-triangle" size={16} color={MAP.mapChromeForeground} />
           <Text style={styles.mapNoticeText}>Location is off, so the map starts on all of BC.</Text>
@@ -1315,18 +1327,15 @@ export default function MapScreen() {
           }
           setQuickInfo(null);
         }}
+        onRequestUpgrade={setPaywallFor}
       />
-
-      <CommunitySheet mine={openMine} onClose={() => setOpenMine(null)} />
 
       <DetailsSheet
         occurrence={selected}
         matchedName={selectedMatch}
         onClose={() => setSelected(null)}
-        onRequestUpgrade={(feature) => {
-          setSelected(null);
-          setPaywallFor(feature);
-        }}
+        // The paywall stacks over the mine: buying unlocks the open sheet in place.
+        onRequestUpgrade={setPaywallFor}
       />
 
       <PaywallSheet
@@ -1340,7 +1349,7 @@ export default function MapScreen() {
 
 const MENU = [
   ["download-cloud", "Offline", "/offline"],
-  ["inbox", "Submissions", "/my-submissions"],
+  ["inbox", "Reports", "/my-submissions"],
   ["info", "About", "/about"],
 ] as const satisfies readonly (readonly [FeatherIconName, string, string])[];
 
@@ -1445,7 +1454,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   resultDot: { width: 10, height: 10, borderRadius: 5 },
-  addMine: { position: "absolute", left: 16, flexDirection: "row" },
   mapButtons: { position: "absolute", right: 16, gap: 12 },
   mapNotice: {
     position: "absolute",

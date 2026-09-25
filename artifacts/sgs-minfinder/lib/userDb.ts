@@ -2,7 +2,7 @@ import * as SQLite from "expo-sqlite";
 
 /**
  * The writable database for everything the user makes or the server sends: the
- * submission outbox, the cached community mines and a small key/value table.
+ * report outbox, the cached field reports and a small key/value table.
  *
  * Deliberately a separate file from minfile.db. That one is a bundled asset that
  * lib/db.ts deletes and re-copies whenever DB_VERSION changes, and user data must
@@ -21,14 +21,22 @@ CREATE TABLE IF NOT EXISTS outbox (
   message    TEXT,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS community_mines (
-  id   TEXT PRIMARY KEY,
-  lat  REAL NOT NULL,
-  lon  REAL NOT NULL,
-  json TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS contributions (
+  id       TEXT PRIMARY KEY,
+  minfilno TEXT NOT NULL,              -- the MINFILE mine the report is about
+  json     TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS community_mines_lat ON community_mines (lat);
+CREATE INDEX IF NOT EXISTS contributions_minfilno ON contributions (minfilno);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+`;
+
+// The pre-release "add a mine" build kept other members' mines here, and its
+// queued captures can't be sent to the field-report API. Nothing of it was ever
+// public, so it goes, and the sync cursor starts over against the new endpoint.
+const DROP_ADD_A_MINE = `
+DROP TABLE IF EXISTS community_mines;
+DELETE FROM outbox WHERE json_extract(data, '$.kind') IS NULL;
+DELETE FROM kv WHERE key IN ('cursor', 'my_submissions', 'my_votes', 'server_votes', 'pending_votes', 'blocks');
 `;
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -37,7 +45,9 @@ export function getUserDb(): Promise<SQLite.SQLiteDatabase> {
   if (!dbPromise) {
     dbPromise = (async () => {
       const db = await SQLite.openDatabaseAsync("user.db");
+      const old = await db.getFirstAsync("SELECT 1 FROM sqlite_master WHERE name = 'community_mines'");
       await db.execAsync(SCHEMA);
+      if (old) await db.execAsync(DROP_ADD_A_MINE);
       return db;
     })();
     // A failed open shouldn't poison every later call.

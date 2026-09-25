@@ -296,7 +296,7 @@ Every piece lives in `components/ui.tsx`. Screens compose these; a screen-level 
 - **`Segmented`:** Two or three exclusive options on a lichen track. The chosen one lifts out on a white card with `floating`. Used by compass calibration and Redeem.
 
 ### Sheets
-- **`Sheet`:** The app's single bottom-sheet look (`@gorhom/bottom-sheet`): a card fill, a 24 top radius (`radius.xl`, half a 48pt pill, so the sheet shares the curve of the buttons on it), a 32×5 Scree handle, `floating`, and an optional `backdrop` (25% dim, tap to close).
+- **`Sheet`:** The app's single bottom-sheet look (`@gorhom/bottom-sheet`): a card fill, a 24 top radius (`radius.xl`, half a 48pt pill, so the sheet shares the curve of the buttons on it), a 32×5 Scree handle (only on sheets that resize or pan shut), `floating`, and an optional `backdrop` (25% dim, tap to close). Its content stays reachable by screen readers: the wrapper turns off Gorhom's default of grouping the whole sheet into one element.
 - **Opening and closing:** Pass `open`. The sheet mounts at index 0 when `open` turns true and animates shut before unmounting when it turns false. Use `useLast(value)` to keep the content on screen while it closes.
 - **Sizing:** Sheets size to their content, with `topInset` set to the safe area. The mine details sheet snaps at 60% and 100%.
 - **Where they're used:** Mine preview, mine details, the paywall, compass calibration and the capture flow.
@@ -333,7 +333,7 @@ Every piece lives in `components/ui.tsx`. Screens compose these; a screen-level 
 - **Do** read `MAP` (light) for anything on the basemap and `DIAL` (dark) on the compass, whatever the scheme.
 - **Do** give every sheet `open` plus `useLast` so it animates shut.
 - **Do** set navigational numbers and prices in tabular figures.
-- **Do** keep every touch target at 44pt or more; primary field actions should reach 56pt.
+- **Do** keep every touch target at 44pt or more; primary actions are 48pt pills.
 - **Do** pair every status colour with its words ("Waiting for signal", "Past Producer").
 
 ### Don't:

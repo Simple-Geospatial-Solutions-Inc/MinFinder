@@ -31,32 +31,3 @@ export async function saveStatuses(statuses: string[]): Promise<void> {
     // ignore persistence errors — the in-memory choice still holds for the session
   }
 }
-
-const COMMUNITY_KEY = "sgs:filters:community_v1";
-
-/**
- * The two community chips. "Community" is what other members have confirmed or
- * SGS has verified; "Unverified" is everything else, off until asked for.
- */
-export interface CommunityFilter {
-  community: boolean;
-  unverified: boolean;
-}
-export const DEFAULT_COMMUNITY: CommunityFilter = { community: true, unverified: false };
-
-export async function loadCommunityFilter(): Promise<CommunityFilter> {
-  try {
-    const raw = await AsyncStorage.getItem(COMMUNITY_KEY);
-    return raw ? { ...DEFAULT_COMMUNITY, ...JSON.parse(raw) } : DEFAULT_COMMUNITY;
-  } catch {
-    return DEFAULT_COMMUNITY;
-  }
-}
-
-export async function saveCommunityFilter(f: CommunityFilter): Promise<void> {
-  try {
-    await AsyncStorage.setItem(COMMUNITY_KEY, JSON.stringify(f));
-  } catch {
-    // the in-memory choice still holds for the session
-  }
-}

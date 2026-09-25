@@ -14,19 +14,18 @@ import {
 } from "@maplibre/maplibre-react-native";
 import * as Haptics from "expo-haptics";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Linking, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { AccessibilityInfo, Linking, Platform, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Animated, { useAnimatedStyle, useReducedMotion, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
 
 import { describeGps, MAX_NUDGE_M, type GpsState, type LiveFix } from "@/components/capture/gps";
+import colorTokens from "@/constants/colors";
 import { floating, GUTTER, MapButton, PillButton, Sheet, Stat, TextButton, type } from "@/components/ui";
 import { Feather } from "@/components/Icon";
 import { SatelliteCredit } from "@/components/SatelliteCredit";
 import { useColors } from "@/hooks/useColors";
-import { formatShortDate } from "@/lib/format";
-import { distanceMeters } from "@/lib/geo";
-import { MINE_TYPES, type MineType, type MyMine } from "@/lib/sync";
+import { distanceMeters, formatDistance } from "@/lib/geo";
 import { BASEMAP_STYLE_JSON } from "@/lib/mapStyle";
 import {
   DEFAULT_BASEMAP,
@@ -65,6 +64,9 @@ function circle(lat: number, lon: number, radiusM: number): GeoJSON.Feature {
 const fc = (features: GeoJSON.Feature[]) =>
   ({ type: "FeatureCollection", features }) as GeoJSON.FeatureCollection;
 
+// The map is always drawn light, so its layers take the light tokens whatever the theme.
+const MAP = colorTokens.light;
+// The phone's own "you are here" blue, which no brand colour should stand in for.
 const BLUE = "#1F6FD1";
 const accuracyFill = { fillColor: BLUE, fillOpacity: 0.14 } as unknown as FillLayerStyle;
 const accuracyLine = { lineColor: BLUE, lineOpacity: 0.5, lineWidth: 1 } as unknown as LineLayerStyle;
@@ -75,29 +77,29 @@ const youDot = {
   circleStrokeWidth: 3,
 } as unknown as CircleLayerStyle;
 
-// Mirrors LIMITS in artifacts/minfinder-api/src/rules.ts.
-const OWN_RADIUS_M = 100;
-const TYPE_LABEL = Object.fromEntries(MINE_TYPES) as Record<MineType, string>;
-const myDot = {
-  circleColor: "#FCBA19",
+// The published MINFILE spot: a navy ring with a gold centre, so it never reads as
+// the pin being placed. Points already marked on this visit are small gold dots.
+const publishedDot = {
+  circleColor: MAP.accent,
   circleRadius: 6,
-  circleStrokeColor: "#0E2444",
+  circleStrokeColor: MAP.primary,
+  circleStrokeWidth: 4,
+} as unknown as CircleLayerStyle;
+const markDot = {
+  circleColor: MAP.accent,
+  circleRadius: 5,
+  circleStrokeColor: MAP.accentForeground,
   circleStrokeWidth: 2,
 } as unknown as CircleLayerStyle;
-const myZone = { fillColor: "#B3261E", fillOpacity: 0.08 } as unknown as FillLayerStyle;
+const searchLine = { lineColor: MAP.primary, lineWidth: 2, lineDasharray: [2, 1.5] } as unknown as LineLayerStyle;
 
-/** The user's closest mine within the one-per-100 m rule, if any. */
-export function ownMineNear(myMines: MyMine[], at: LatLon | null) {
-  if (!at) return null;
-  return (
-    myMines
-      .map((mine) => ({ mine, m: distanceMeters(at.lat, at.lon, mine.lat, mine.lon) }))
-      .filter((x) => x.m <= OWN_RADIUS_M)
-      .sort((a, b) => a.m - b.m)[0] ?? null
-  );
-}
+const point = (p: LatLon): GeoJSON.Feature => ({
+  type: "Feature",
+  properties: {},
+  geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+});
 
-const TONE = { ok: "#1B6B3A", bad: "#B3261E", wait: "#0E2444" } as const;
+const TONE = { ok: MAP.success, bad: MAP.destructive, wait: MAP.accentForeground } as const;
 
 function PinGlyph({ fill }: { fill: string }) {
   return (
@@ -105,16 +107,16 @@ function PinGlyph({ fill }: { fill: string }) {
       <Path
         d="M22 54C22 54 4 33.5 4 21a18 18 0 0 1 36 0c0 12.5-18 33-18 33z"
         fill={fill}
-        stroke="#0E2444"
+        stroke={MAP.accentForeground}
         strokeWidth={3}
       />
-      <Circle cx={22} cy={21} r={6.5} fill="#0E2444" />
+      <Circle cx={22} cy={21} r={6.5} fill={MAP.accentForeground} />
     </Svg>
   );
 }
 
 /**
- * The one map the whole capture happens on. While marking, the pin is fixed at
+ * The one map a field report is made on. While marking, the pin is fixed at
  * the centre and the map moves under it (the Gaia GPS / Every Door pattern). Once
  * marked, the pin drops onto the map and the camera lifts it clear of the sheet.
  */
@@ -123,12 +125,19 @@ export function CaptureMap({
   fix,
   gps,
   pin,
-  myMines,
+  published,
+  searchRadiusM,
+  marks = [],
   onCenter,
   onClose,
 }: {
   phase: Phase;
-  myMines: MyMine[];
+  /** Where MINFILE puts the mine. */
+  published: LatLon;
+  /** Drawn around the published spot while reporting a search. */
+  searchRadiusM?: number | null;
+  /** Points already saved on this visit. */
+  marks?: LatLon[];
   fix: LiveFix | null;
   gps: GpsState;
   /** The marked pin; null until the first Mark. */
@@ -200,19 +209,13 @@ export function CaptureMap({
     [fix?.lat, fix?.lon, fix?.accuracy],
   );
 
-  // Your own mines, each with the 100 m where you can't add another.
-  const mine = useMemo(
+  const context = useMemo(
     () => ({
-      zones: fc(myMines.map((m) => circle(m.lat, m.lon, OWN_RADIUS_M))),
-      dots: fc(
-        myMines.map((m) => ({
-          type: "Feature",
-          properties: {},
-          geometry: { type: "Point", coordinates: [m.lon, m.lat] },
-        })),
-      ),
+      published: fc([point(published)]),
+      search: fc(searchRadiusM ? [circle(published.lat, published.lon, searchRadiusM)] : []),
+      marks: fc(marks.map(point)),
     }),
-    [myMines],
+    [published.lat, published.lon, searchRadiusM, marks],
   );
 
   const pinLift = useAnimatedStyle(() => ({
@@ -265,11 +268,14 @@ export function CaptureMap({
             layout={{ visibility: satellite ? "visible" : "none" }}
           />
         </RasterSource>
-        <GeoJSONSource id="my-zones" data={mine.zones}>
-          <Layer id="my-zones" type="fill" style={myZone} />
+        <GeoJSONSource id="search" data={context.search}>
+          <Layer id="search" type="line" style={searchLine} />
         </GeoJSONSource>
-        <GeoJSONSource id="my-mines" data={mine.dots}>
-          <Layer id="my-mines" type="circle" style={myDot} />
+        <GeoJSONSource id="published" data={context.published}>
+          <Layer id="published" type="circle" style={publishedDot} />
+        </GeoJSONSource>
+        <GeoJSONSource id="marks" data={context.marks}>
+          <Layer id="marks" type="circle" style={markDot} />
         </GeoJSONSource>
         {shapes && (
           <>
@@ -318,7 +324,7 @@ export function CaptureMap({
       )}
 
       <View style={[styles.topRow, { top: insets.top + 8 }]} pointerEvents="box-none">
-        <MapButton icon="x" label="Cancel adding a mine" onPress={onClose} />
+        <MapButton icon="x" label="Close" onPress={onClose} />
         {phase !== "saved" && (
           <View
             style={[styles.gpsPill, { backgroundColor: colors.mapChrome }]}
@@ -357,15 +363,21 @@ export function MarkSheet({
   fix,
   gps,
   center,
-  myMines,
+  published,
   onMark,
+  onCancel,
+  cancelLabel = "Cancel",
 }: {
   open: boolean;
-  myMines: MyMine[];
+  published: LatLon;
   fix: LiveFix | null;
   gps: GpsState;
   center: LatLon | null;
   onMark: (pin: LatLon, at: LiveFix) => void;
+  /** A way out within thumb reach, beside Mark, not only the map's X at the top. */
+  onCancel: () => void;
+  /** "Done" once this visit has saved points, since leaving then keeps them. */
+  cancelLabel?: string;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -379,13 +391,11 @@ export function MarkSheet({
   const dist = fix && center ? distanceMeters(fix.lat, fix.lon, center.lat, center.lon) : null;
   const tooFar = dist !== null && dist > MAX_NUDGE_M;
   const locked = gps === "locked";
-  const own = ownMineNear(myMines, center);
-  const canMark = locked && !!fix && !!center && !tooFar && !own;
+  const canMark = locked && !!fix && !!center && !tooFar;
+  const fromPublished = center ? distanceMeters(center.lat, center.lon, published.lat, published.lon) : null;
 
   const title =
-    own
-      ? "You've already added a mine here"
-      : gps === "denied"
+    gps === "denied"
       ? "Location is off"
       : gps === "mocked"
         ? "Mock location is on"
@@ -395,17 +405,22 @@ export function MarkSheet({
             ? "Pin is too far from you"
             : "Put the pin on the working";
   const guidance =
-    own
-      ? `Your ${own.mine.name || TYPE_LABEL[own.mine.type].toLowerCase()} from ${formatShortDate(own.mine.captured_at)} is ${Math.round(own.m)} m away. Each member can add one mine per 100 m.`
-      : gps === "denied"
-      ? "Adding a mine needs your location, to prove you're at the site."
+    gps === "denied"
+      ? "Marking a working needs your location, to show you're at the site."
       : gps === "mocked"
-        ? "Turn off the mock-location app to add a mine."
+        ? "Turn off the mock-location app to mark a working."
         : !locked
           ? "Get under open sky, away from cliffs and heavy trees. Marking unlocks at ±30 m."
           : tooFar
             ? `Keep it within ${MAX_NUDGE_M} m of where you stand.`
-            : "Move the map under the pin. It can go up to 50 m from you.";
+            : `Move the map under the pin, up to ${MAX_NUDGE_M} m from you.${
+                fromPublished === null ? "" : ` It's ${formatDistance(fromPublished)} from where MINFILE puts the mine.`
+              }`;
+
+  // Android reads the title's live region; iOS ignores that, so say it.
+  useEffect(() => {
+    if (open && Platform.OS === "ios") AccessibilityInfo.announceForAccessibility(title);
+  }, [open, title]);
 
   const mark = () => {
     if (!canMark || !fix || !center) return;
@@ -418,7 +433,7 @@ export function MarkSheet({
       <BottomSheetView style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
         <View style={{ gap: 2 }}>
           <Text
-            style={[type.title, { color: tooFar || own ? colors.destructive : colors.foreground }]}
+            style={[type.title, { color: tooFar ? colors.destructive : colors.foreground }]}
             accessibilityRole="header"
             accessibilityLiveRegion="polite"
           >
@@ -441,6 +456,7 @@ export function MarkSheet({
           </View>
         )}
         <View style={styles.row}>
+          <PillButton label={cancelLabel} variant="secondary" onPress={onCancel} />
           <PillButton label="Mark this spot" icon="map-pin" onPress={mark} disabled={!canMark} />
         </View>
       </BottomSheetView>

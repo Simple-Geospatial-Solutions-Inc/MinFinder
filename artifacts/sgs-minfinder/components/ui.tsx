@@ -5,6 +5,7 @@ import BottomSheet, {
 } from "@gorhom/bottom-sheet";
 import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 
 import { Feather, type FeatherIconName } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
@@ -45,6 +46,7 @@ export function PillButton({
   disabled,
   busy,
   grow = true,
+  small,
   accessibilityHint,
 }: {
   label: string;
@@ -53,6 +55,8 @@ export function PillButton({
   variant?: "primary" | "secondary" | "outline";
   /** Fill the row. Off for a lone button sized to its label, e.g. on the map. */
   grow?: boolean;
+  /** 36 pt, for a quiet inline action that shouldn't compete with the content. */
+  small?: boolean;
   disabled?: boolean;
   busy?: boolean;
   accessibilityHint?: string;
@@ -69,15 +73,23 @@ export function PillButton({
       accessibilityRole="button"
       accessibilityState={{ disabled: !!disabled, busy: !!busy }}
       accessibilityHint={accessibilityHint}
+      hitSlop={small ? { top: 4, bottom: 4 } : undefined}
       style={({ pressed }) => [
         styles.pill,
+        small && styles.pillSmall,
         grow && styles.grow,
         { backgroundColor: outline && pressed ? colors.muted : bg, opacity: pressed && !outline ? 0.85 : 1 },
         outline && { borderWidth: 1, borderColor: colors.foreground },
       ]}
     >
-      {busy ? <ActivityIndicator color={fg} /> : icon && <Feather name={icon} size={18} color={fg} />}
-      <Text style={[styles.pillText, { color: fg }]} numberOfLines={1}>
+      {busy ? <ActivityIndicator color={fg} /> : icon && <Feather name={icon} size={small ? 16 : 18} color={fg} />}
+      {/* Half-width pills at large text shrink a little rather than cut the label off. */}
+      <Text
+        style={[styles.pillText, small && styles.pillTextSmall, { color: fg }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
+      >
         {label}
       </Text>
     </Pressable>
@@ -192,7 +204,10 @@ export function Chip({
   );
 }
 
-/** Two or three exclusive options on a grey track; the chosen one lifts out on a card. */
+/**
+ * Two or three exclusive options on a grey track; the chosen one lifts out on a
+ * card that slides across to a new choice, as iOS's segmented control does.
+ */
 export function Segmented<V extends string>({
   options,
   value,
@@ -203,8 +218,26 @@ export function Segmented<V extends string>({
   onChange: (value: V) => void;
 }) {
   const colors = useColors();
+  const index = Math.max(0, options.findIndex((o) => o.value === value));
+  const width = useSharedValue(0);
+  const pos = useSharedValue(index);
+  useEffect(() => {
+    pos.value = withTiming(index, { duration: 250, easing: Easing.out(Easing.cubic) });
+  }, [index, pos]);
+  const n = options.length;
+  const card = useAnimatedStyle(() => ({
+    width: width.value / n,
+    transform: [{ translateX: (pos.value * width.value) / n }],
+  }));
   return (
     <View style={[styles.segTrack, { backgroundColor: colors.muted }]} accessibilityRole="radiogroup">
+      <View
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+        onLayout={(e) => (width.value = e.nativeEvent.layout.width - 8)}
+      >
+        <Animated.View style={[styles.segCard, { backgroundColor: colors.card }, floating, card]} />
+      </View>
       {options.map((o) => {
         const on = o.value === value;
         return (
@@ -217,7 +250,6 @@ export function Segmented<V extends string>({
             hitSlop={{ top: 4, bottom: 4 }}
             style={({ pressed }) => [
               styles.seg,
-              on && [{ backgroundColor: colors.card }, floating],
               { opacity: o.disabled ? 0.45 : pressed ? 0.7 : 1 },
             ]}
           >
@@ -371,9 +403,15 @@ export function Sheet({
     [],
   );
   if (!mounted) return null;
+  // A handle promises a drag. Sheets that neither resize nor pan shut don't get one.
+  const draggable = props.enablePanDownToClose !== false || (Array.isArray(props.snapPoints) && props.snapPoints.length > 1);
   return (
     <BottomSheet
       ref={inner}
+      // Gorhom groups the whole sheet into one "Bottom Sheet, adjustable" element by default,
+      // which leaves VoiceOver unable to reach anything inside it.
+      accessible={false}
+      handleComponent={draggable ? undefined : null}
       backgroundStyle={{ backgroundColor: colors.card, borderRadius: radius.xl }}
       handleIndicatorStyle={[styles.handle, { backgroundColor: colors.border }]}
       backdropComponent={backdrop ? renderBackdrop : undefined}
@@ -455,6 +493,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   pillText: { fontFamily: "Inter_600SemiBold", fontSize: 16 },
+  pillSmall: { height: 36, borderRadius: radius.pill, gap: 6, paddingHorizontal: 14 },
+  pillTextSmall: { fontSize: 14 },
   textBtn: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 6, minHeight: 44 },
   chip: {
     flexDirection: "row",
@@ -470,6 +510,7 @@ const styles = StyleSheet.create({
   empty: { gap: 14, paddingTop: 8 },
   emptyGlyph: { width: 64, height: 64, borderRadius: radius.lg, alignItems: "center", justifyContent: "center" },
   segTrack: { flexDirection: "row", padding: 4, borderRadius: radius.pill },
+  segCard: { position: "absolute", top: 4, bottom: 4, left: 4, borderRadius: radius.pill },
   seg: { flex: 1, minHeight: 40, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
   section: { gap: 10 },
   sectionHead: { flexDirection: "row", alignItems: "center" },

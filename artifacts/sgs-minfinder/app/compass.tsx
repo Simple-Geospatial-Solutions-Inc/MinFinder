@@ -290,7 +290,7 @@ export default function CompassScreen() {
         <BackToMap />
         <PaywallSheet
           visible={showPaywall}
-          feature="Navigate"
+          feature="navigation"
           onClose={() => setShowPaywall(false)}
         />
       </View>

@@ -153,12 +153,12 @@
   <header class="masthead">
     <p class="brand">Simple Geospatial Solutions Inc.</p>
     <h1>SGS MinFinder — Privacy Policy</h1>
-    <p class="updated">Last updated: 24 September 2026</p>
+    <p class="updated">Last updated: 25 September 2026</p>
     <p class="lead">
       SGS MinFinder is a local-first field tool for exploring British Columbia mineral occurrences.
-      Browsing the map needs no account and keeps your data on your device. The optional Community
-      Mines feature lets you sign in and add mines other people can see; this policy explains what
-      that sends to us, what we publish, and how to delete it.
+      Browsing the map needs no account and keeps your data on your device. The optional Field
+      reports feature lets you sign in and send corrections and notes about MINFILE mines that other
+      people can see; this policy explains what that sends to us, what we publish, and how to delete it.
     </p>
   </header>
 
@@ -166,12 +166,12 @@
     <h2>The short version</h2>
     <ul>
       <li>Browsing, searching, navigating and offline maps need <strong>no account</strong>. The records, downloaded map tiles and settings live <strong>on your device</strong>.</li>
-      <li>Your <strong>location stays on your device</strong> — except when you add a mine, which sends that mine's position (and where you stood) to us.</li>
-      <li><strong>Community Mines is optional.</strong> To add, vote on or report mines you sign in with Apple or Google. We keep only an anonymous account identifier — <strong>never your name or email</strong>.</li>
-      <li>Mines you add, with their photos, are <strong>published to other users</strong>, without your identity. Photos are re-encoded and <strong>all photo metadata, including camera GPS, is removed</strong>.</li>
-      <li>You can <strong>delete your account in the app</strong> (Submissions → Delete account), which deletes what you uploaded. See <a href="https://sgss.ca/mobile-apps/minfinder/delete-account">how to delete your account</a>.</li>
+      <li>Your <strong>location stays on your device</strong> — except when you send a field report from a site or confirm one there, which sends your position to us (see §4).</li>
+      <li><strong>Field reports are optional.</strong> To send, confirm or flag them you sign in with Apple or Google. We keep only an anonymous account identifier — <strong>never your name or email</strong>.</li>
+      <li>Reports you send, with their photos, are <strong>published to other users</strong>, without your identity. Photos are re-encoded and <strong>all photo metadata, including camera GPS, is removed</strong>.</li>
+      <li>You can <strong>delete your account in the app</strong> (menu → Reports → Delete account), which deletes what you uploaded. See <a href="https://sgss.ca/mobile-apps/minfinder/delete-account">how to delete your account</a>.</li>
       <li>We <strong>do not sell</strong> your personal information, and we do not use advertising networks or analytics/tracking SDKs.</li>
-      <li>Map tiles and community data come from <strong>our own servers in Canada</strong>. The optional satellite view streams imagery from Esri. In-app purchases are handled by the app store and RevenueCat.</li>
+      <li>Map tiles and field reports come from <strong>our own servers in Canada</strong>. The optional satellite view streams imagery from Esri. In-app purchases are handled by the app store and RevenueCat.</li>
     </ul>
   </div>
 
@@ -184,7 +184,7 @@
 
   <h2>2. What stays on your device</h2>
   <p>
-    SGS MinFinder is designed to work offline. Unless you use Community Mines (§4), the information the
+    SGS MinFinder is designed to work offline. Unless you use Field reports (§4), the information the
     app uses is stored locally on your device and is not transmitted to us or to any cloud service. This
     includes:
   </p>
@@ -193,7 +193,7 @@
     <li>Map tiles you pre-download for offline use, saved in the app's private file storage;</li>
     <li>Your compass calibration offset, map filters and other app settings;</li>
     <li>Your device's current position, which is used on-device (see §3 and §5);</li>
-    <li>A copy of the public community mines, so they show on the map without a connection.</li>
+    <li>A copy of the public field reports, so they show without a connection.</li>
   </ul>
   <p>
     This data remains under your control. It is kept in the app's on-device database and private file
@@ -204,9 +204,10 @@
   <p>
     Certain features need to contact an outside service to work. In each case below, only the data
     described is sent, it is sent to operate the feature you invoked, and — except for map tiles, the
-    update check and community sync — it happens because of an action you take. Your <strong>continuously
+    update check and field-report sync — it happens because of an action you take. Your <strong>continuously
     tracked position is not sent</strong> to us; the only time a position leaves your device is when you
-    add a mine or vote (see §4), or name an offline region (sent to your device's built-in geocoder).
+    send a field report from a site or confirm one there (see §4), or name an offline region (sent to your
+    device's built-in geocoder).
   </p>
   <div class="table-scroll">
     <table>
@@ -239,28 +240,28 @@
           <td>To suggest a place name for the download so you can recognise it later. This is handled by your device's operating system, not by us.</td>
         </tr>
         <tr>
-          <td>Community sync</td>
-          <td>A request for community mines changed since your last sync; if you are signed in, your session token</td>
+          <td>Field-report sync</td>
+          <td>A request for field reports changed since your last sync; if you are signed in, your session token</td>
           <td>Simple Geospatial Solutions (api.sgss.ca, hosted on our own server in Canada)</td>
-          <td>To keep the community mines on your map up to date, and to upload anything you added or voted on while offline. Runs when the app opens, when a connection returns and after you add a mine.</td>
+          <td>To keep the field reports in the app up to date, and to upload anything you sent or confirmed while offline. Runs when the app opens, when a connection returns and after you save a report.</td>
         </tr>
         <tr>
-          <td>Signing in (Community Mines only)</td>
+          <td>Signing in (Field reports only)</td>
           <td>A sign-in token from Apple or Google</td>
           <td>Apple or Google, then Simple Geospatial Solutions (api.sgss.ca)</td>
-          <td>To create or resume your Community Mines account. We read only the account identifier from the token and store nothing else from it (see §4).</td>
+          <td>To create or resume your Field reports account. We read only the account identifier from the token and store nothing else from it (see §4).</td>
         </tr>
         <tr>
-          <td>Adding a mine, voting, reporting</td>
-          <td>What you submit, described in §4</td>
+          <td>Sending, confirming or flagging a field report</td>
+          <td>What you send, described in §4</td>
           <td>Simple Geospatial Solutions (api.sgss.ca)</td>
-          <td>To publish and moderate community mines</td>
+          <td>To publish and moderate field reports</td>
         </tr>
         <tr>
-          <td>Device check (Community Mines only)</td>
-          <td>A cryptographic proof, tied to that one upload or vote, that it came from the genuine app</td>
+          <td>Device check (Field reports only)</td>
+          <td>A cryptographic proof, tied to that one upload or confirmation, that it came from the genuine app</td>
           <td>Apple (App Attest) on iPhone; Google (Play Integrity) on Android; then Simple Geospatial Solutions</td>
-          <td>To stop fake or automated submissions. Apple or Google checks your device and our app; we receive only a pass/fail result (on Android) or a signature we verify (on iPhone).</td>
+          <td>To stop fake or automated reports. Apple or Google checks your device and our app; we receive only a pass/fail result (on Android) or a signature we verify (on iPhone).</td>
         </tr>
         <tr>
           <td>App update check</td>
@@ -284,11 +285,12 @@
     </table>
   </div>
 
-  <h2>4. Community Mines (optional)</h2>
+  <h2>4. Field reports (optional)</h2>
   <p>
-    Community Mines lets people add old workings that are not in MINFILE, and confirm or flag the ones
-    others have added. Viewing community mines needs no account. Adding, voting, reporting and blocking
-    need you to sign in.
+    Field reports let people correct and update MINFILE mines: mark where the workings really are, say
+    they searched the published spot and found nothing, or leave a note. Other visitors can confirm or
+    dispute what's reported. Reading field reports needs no account. Sending, confirming, flagging and
+    blocking need you to sign in.
   </p>
   <h3>Your account</h3>
   <p>
@@ -297,43 +299,47 @@
     email. Our account record holds that identifier, which provider it came from, and when the account was
     created. Your session is kept in your device's secure keychain or keystore.
   </p>
-  <h3>What a mine you add contains</h3>
+  <h3>What a report you send contains</h3>
   <ul>
-    <li><strong>Location:</strong> where you placed the pin, where your phone was standing, the GPS accuracy, and the time of the GPS fix. The app refuses to capture when your phone reports a mock (simulated) location.</li>
-    <li><strong>Photos:</strong> one to three, taken with the camera in the app. Our server re-encodes every photo and <strong>removes all metadata</strong> — camera GPS, device model, serial numbers and timestamps — before storing it. We also keep a short "fingerprint" of each photo to detect the same photo being reused.</li>
-    <li><strong>Details you choose to give:</strong> the kind of working, and optionally a name, commodity, hazards and notes.</li>
+    <li><strong>Which mine:</strong> its MINFILE number.</li>
+    <li><strong>Location</strong> (for "I found it" and "Couldn't find it"): where you placed the pin, where your phone was standing, the GPS accuracy and the time of the GPS fix, and for a search the radius you say you covered. The app refuses to capture when your phone reports a mock (simulated) location. A note carries no location.</li>
+    <li><strong>Photos</strong> (optional, taken at the site): up to three, taken with the camera in the app. Our server re-encodes every photo and <strong>removes all metadata</strong> — camera GPS, device model, serial numbers and timestamps — before storing it. We also keep a short "fingerprint" of each photo to detect the same photo being reused.</li>
+    <li><strong>What you write:</strong> the kind of working you marked, and an optional note.</li>
   </ul>
   <h3>What other people see</h3>
   <p>
-    A mine becomes public once it passes review (below). Other users see its pin, photos, details, capture
-    date, how far the pin was placed from where you stood (a distance, not your position), and its vote
-    counts. <strong>They never see who added it</strong>: no name, account identifier or other mines by the
-    same person are shown. Your standing position is not published.
+    A report becomes public once it passes review (below). Other users see its kind, photos, text and
+    date, how far a marked working is from the published location, and how many visitors confirmed or
+    disputed it. For a marked working they also see its pin, which is within 30 m of where you stood. For
+    a search they see the radius you covered, <strong>not your position</strong>. They never see who sent
+    it: no name, account identifier or other reports by the same person are shown.
   </p>
   <h3>Review and moderation</h3>
   <p>
-    A new account's first submissions, and any mine placed inside a provincial park, protected area,
+    A new account's first reports, and any working marked inside a provincial park, protected area,
     conservancy, ecological reserve or First Nations reserve, are reviewed by SGS staff before they are
-    shown to anyone else. Mines that are reported or voted down are hidden for review. Staff may remove
-    content and close accounts that break our <a href="https://sgss.ca/mobile-apps/minfinder/terms">Terms of Use</a>.
+    shown to anyone else. Reports that members flag are hidden for review, and reports most visitors
+    disagree with are collapsed. Staff may remove content and close accounts that break our
+    <a href="https://sgss.ca/mobile-apps/minfinder/terms">Terms of Use</a>.
   </p>
-  <h3>Votes, reports and blocks</h3>
+  <h3>Confirmations, flags and blocks</h3>
   <ul>
-    <li><strong>Votes:</strong> when you vote, the app sends your device's last known position with it. Our server uses it only to decide whether you were within 150 m of the mine (an "on-site" vote) and <strong>stores that yes/no answer, not your position</strong>.</li>
-    <li><strong>Reports:</strong> we store the reason you chose. The person who added the mine is not told who reported it.</li>
+    <li><strong>Confirmations:</strong> you can confirm or dispute someone's report only at the site. When you answer, the app records your GPS position and the time of the fix, and sends them when you're next online. Our server uses the position only to check that you were within 75 m of a marked working, or inside the area a search covered, and <strong>stores your answer and the time of the fix, not your position</strong>. Marking a note "Helpful" sends no position.</li>
+    <li><strong>Flags:</strong> we store the reason you chose. The person who sent the report is not told who flagged it.</li>
     <li><strong>Blocks:</strong> private to you. The person you block is not told.</li>
   </ul>
   <h3>Not signed in yet</h3>
   <p>
-    You can add a mine with no signal or before signing in. It is kept on your device, with its photos,
-    until you sign in and have a connection, and then uploaded. Until then you can discard it in the app.
+    You can send or confirm a report with no signal or before signing in. It is kept on your device, with
+    its photos, until you sign in and have a connection, and then uploaded. Until then you can discard a
+    report in the app.
   </p>
 
   <h2>5. Device permissions</h2>
   <p>The app asks for the following permissions. Data captured through them stays on your device except as described in §3 and §4.</p>
   <ul>
-    <li><strong>Location</strong> (while using the app) — to center the map on where you are, to indicate the direction and distance to a selected occurrence, and to record where a mine you add was found.</li>
-    <li><strong>Camera</strong> (only when you add a mine) — to photograph the working. The app does not read your photo library.</li>
+    <li><strong>Location</strong> (while using the app) — to center the map on where you are, to indicate the direction and distance to a selected occurrence, and to record where you were when you send or confirm a field report at a site.</li>
+    <li><strong>Camera</strong> (only when you send a field report from a site) — to photograph the working or the ground you searched. The app does not read your photo library.</li>
   </ul>
   <p>The app does not use Bluetooth or your contacts.</p>
 
@@ -360,15 +366,15 @@
     App Store or Google Play and managed with RevenueCat, which helps us validate purchases and restore
     them across your devices. To do this, RevenueCat processes purchase and receipt data together with
     an anonymous app-user identifier it generates; the app does not link this identifier to a name,
-    email, or your Community Mines account. <strong>We never receive or store your payment card
+    email, or your Field reports account. <strong>We never receive or store your payment card
     details</strong> — those are handled solely by the app store.
   </p>
 
   <h2>8. How your information is shared</h2>
   <p>
-    We do not sell your personal information, and we do not share it for advertising or marketing. Mines
-    you add are published to other users as described in §4, without your identity, and SGS may share
-    community mines — their locations, photos and details, never who added them — with the maintainers of
+    We do not sell your personal information, and we do not share it for advertising or marketing. Reports
+    you send are published to other users as described in §4, without your identity, and SGS may share
+    field reports — marked locations, photos and text, never who sent them — with the maintainers of
     MINFILE and other public geological records. Otherwise the only sharing is with the service providers
     listed in §6, strictly to operate the feature you used. We may disclose information if required to do
     so by law.
@@ -376,9 +382,9 @@
 
   <h2>9. Data retention and deletion</h2>
   <ul>
-    <li><strong>On your device:</strong> the records, downloaded map tiles, settings and cached community mines are kept until you delete the offline data or uninstall the app.</li>
-    <li><strong>Your account and submissions:</strong> kept until you delete them. Deleting your account (in the app: Submissions → Delete account, or see <a href="https://sgss.ca/mobile-apps/minfinder/delete-account">how to delete your account</a>) immediately deletes the photos and details of every mine you uploaded, your votes, reports and blocks, and your account record. We keep only an empty placeholder for each deleted mine, holding its location and kind and nothing that identifies you, so devices know to remove it.</li>
-    <li><strong>Mines still on your device</strong> that were never uploaded are not affected by account deletion; discard them in the app or uninstall it.</li>
+    <li><strong>On your device:</strong> the records, downloaded map tiles, settings and cached field reports are kept until you delete the offline data or uninstall the app.</li>
+    <li><strong>Your account and reports:</strong> kept until you delete them. Deleting your account (in the app: menu → Reports → Delete account, or see <a href="https://sgss.ca/mobile-apps/minfinder/delete-account">how to delete your account</a>) immediately deletes the photos and text of every report you uploaded, where you stood for each, your confirmations, flags and blocks, and your account record. We keep only an empty placeholder for each deleted report, holding the MINFILE number, its kind and, for a marked working, its pin, and nothing that identifies you, so devices know to remove it.</li>
+    <li><strong>Reports still on your device</strong> that were never uploaded are not affected by account deletion; discard them in the app or uninstall it.</li>
     <li><strong>Backups:</strong> our server keeps nightly database backups for 14 days, and we keep off-server copies for up to 30 days, so deleted data may persist in backups for up to 30 days before it is overwritten.</li>
     <li><strong>Server logs:</strong> our web server keeps access logs, including IP addresses, for operating and protecting the service. They are rotated by size and not linked to your account.</li>
     <li><strong>Correspondence:</strong> if you contact us at <a href="mailto:support@sgss.ca">support@sgss.ca</a>, we retain that correspondence for as long as needed to respond to it.</li>
@@ -388,7 +394,7 @@
   <p>
     SGS MinFinder is a reference tool intended for geologists, prospectors, and other outdoor and
     industry professionals. It is not directed at children and does not knowingly collect personal
-    information from children. Community Mines accounts are intended for users aged 16 and over.
+    information from children. Field reports accounts are intended for users aged 16 and over.
   </p>
 
   <h2>11. Your privacy rights</h2>
@@ -396,10 +402,10 @@
     We handle personal information in accordance with Canada's <em>Personal Information Protection and
     Electronic Documents Act</em> (PIPEDA) and applicable provincial law. Subject to that law, you may
     request access to, correction of, or deletion of personal information we hold about you. You can see
-    and delete your submissions and your account yourself in the app. For anything else — or if you no
+    and delete your reports and your account yourself in the app. For anything else — or if you no
     longer have the app — contact <a href="mailto:support@sgss.ca">support@sgss.ca</a> and we will
     respond within a reasonable time. Because we don't store your name or email, we may ask you to
-    identify a submission (roughly where and when you added it) so we can find your account.
+    identify a report (which mine, and roughly when you sent it) so we can find your account.
   </p>
 
   <h2>12. International processing</h2>

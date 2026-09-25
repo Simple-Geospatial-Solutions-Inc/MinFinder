@@ -1,88 +1,93 @@
 import { randomUUID } from "expo-crypto";
 import { File } from "expo-file-system";
 import * as FileSystem from "expo-file-system/legacy";
-import * as Location from "expo-location";
 import * as Network from "expo-network";
 import { AppState } from "react-native";
 
 import { attestHeaders, forgetAttestKey } from "@/lib/attest";
 import { api, ApiError, isSignedIn, signOut } from "@/lib/auth";
-import { distanceMeters } from "@/lib/geo";
 import { getUserDb, kvGet, kvSet } from "@/lib/userDb";
 
 /**
- * Offline-first sync for Community Mines. Everything the UI shows comes out of
- * user.db; the network only ever feeds that database.
+ * Offline-first sync for field reports: members' corrections and updates on
+ * MINFILE mines. Everything the UI shows comes out of user.db; the network only
+ * ever feeds that database.
  *
- * One pass: push the outbox, pull the public delta, then refresh the user's own
- * submissions. Runs on launch, on returning to the foreground, when the network
- * comes back and right after a capture.
+ * One pass: push the outbox, push responses, pull the public delta, then
+ * refresh the user's own reports. Runs on launch, on returning to the
+ * foreground, when the network comes back and right after a capture.
  *
  * ponytail: foreground only. Add expo-background-task if field users report
  * uploads waiting until they next open the app.
  */
 
-export const MINE_TYPES = [
+// These mirror LIMITS in artifacts/minfinder-api/src/rules.ts. The server is the
+// authority; checking here only saves a capture the server would refuse.
+export const ON_SITE_M = 75;
+export const FAR_ACK_M = 300;
+export const MAX_FROM_PUBLISHED_M = 10_000;
+export const SEARCH_RADII = [50, 150, 300] as const;
+export const MAX_TEXT = 1000;
+export const MAX_PHOTOS = 3;
+
+export const LABELS = [
   ["adit", "Adit"],
   ["shaft", "Shaft"],
-  ["open_pit", "Open pit"],
+  ["portal", "Portal"],
   ["trench", "Trench"],
-  ["prospect_pit", "Prospect pit"],
-  ["tailings", "Tailings / dump"],
-  ["structure", "Structure / camp"],
+  ["dump", "Waste dump"],
+  ["headframe", "Headframe"],
+  ["ruins", "Ruins"],
   ["other", "Other"],
 ] as const;
-export type MineType = (typeof MINE_TYPES)[number][0];
+export type Label = (typeof LABELS)[number][0];
+export const LABEL_TEXT = Object.fromEntries(LABELS) as Record<Label, string>;
 
-export const HAZARDS = [
-  ["open_shaft", "Open shaft"],
-  ["unstable_portal", "Unstable portal"],
-  ["flooded", "Flooded"],
-  ["bad_air", "Bad air"],
-  ["other", "Other hazard"],
-] as const;
-export type Hazard = (typeof HAZARDS)[number][0];
+export type Kind = "location" | "not_found" | "note";
 
-/** The `data` part of POST /v1/submissions (see artifacts/minfinder-api/README.md). */
-export interface Submission {
-  id: string;
-  lat: number;
-  lon: number;
+interface OnSiteFix {
   user_lat: number;
   user_lon: number;
   accuracy_m: number;
   mocked: false;
   captured_at: number;
-  type: MineType;
-  name?: string;
-  commodity?: string;
-  hazards: Hazard[];
-  notes?: string;
   safety_ack: true;
 }
 
-export type Tier = "pending" | "unverified" | "confirmed" | "verified" | "hidden";
+/** The `data` part of POST /v1/submissions (see artifacts/minfinder-api/README.md). */
+export type Submission = { id: string; minfilno: string; visit_id?: string; text?: string } & (
+  | ({ kind: "location"; lat: number; lon: number; label: Label; far_ack?: boolean } & OnSiteFix)
+  | ({ kind: "not_found"; search_radius_m: number } & OnSiteFix)
+  | { kind: "note"; text: string }
+);
+type NewSubmission = Submission extends infer S ? (S extends unknown ? Omit<S, "id"> : never) : never;
 
-/** A mine as the server serializes it. */
-export interface Mine {
+export type Status = "pending" | "unconfirmed" | "disputed" | "collapsed" | "confirmed" | "verified" | "hidden";
+
+/** A report as the server serializes it. */
+export interface Contribution {
   id: string;
-  lat: number;
-  lon: number;
-  type: MineType;
-  name: string | null;
-  commodity: string | null;
-  hazards: Hazard[];
-  notes: string | null;
+  minfilno: string;
+  kind: Kind;
+  label: Label | null;
+  /** A located working's pin, or where a searcher stood; null on a note. */
+  lat: number | null;
+  lon: number | null;
+  accuracy_m: number | null;
   captured_at: number;
-  nudge_m: number;
-  tier: Tier;
-  net: number;
-  ups: number;
-  downs: number;
-  on_site_up: number;
+  search_radius_m: number | null;
+  distance_m: number | null;
+  visit_id: string | null;
+  text: string | null;
+  status: Status;
+  /** On-site visits that agree, the author's own capture included. */
+  confirms: number;
+  disputes: number;
+  last_visit_at: number | null;
+  helpful: number;
   photos: string[];
   seq: number;
-  /** "Provincial park: GARIBALDI PARK" while a mine in a sensitive area waits for review. */
+  /** "Provincial park: GARIBALDI PARK" while a location in a sensitive area waits for review. */
   held_for?: string | null;
 }
 
@@ -97,6 +102,13 @@ export interface OutboxItem {
   created_at: number;
 }
 
+/** A report as the UI shows it: public, the user's own, or still on this phone. */
+export interface Report extends Contribution {
+  own: boolean;
+  /** Still in the outbox: `photos` are file:// uris, not server photo ids. */
+  queued: boolean;
+}
+
 // --- Change notification: screens re-read user.db when this fires. ---------
 const listeners = new Set<() => void>();
 export function onSyncChange(l: () => void): () => void {
@@ -108,13 +120,10 @@ const notify = () => listeners.forEach((l) => l());
 // --- Outbox ------------------------------------------------------------------
 
 /**
- * Saves a capture for upload. The photos are copied out of the picker's cache
+ * Saves a report for upload. The photos are copied out of the camera's cache
  * straight away, because the OS may purge that directory before we get signal.
  */
-export async function queueSubmission(
-  data: Omit<Submission, "id">,
-  photoUris: string[],
-): Promise<string> {
+export async function queueSubmission(data: NewSubmission, photoUris: string[] = []): Promise<string> {
   const id = randomUUID();
   const dir = `${FileSystem.documentDirectory}outbox/${id}/`;
   await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
@@ -149,87 +158,88 @@ export async function discardOutboxItem(id: string): Promise<void> {
   notify();
 }
 
-/** The user's uploaded submissions, as of the last sync (including pending review). */
-export async function getMySubmissions(): Promise<Mine[]> {
-  return (await kvGet<Mine[]>("my_submissions")) ?? [];
+/** The user's uploaded reports, as of the last sync (including pending review). */
+export async function getMySubmissions(): Promise<Contribution[]> {
+  return (await kvGet<Contribution[]>("my_submissions")) ?? [];
 }
 
-export interface MyMine {
-  lat: number;
-  lon: number;
-  type: MineType;
-  name: string | null;
-  captured_at: number;
-  uploaded: boolean;
+/** An outbox item as the UI shows it, before the server has had a say. */
+function queuedReport(o: OutboxItem): Report {
+  const d = o.data;
+  const fix = d.kind === "note" ? null : d;
+  return {
+    id: d.id,
+    minfilno: d.minfilno,
+    kind: d.kind,
+    label: d.kind === "location" ? d.label : null,
+    lat: d.kind === "location" ? d.lat : (fix?.user_lat ?? null),
+    lon: d.kind === "location" ? d.lon : (fix?.user_lon ?? null),
+    accuracy_m: fix?.accuracy_m ?? null,
+    captured_at: fix?.captured_at ?? o.created_at,
+    search_radius_m: d.kind === "not_found" ? d.search_radius_m : null,
+    distance_m: null,
+    visit_id: d.visit_id ?? null,
+    text: d.text ?? null,
+    status: "pending",
+    confirms: d.kind === "note" ? 0 : 1,
+    disputes: 0,
+    last_visit_at: fix?.captured_at ?? null,
+    helpful: 0,
+    photos: o.photos,
+    seq: 0,
+    own: true,
+    queued: true,
+  };
 }
 
-/** Everything this user has added: still on the phone, or already uploaded. */
-export async function getMyMines(): Promise<MyMine[]> {
-  const queued = (await getOutbox())
-    .filter((o) => o.state === "queued")
-    .map((o) => ({ ...o.data, name: o.data.name ?? null, uploaded: false }));
-  const uploaded = (await getMySubmissions()).map((m) => ({ ...m, uploaded: true }));
-  return [...queued, ...uploaded];
-}
-
-/** A mine on the home map: the public cache plus this user's own, uploaded or not. */
-export interface MapMine extends Mine {
-  own: boolean;
-  /** Still in the outbox: `photos` are file:// uris, not server photo ids. */
-  queued: boolean;
-}
-
-export async function getMapMines(): Promise<MapMine[]> {
+/**
+ * Every report the user can see: the public cache, their own uploads (pending
+ * ones never reach the public cache) and captures still on this phone. Pass a
+ * MINFILE number for one mine's reports.
+ */
+export async function getReports(minfilno?: string): Promise<Report[]> {
   const db = await getUserDb();
-  const rows = await db.getAllAsync<{ json: string }>("SELECT json FROM community_mines");
-  const mine = await getMySubmissions();
+  const rows = minfilno
+    ? await db.getAllAsync<{ json: string }>("SELECT json FROM contributions WHERE minfilno = ?", [minfilno])
+    : await db.getAllAsync<{ json: string }>("SELECT json FROM contributions");
+  const mine = (await getMySubmissions()).filter((c) => !minfilno || c.minfilno === minfilno);
   const ownIds = new Set(mine.map((m) => m.id));
-  const blocked = new Set((await getBlocks()).mine_ids);
-  const out = new Map<string, MapMine>();
+  const blocked = new Set((await getBlocks()).ids);
+  const out = new Map<string, Report>();
   for (const r of rows) {
-    const m = JSON.parse(r.json) as Mine;
-    if (blocked.has(m.id)) continue;
-    out.set(m.id, { ...m, own: ownIds.has(m.id), queued: false });
+    const c = JSON.parse(r.json) as Contribution;
+    if (blocked.has(c.id)) continue;
+    out.set(c.id, { ...c, own: ownIds.has(c.id), queued: false });
   }
-  // Pending and hidden ones never reach the public cache; the author still sees them.
-  for (const m of mine) if (!out.has(m.id)) out.set(m.id, { ...m, own: true, queued: false });
+  for (const c of mine) if (!out.has(c.id)) out.set(c.id, { ...c, own: true, queued: false });
   for (const o of await getOutbox()) {
-    if (o.state !== "queued") continue;
-    const d = o.data;
-    out.set(d.id, {
-      ...d,
-      name: d.name ?? null,
-      commodity: d.commodity ?? null,
-      notes: d.notes ?? null,
-      nudge_m: Math.round(distanceMeters(d.lat, d.lon, d.user_lat, d.user_lon)),
-      tier: "pending",
-      net: 0,
-      ups: 0,
-      downs: 0,
-      on_site_up: 0,
-      photos: o.photos,
-      seq: 0,
-      own: true,
-      queued: true,
-    });
+    if (o.state === "queued" && (!minfilno || o.data.minfilno === minfilno)) out.set(o.data.id, queuedReport(o));
   }
   return [...out.values()];
 }
 
-/** Public community mines near a point, from the local cache. */
-export async function communityMinesNear(lat: number, lon: number, radiusM: number): Promise<Mine[]> {
-  const dLat = radiusM / 111_320;
-  const db = await getUserDb();
-  const rows = await db.getAllAsync<{ json: string }>(
-    "SELECT json FROM community_mines WHERE lat BETWEEN ? AND ?",
-    [lat - dLat, lat + dLat],
+/**
+ * The line a mine's card leads with, from its reports (see the Field reports
+ * mockup): a better location that visitors confirmed, or the Geocaching-style
+ * wrench when recent searches found nothing and no location stands up.
+ */
+export function mineSummary(reports: Report[], now = Date.now()) {
+  const recent = (r: Report) => now - r.captured_at < 2 * 365 * 86_400_000;
+  const trusted = (r: Report) => r.status === "confirmed" || r.status === "verified";
+  const best = reports
+    .filter((r) => r.kind === "location" && trusted(r))
+    .sort((a, b) => b.confirms - a.confirms)[0];
+  const searches = reports.filter(
+    (r) => r.kind === "not_found" && recent(r) && r.status !== "collapsed" && r.status !== "hidden" && !r.queued,
   );
-  return rows.map((r) => JSON.parse(r.json) as Mine);
+  const disputed = !reports.some((r) => r.kind === "location" && trusted(r) && recent(r)) && searches.length >= 2;
+  return { best: best ?? null, disputed, searches };
 }
 
 export async function signOutAndForget(): Promise<void> {
   await signOut();
-  for (const key of ["my_submissions", "my_votes", "pending_votes", "server_votes"]) await kvSet(key, key === "my_submissions" ? [] : {});
+  await kvSet("my_submissions", []);
+  for (const key of ["my_responses", "pending_responses"]) await kvSet(key, {});
   await kvSet("blocks", NO_BLOCKS);
   notify();
 }
@@ -243,104 +253,99 @@ export async function deleteAccount(): Promise<void> {
   await signOutAndForget();
 }
 
-// --- Votes, reports, blocks --------------------------------------------------------
+// --- Responses, reports, blocks -------------------------------------------------
 
-export type VoteValue = -1 | 0 | 1;
-interface PendingVote {
-  value: VoteValue;
-  lat?: number;
-  lon?: number;
-  accuracy_m?: number;
+/** A visitor's verdict with the fix it was given at, or a Helpful on a note. */
+export type ResponseBody =
+  | { value: -1 | 0 | 1; lat?: number; lon?: number; accuracy_m?: number; captured_at?: number }
+  | { helpful: boolean };
+
+/** What the user last pressed on each report: +1 / -1 on site, or Helpful on a note. */
+export type MyResponse = {
+  value?: -1 | 0 | 1;
+  helpful?: boolean;
+  /** The Helpful the server last accepted, so a count can add this user's press before it's uploaded. */
+  helpfulSent?: boolean;
+};
+
+export async function getMyResponses(): Promise<{ mine: Record<string, MyResponse>; pending: Set<string> }> {
+  const mine = (await kvGet<Record<string, MyResponse>>("my_responses")) ?? {};
+  const pending = (await kvGet<Record<string, ResponseBody>>("pending_responses")) ?? {};
+  return { mine, pending: new Set(Object.keys(pending)) };
 }
 
 /**
- * What the user last pressed on each mine, and what the server had counted when
- * it last answered, so a count can take the difference and move straight away.
+ * Records a response and queues it, so it works with no signal. A verdict
+ * carries the fix taken as the user pressed, at the site, which is what the
+ * server checks when it finally arrives (up to 30 days later).
  */
-export async function getMyVotes(): Promise<{
-  votes: Record<string, VoteValue>;
-  counted: Record<string, VoteValue>;
-  pending: Set<string>;
-}> {
-  const votes = (await kvGet<Record<string, VoteValue>>("my_votes")) ?? {};
-  const counted = (await kvGet<Record<string, VoteValue>>("server_votes")) ?? {};
-  const pending = (await kvGet<Record<string, PendingVote>>("pending_votes")) ?? {};
-  return { votes, counted, pending: new Set(Object.keys(pending)) };
-}
-
-/**
- * Records a vote and queues it, so it works with no signal. The last known
- * position rides along: within 150 m of the mine, the server counts it double.
- */
-export async function castVote(id: string, value: VoteValue): Promise<void> {
-  const votes = (await kvGet<Record<string, VoteValue>>("my_votes")) ?? {};
-  if (value === 0) delete votes[id];
-  else votes[id] = value;
-  await kvSet("my_votes", votes);
-
-  const pos = await Location.getLastKnownPositionAsync({ maxAge: 120_000, requiredAccuracy: 30 }).catch(() => null);
-  const pending = (await kvGet<Record<string, PendingVote>>("pending_votes")) ?? {};
-  pending[id] = pos
-    ? { value, lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy_m: pos.coords.accuracy ?? undefined }
-    : { value };
-  await kvSet("pending_votes", pending);
+export async function respond(id: string, body: ResponseBody): Promise<void> {
+  const mine = (await kvGet<Record<string, MyResponse>>("my_responses")) ?? {};
+  mine[id] = "helpful" in body ? { ...mine[id], helpful: body.helpful } : { ...mine[id], value: body.value };
+  await kvSet("my_responses", mine);
+  const pending = (await kvGet<Record<string, ResponseBody>>("pending_responses")) ?? {};
+  pending[id] = body;
+  await kvSet("pending_responses", pending);
   notify();
   void sync();
 }
 
-async function pushVotes(): Promise<void> {
+async function pushResponses(): Promise<void> {
   if (!(await isSignedIn())) return;
   const db = await getUserDb();
-  const queued = (await kvGet<Record<string, PendingVote>>("pending_votes")) ?? {};
-  for (const [id, vote] of Object.entries(queued)) {
-    let drop = false;
+  const queued = (await kvGet<Record<string, ResponseBody>>("pending_responses")) ?? {};
+  for (const [id, sent] of Object.entries(queued)) {
+    let failure: string | null = null;
     try {
-      const body = JSON.stringify(vote);
-      const { mine, attest } = await api<{ mine: Mine; attest?: string }>(`/mines/${id}/vote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(await attestHeaders(body)) },
-        body,
-      });
-      if (attest === "fail: unknown key") await forgetAttestKey();
-      await db.runAsync("UPDATE community_mines SET json = ? WHERE id = ?", [JSON.stringify(mine), id]);
-      // The cached counts now include this vote.
-      const counted = (await kvGet<Record<string, VoteValue>>("server_votes")) ?? {};
-      if (vote.value === 0) delete counted[id];
-      else counted[id] = vote.value;
-      await kvSet("server_votes", counted);
-      drop = true;
+      // DEV ONLY: the seeded KELOWNA comments aren't on the server; keep the press on the phone.
+      if (!(__DEV__ && id.startsWith("dev-"))) {
+        const body = JSON.stringify(sent);
+        const { contribution, attest } = await api<{ contribution: Contribution; attest?: string }>(`/contributions/${id}/respond`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(await attestHeaders(body)) },
+          body,
+        });
+        if (attest === "fail: unknown key") await forgetAttestKey();
+        await db.runAsync("UPDATE contributions SET json = ? WHERE id = ?", [JSON.stringify(contribution), id]);
+        // The count that just came back includes this press.
+        if ("helpful" in sent) {
+          const mine = (await kvGet<Record<string, MyResponse>>("my_responses")) ?? {};
+          mine[id] = { ...mine[id], helpfulSent: sent.helpful };
+          await kvSet("my_responses", mine);
+        }
+      }
     } catch (e) {
       if (e instanceof ApiError && e.code === "attest_key_unknown") return void (await forgetAttestKey());
       if (!(e instanceof ApiError) || e.status >= 500 || RETRYABLE.has(e.status)) return; // try again next pass
-      drop = true; // gone, hidden, or the user's own: the server won't take it
-      const votes = (await kvGet<Record<string, VoteValue>>("my_votes")) ?? {};
-      delete votes[id];
-      await kvSet("my_votes", votes);
+      // Gone, hidden, the user's own, or a fix the server won't count: forget the press.
+      failure = e.code;
+      const mine = (await kvGet<Record<string, MyResponse>>("my_responses")) ?? {};
+      delete mine[id];
+      await kvSet("my_responses", mine);
     }
+    if (failure) console.warn(`[sync] response to ${id} refused: ${failure}`);
     // Re-read: a newer press while this one was in flight must not be lost.
-    const now = (await kvGet<Record<string, PendingVote>>("pending_votes")) ?? {};
-    if (drop && JSON.stringify(now[id]) === JSON.stringify(vote)) {
+    const now = (await kvGet<Record<string, ResponseBody>>("pending_responses")) ?? {};
+    if (JSON.stringify(now[id]) === JSON.stringify(sent)) {
       delete now[id];
-      await kvSet("pending_votes", now);
+      await kvSet("pending_responses", now);
     }
     notify();
   }
 }
 
 export const REPORT_REASONS = [
-  ["not_a_mine", "It isn't a mine"],
-  ["wrong_location", "It's in the wrong place"],
-  ["photo_not_this_site", "The photos are of somewhere else"],
-  ["duplicate", "It's already on the map"],
+  ["spam", "Spam or advertising"],
   ["inappropriate", "Offensive or inappropriate"],
+  ["photo_not_this_site", "The photos are of somewhere else"],
   ["dangerous", "It sends people somewhere dangerous"],
   ["other", "Something else"],
 ] as const;
 export type ReportReason = (typeof REPORT_REASONS)[number][0];
 
-/** Online only: a report is a request for staff attention, not field data. */
-export async function reportMine(id: string, reason: ReportReason): Promise<void> {
-  await api(`/mines/${id}/report`, {
+/** Online only: a flag is a request for staff attention, not field data. */
+export async function flagReport(id: string, reason: ReportReason): Promise<void> {
+  await api(`/contributions/${id}/report`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reason }),
@@ -349,9 +354,9 @@ export async function reportMine(id: string, reason: ReportReason): Promise<void
 
 interface Blocks {
   authors: number;
-  mine_ids: string[];
+  ids: string[];
 }
-const NO_BLOCKS: Blocks = { authors: 0, mine_ids: [] };
+const NO_BLOCKS: Blocks = { authors: 0, ids: [] };
 
 export async function getBlocks(): Promise<Blocks> {
   return (await kvGet<Blocks>("blocks")) ?? NO_BLOCKS;
@@ -361,9 +366,9 @@ async function refreshBlocks(): Promise<void> {
   await kvSet("blocks", await api<Blocks>("/me/blocks"));
 }
 
-/** Hides everything by this mine's author. Online only. */
-export async function blockAuthor(mineId: string): Promise<void> {
-  await api(`/mines/${mineId}/block`, { method: "POST" });
+/** Hides everything by this report's author. Online only. */
+export async function blockAuthor(id: string): Promise<void> {
+  await api(`/contributions/${id}/block`, { method: "POST" });
   await refreshBlocks();
   notify();
 }
@@ -390,10 +395,7 @@ async function pushOutbox(): Promise<void> {
   );
   for (const row of due) {
     const form = new FormData();
-    // Rounded here too for captures queued before gps.ts rounded the fix time.
-    const data = JSON.parse(row.data);
-    data.captured_at = Math.round(data.captured_at);
-    const dataPart = JSON.stringify(data);
+    const dataPart = row.data as string;
     form.append("data", dataPart);
     for (const uri of JSON.parse(row.photos) as string[]) {
       // Expo's fetch (the global one) takes a File, not React Native's
@@ -452,29 +454,30 @@ async function pull(): Promise<void> {
   const db = await getUserDb();
   let cursor = (await kvGet<number>("cursor")) ?? 0;
   for (;;) {
-    const r = await api<{ cursor: number; more: boolean; mines: Mine[]; deleted: string[] }>(
-      `/mines?since=${cursor}`,
+    const r = await api<{ cursor: number; more: boolean; contributions: Contribution[]; deleted: string[] }>(
+      `/contributions?since=${cursor}`,
     );
     await db.withExclusiveTransactionAsync(async (t) => {
-      for (const m of r.mines) {
-        await t.runAsync(
-          "INSERT OR REPLACE INTO community_mines (id, lat, lon, json) VALUES (?, ?, ?, ?)",
-          [m.id, m.lat, m.lon, JSON.stringify(m)],
-        );
+      for (const c of r.contributions) {
+        await t.runAsync("INSERT OR REPLACE INTO contributions (id, minfilno, json) VALUES (?, ?, ?)", [
+          c.id,
+          c.minfilno,
+          JSON.stringify(c),
+        ]);
       }
-      for (const id of r.deleted) await t.runAsync("DELETE FROM community_mines WHERE id = ?", [id]);
+      for (const id of r.deleted) await t.runAsync("DELETE FROM contributions WHERE id = ?", [id]);
       await t.runAsync("INSERT OR REPLACE INTO kv (key, value) VALUES ('cursor', ?)", [String(r.cursor)]);
     });
     cursor = r.cursor;
-    if (r.mines.length || r.deleted.length) notify();
+    if (r.contributions.length || r.deleted.length) notify();
     if (!r.more) return;
   }
 }
 
 async function refreshMine(): Promise<void> {
   if (!(await isSignedIn())) return;
-  const { mines } = await api<{ mines: Mine[] }>("/me/submissions");
-  await kvSet("my_submissions", mines);
+  const { contributions } = await api<{ contributions: Contribution[] }>("/me/submissions");
+  await kvSet("my_submissions", contributions);
   await refreshBlocks().catch((e) => console.warn("[sync] blocks", e)); // never hold up the list
   notify();
 }
@@ -482,7 +485,7 @@ async function refreshMine(): Promise<void> {
 async function run(): Promise<void> {
   const net = await Network.getNetworkStateAsync();
   if (!net.isConnected || net.isInternetReachable === false) return;
-  for (const step of [pushOutbox, pushVotes, pull, refreshMine]) {
+  for (const step of [pushOutbox, pushResponses, pull, refreshMine]) {
     try {
       await step();
     } catch (e) {
@@ -518,7 +521,6 @@ export function sync(): Promise<void> {
   return running;
 }
 
-/** Wires the triggers. Mounted once, in app/_layout.tsx. */
 // Uploads that failed for want of signal don't wait out their backoff once the
 // signal is back; that wait is for a struggling server, not a dead zone.
 async function retryOffline(): Promise<void> {
@@ -527,7 +529,32 @@ async function retryOffline(): Promise<void> {
   await sync();
 }
 
+// DEV ONLY, remove before release: other members' comments on KELOWNA
+// (082ENW058), written straight into this phone's cache so the Comments tab
+// can be seen with someone else's posts. Never sent to the API.
+async function seedDevComments() {
+  const day = 86_400_000;
+  const now = Date.now();
+  const notes: [string, string, number, number][] = [
+    ["Gravel access road off the highway is gated in spring. Walked in from the pullout, about 15 minutes.", "dev-kelowna-1", 12, 4],
+    ["Old workings are mostly overgrown now. Look for the cut bank on the east side of the pit.", "dev-kelowna-2", 95, 2],
+    ["Private land around the north edge, ask before crossing.", "dev-kelowna-3", 400, 0],
+  ];
+  const db = await getUserDb();
+  for (const [text, id, ago, helpful] of notes) {
+    const c: Contribution = {
+      id, minfilno: "082ENW058", kind: "note", label: null, lat: null, lon: null, accuracy_m: null,
+      captured_at: now - ago * day, search_radius_m: null, distance_m: null, visit_id: null, text,
+      status: "unconfirmed", confirms: 0, disputes: 0, last_visit_at: null, helpful, photos: [], seq: 0,
+    };
+    await db.runAsync("INSERT OR REPLACE INTO contributions (id, minfilno, json) VALUES (?, ?, ?)", [id, c.minfilno, JSON.stringify(c)]);
+  }
+  notify();
+}
+
+/** Wires the triggers. Mounted once, in app/_layout.tsx. */
 export function startSync(): () => void {
+  if (__DEV__) void seedDevComments().catch((e) => console.warn("[dev] seed comments", e));
   void retryOffline();
   const app = AppState.addEventListener("change", (s) => {
     if (s === "active") void retryOffline();

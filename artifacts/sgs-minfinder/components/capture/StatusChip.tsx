@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from "react-native";
 
 import { Feather, type FeatherIconName } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
-import type { OutboxItem, Tier } from "@/lib/sync";
+import type { OutboxItem, Report } from "@/lib/sync";
 
 type Tone = "ok" | "wait" | "bad" | "neutral";
 export interface Status {
@@ -29,13 +29,26 @@ export function outboxStatus(item: OutboxItem, signedIn: boolean): Status {
   }
 }
 
-export const TIER_STATUS: Record<Tier, Status> = {
-  pending: { icon: "hourglass", label: "In review", tone: "wait" },
-  unverified: { icon: "circle-dashed", label: "Unverified", tone: "neutral" },
-  confirmed: { icon: "check", label: "Confirmed", tone: "ok" },
-  verified: { icon: "shield-check", label: "Verified by SGS", tone: "ok" },
-  hidden: { icon: "eye-off", label: "Hidden for review", tone: "bad" },
-};
+/** A report's status in words. Confirmed names its visitors, as on the Field reports mockup. */
+export function reportStatus(r: Pick<Report, "status" | "confirms" | "queued">): Status {
+  if (r.queued) return { icon: "clock", label: "On this phone", tone: "wait" };
+  switch (r.status) {
+    case "pending":
+      return { icon: "hourglass", label: "In review", tone: "wait" };
+    case "unconfirmed":
+      return { icon: "circle-dashed", label: "Unconfirmed", tone: "neutral" };
+    case "disputed":
+      return { icon: "alert-triangle", label: "Disputed", tone: "wait" };
+    case "collapsed":
+      return { icon: "eye-off", label: "Most visitors disagree", tone: "bad" };
+    case "confirmed":
+      return { icon: "check", label: `Confirmed by ${r.confirms} visitors`, tone: "ok" };
+    case "verified":
+      return { icon: "shield-check", label: "Verified by SGS", tone: "ok" };
+    case "hidden":
+      return { icon: "eye-off", label: "Hidden for review", tone: "bad" };
+  }
+}
 
 /** Icon plus words in a tinted pill, so the state reads without colour. */
 export function StatusChip({ status }: { status: Status }) {

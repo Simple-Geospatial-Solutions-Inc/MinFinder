@@ -16,6 +16,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ToastHost } from "@/components/Toast";
 import colors from "@/constants/colors";
 import { useColors } from "@/hooks/useColors";
 import { SubscriptionProvider } from "@/lib/revenuecat";
@@ -60,10 +61,10 @@ function RootLayoutNav() {
         options={{ title: "About", headerBackTitle: "Map" }}
       />
       <Stack.Screen name="redeem" options={{ title: "Redeem code" }} />
-      <Stack.Screen name="submit" options={{ title: "Add a mine", headerBackTitle: "Back" }} />
+      <Stack.Screen name="submit" options={{ title: "Field report", headerBackTitle: "Back" }} />
       <Stack.Screen
         name="my-submissions"
-        options={{ title: "My submissions", headerBackTitle: "Map" }}
+        options={{ title: "My reports", headerBackTitle: "Map" }}
       />
     </Stack>
   );
@@ -96,6 +97,7 @@ export default function RootLayout() {
               <KeyboardProvider>
                 <StatusBar style="light" />
                 <RootLayoutNav />
+                <ToastHost />
               </KeyboardProvider>
             </GestureHandlerRootView>
           </SubscriptionProvider>

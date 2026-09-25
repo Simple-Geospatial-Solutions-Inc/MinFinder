@@ -9,89 +9,74 @@ import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DETAILS_SNAP, type LatLon } from "@/components/capture/CaptureMap";
 import { describeGps, type GpsState, type LiveFix } from "@/components/capture/gps";
-import { MineGlyph, TYPE_HINTS } from "@/components/capture/MineGlyph";
+import { LABEL_HINTS, MineGlyph } from "@/components/capture/MineGlyph";
 import { Chip, GUTTER, Notice, PillButton, Sheet, type } from "@/components/ui";
 import { Feather } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
-import { queryOccurrences } from "@/lib/db";
-import { distanceMeters } from "@/lib/geo";
+import { bearingDegrees, bearingToCompass, distanceMeters, formatDistance } from "@/lib/geo";
 import {
-  communityMinesNear,
-  HAZARDS,
-  MINE_TYPES,
+  FAR_ACK_M,
+  LABELS,
+  MAX_FROM_PUBLISHED_M,
+  MAX_PHOTOS,
+  MAX_TEXT,
+  ON_SITE_M,
   queueSubmission,
-  type Hazard,
-  type MineType,
-  type MyMine,
+  type Label,
 } from "@/lib/sync";
-import { formatShortDate } from "@/lib/format";
 
-// Mirrors LIMITS in artifacts/minfinder-api/src/rules.ts.
-const MAX_PHOTOS = 3;
-const OWN_RADIUS_M = 100;
-const DUPLICATE_RADIUS_M = 30;
-const MINFILE_NEAR_M = 100;
-// Photos have to be taken at the site, not after walking back to the truck.
-const PHOTO_RADIUS_M = 100;
-const TYPE_LABEL = Object.fromEntries(MINE_TYPES) as Record<MineType, string>;
 const SNAPS = [`${DETAILS_SNAP * 100}%`, "100%"];
 
-interface Nearby {
-  minfile: { name: string; no: string; m: number } | null;
-  community: boolean;
-  own: { m: number; mine: MyMine } | null;
-}
-
-export interface SavedMine {
-  type: MineType;
-  photos: number;
+/** The mine a field report is about. */
+export interface Mine {
+  minfilno: string;
+  name: string;
+  published: LatLon;
 }
 
 /**
- * Step 2's sheet: what's there. Required parts first (photo, type), then tags,
- * then the optional text, with Save pinned to the bottom. Stays mounted while
- * the user goes back to adjust the pin, so nothing is lost.
+ * Step 2 of marking a working: what it is, photos, a line about it, then Save
+ * pinned to the bottom. Stays mounted while the user goes back to adjust the
+ * pin, so nothing is lost.
  */
 export function DetailsSheet({
   open,
+  mine,
+  visitId,
   pin,
   markedAt,
   fix,
   gps,
-  myMines,
   onAdjust,
   onSaved,
 }: {
   open: boolean;
-  myMines: MyMine[];
+  mine: Mine;
+  /** Shared by every point marked on this outing. */
+  visitId: string;
   pin: LatLon;
   /** The fix when the user pressed Mark: the position the server checks the pin against. */
   markedAt: LiveFix;
   fix: LiveFix | null;
   gps: GpsState;
   onAdjust: () => void;
-  onSaved: (m: SavedMine) => void;
+  onSaved: (label: Label) => void;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const ref = useRef<BottomSheet>(null);
 
   const [photos, setPhotos] = useState<string[]>([]);
-  const [mineType, setMineType] = useState<MineType | null>(null);
-  const [hazards, setHazards] = useState<Hazard[]>([]);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [commodity, setCommodity] = useState("");
-  const [notes, setNotes] = useState("");
+  const [label, setLabel] = useState<Label | null>(null);
+  const [text, setText] = useState("");
   const [safetyAck, setSafetyAck] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [nearby, setNearby] = useState<Nearby>({ minfile: null, community: false, own: null });
   const [footerH, setFooterH] = useState(160);
 
   useEffect(() => {
@@ -101,42 +86,12 @@ export function DetailsSheet({
 
   const nudgeM = Math.round(distanceMeters(markedAt.lat, markedAt.lon, pin.lat, pin.lon));
   const fromPin = fix ? distanceMeters(fix.lat, fix.lon, pin.lat, pin.lon) : Infinity;
-  const canShoot = gps === "locked" && fromPin <= PHOTO_RADIUS_M;
-
-  // What's already recorded here. MINFILE and other members' mines only warn;
-  // the user's own mine within 100 m blocks, because the server will refuse it.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const d = (lat: number, lon: number) => distanceMeters(pin.lat, pin.lon, lat, lon);
-      const span = MINFILE_NEAR_M / 111_320;
-      const occ = await queryOccurrences({
-        bbox: { minLat: pin.lat - span, maxLat: pin.lat + span, minLon: pin.lon - span * 2, maxLon: pin.lon + span * 2 },
-      }).catch(() => []);
-      const near = occ
-        .map((o) => ({ o, m: d(o.LATITUDE!, o.LONGITUDE!) }))
-        .filter((x) => x.m <= MINFILE_NEAR_M)
-        .sort((a, b) => a.m - b.m)[0];
-      const community = (await communityMinesNear(pin.lat, pin.lon, DUPLICATE_RADIUS_M)).some(
-        (m) => d(m.lat, m.lon) <= DUPLICATE_RADIUS_M,
-      );
-      const own = myMines
-        .map((mine) => ({ mine, m: Math.round(d(mine.lat, mine.lon)) }))
-        .filter((x) => x.m <= OWN_RADIUS_M)
-        .sort((a, b) => a.m - b.m)[0] ?? null;
-      if (cancelled) return;
-      setNearby({
-        minfile: near
-          ? { name: near.o.NAME1?.trim() || "Unnamed", no: near.o.MINFILNO?.trim() ?? "", m: Math.round(near.m) }
-          : null,
-        community,
-        own,
-      });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [pin.lat, pin.lon, myMines]);
+  const canShoot = gps === "locked" && fromPin <= ON_SITE_M;
+  const fromPublished = distanceMeters(pin.lat, pin.lon, mine.published.lat, mine.published.lon);
+  // Which way the published spot lies from here, e.g. "1.2km SE".
+  const toPublished = `${formatDistance(fromPublished)} ${bearingToCompass(
+    bearingDegrees(pin.lat, pin.lon, mine.published.lat, mine.published.lon),
+  )}`;
 
   const takePhoto = async () => {
     if (!canShoot) return;
@@ -155,23 +110,26 @@ export function DetailsSheet({
     setPhotos((p) => [...p, r.assets[0].uri].slice(0, MAX_PHOTOS));
   };
 
-  const missing = nearby.own
-    ? "You've already added a mine within 100 m of here."
-    : !photos.length
-      ? "Take at least one photo."
-      : !mineType
+  const missing =
+    fromPublished > MAX_FROM_PUBLISHED_M
+      ? `This is ${formatDistance(fromPublished)} from where MINFILE puts ${mine.name}: probably a different mine.`
+      : !label
         ? "Choose what you found."
         : !safetyAck
           ? "Confirm you stayed outside the workings."
           : null;
 
-  const save = async () => {
-    if (missing || !mineType) return;
+  const store = async (farAck: boolean) => {
+    if (!label) return;
     setSaving(true);
     setError(null);
     try {
       await queueSubmission(
         {
+          kind: "location",
+          minfilno: mine.minfilno,
+          visit_id: visitId,
+          label,
           lat: pin.lat,
           lon: pin.lon,
           user_lat: markedAt.lat,
@@ -179,17 +137,14 @@ export function DetailsSheet({
           accuracy_m: markedAt.accuracy,
           mocked: false,
           captured_at: markedAt.time,
-          type: mineType,
-          name: name.trim() || undefined,
-          commodity: commodity.trim() || undefined,
-          hazards,
-          notes: notes.trim() || undefined,
+          far_ack: farAck,
+          text: text.trim() || undefined,
           safety_ack: true,
         },
         photos,
       );
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      onSaved({ type: mineType, photos: photos.length });
+      onSaved(label);
     } catch (e) {
       console.warn("queueSubmission failed", e);
       setError("Couldn't save on this phone. Free up some storage and try again.");
@@ -197,9 +152,23 @@ export function DetailsSheet({
     }
   };
 
+  // Far from the published spot, the user says it's the same mine before it's saved.
+  const save = () => {
+    if (missing) return;
+    if (fromPublished <= FAR_ACK_M) return void store(false);
+    Alert.alert(
+      `This is ${formatDistance(fromPublished)} from the published location`,
+      `MINFILE puts ${mine.name} ${toPublished} of here. Are you sure this is the same mine and not a neighbouring working?`,
+      [
+        { text: "Go back", style: "cancel" },
+        { text: `Yes, it's ${mine.name}`, onPress: () => void store(true) },
+      ],
+    );
+  };
+
   const fg = { color: colors.foreground };
   const sub = { color: colors.mutedForeground };
-  const input = [styles.input, { color: colors.foreground, borderColor: colors.input, backgroundColor: colors.card }];
+  const input = [styles.input, styles.notes, { color: colors.foreground, borderColor: colors.input, backgroundColor: colors.card }];
 
   const renderFooter = useCallback(
     (props: BottomSheetFooterProps) => (
@@ -208,38 +177,20 @@ export function DetailsSheet({
           onLayout={(e) => setFooterH(e.nativeEvent.layout.height)}
           style={[styles.footer, { backgroundColor: colors.card, borderTopColor: colors.border, paddingBottom: insets.bottom + 12 }]}
         >
-          <Pressable
-            onPress={() => setSafetyAck((a) => !a)}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: safetyAck }}
-            style={styles.ackRow}
-          >
-            <View
-              style={[
-                styles.box,
-                { borderColor: safetyAck ? colors.primary : colors.mutedForeground, backgroundColor: safetyAck ? colors.primary : "transparent" },
-              ]}
-            >
-              {safetyAck && <Feather name="check" size={14} color={colors.primaryForeground} />}
-            </View>
-            <Text style={[type.meta, fg, { flex: 1 }]}>
-              I stayed outside the workings. Old mines collapse and can hold bad air.
-            </Text>
-          </Pressable>
           <Text
-            style={[type.meta, { color: error || nearby.own ? colors.destructive : colors.mutedForeground, textAlign: "center" }]}
+            style={[type.meta, { color: error ? colors.destructive : colors.mutedForeground, textAlign: "center" }]}
             accessibilityLiveRegion="polite"
           >
             {error ?? missing ?? "Saved on this phone, uploaded when you have signal."}
           </Text>
           <View style={styles.pair}>
             <PillButton label="Adjust pin" variant="secondary" onPress={onAdjust} />
-            <PillButton label="Save mine" onPress={save} disabled={!!missing} busy={saving} />
+            <PillButton label="Save point" onPress={save} disabled={!!missing} busy={saving} />
           </View>
         </View>
       </BottomSheetFooter>
     ),
-    [colors, insets.bottom, safetyAck, error, missing, nearby.own, saving, onAdjust, save],
+    [colors, insets.bottom, error, missing, saving, onAdjust, save],
   );
 
   return (
@@ -259,167 +210,155 @@ export function DetailsSheet({
       <BottomSheetScrollView contentContainerStyle={[styles.scroll, { paddingBottom: footerH + 16 }]}>
         <View style={{ gap: 2 }}>
           <Text style={[type.title, fg]} accessibilityRole="header">
-            What did you find?
+            What's here?
           </Text>
           <Text style={[type.meta, sub]}>
             {nudgeM > 0 ? `${nudgeM} m from where you stood` : "Where you stood"} · GPS ±{Math.round(markedAt.accuracy)} m
           </Text>
         </View>
 
-        {(nearby.minfile || nearby.community || nearby.own) && (
-          <Notice icon={nearby.own ? "circle-x" : "info"} tone={nearby.own ? "danger" : "default"}>
-            {nearby.own
-                ? `You added ${nearby.own.mine.name || `a ${TYPE_LABEL[nearby.own.mine.type].toLowerCase()}`} ${nearby.own.m} m from here on ${formatShortDate(nearby.own.mine.captured_at)}${nearby.own.mine.uploaded ? "" : " (still on this phone)"}. Each member can add one mine per 100 m. Find it in My submissions.`
-                : nearby.community
-                  ? "Another member has already added a mine within 30 m. The server will refuse a duplicate."
-                  : `${nearby.minfile!.name} (MINFILE ${nearby.minfile!.no}) is ${nearby.minfile!.m} m away. Only add this if it's a different working.`}
+        {fromPublished > FAR_ACK_M && (
+          <Notice icon="info">
+            MINFILE puts {mine.name} {toPublished} of this point. You'll be asked to confirm it's the same mine.
           </Notice>
         )}
 
-        {/* Photos */}
         <View style={styles.section}>
           <Text style={[type.label, fg]} accessibilityRole="header">
-            Photos
-          </Text>
-          <View style={styles.photoRow}>
-            {photos.length < MAX_PHOTOS && (
-              <Pressable
-                onPress={takePhoto}
-                disabled={!canShoot}
-                accessibilityRole="button"
-                accessibilityLabel="Take photo"
-                accessibilityState={{ disabled: !canShoot }}
-                style={({ pressed }) => [
-                  styles.photo,
-                  styles.shutter,
-                  { borderColor: colors.border, backgroundColor: pressed ? colors.muted : "transparent", opacity: canShoot ? 1 : 0.5 },
-                ]}
-              >
-                <Feather name="camera" size={22} color={colors.foreground} />
-              </Pressable>
-            )}
-            {photos.map((uri, i) => (
-              <View key={uri}>
-                <Image source={{ uri }} style={styles.photo} accessibilityLabel={`Photo ${i + 1}`} />
-                <Pressable
-                  onPress={() => setPhotos((p) => p.filter((_, j) => j !== i))}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove photo ${i + 1}`}
-                  hitSlop={10}
-                  style={[styles.photoX, { backgroundColor: colors.scrim }]}
-                >
-                  <Feather name="x" size={12} color="#FFFFFF" />
-                </Pressable>
-              </View>
-            ))}
-          </View>
-          <Text style={[type.meta, sub]}>
-            {canShoot || photos.length >= MAX_PHOTOS
-              ? "1 to 3. The opening first, then its surroundings."
-              : gps !== "locked"
-                ? `Photos need a GPS lock. ${describeGps(gps, fix?.accuracy).label}.`
-                : "Photos have to be taken within 100 m of the pin."}
-          </Text>
-        </View>
-
-        {/* Type */}
-        <View style={styles.section}>
-          <Text style={[type.label, fg]} accessibilityRole="header">
-            Type
+            Working
           </Text>
           <View style={styles.wrap} accessibilityRole="radiogroup">
-            {MINE_TYPES.map(([key, label]) => {
-              return (
-                <Chip
-                  key={key}
-                  label={label}
-                  role="radio"
-                  selected={mineType === key}
-                  accessibilityHint={TYPE_HINTS[key]}
-                  icon={(c) => <MineGlyph type={key} size={20} color={c} />}
-                  onPress={() => {
-                    Haptics.selectionAsync().catch(() => {});
-                    setMineType(key);
-                  }}
-                />
-              );
-            })}
+            {LABELS.map(([key, text]) => (
+              <Chip
+                key={key}
+                label={text}
+                role="radio"
+                selected={label === key}
+                accessibilityHint={LABEL_HINTS[key]}
+                icon={(c) => <MineGlyph type={key} size={20} color={c} />}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  setLabel(key);
+                }}
+              />
+            ))}
           </View>
           <Text style={[type.meta, sub]} accessibilityLiveRegion="polite">
-            {mineType ? TYPE_HINTS[mineType] : "Pick the closest match. Not sure? Choose Other."}
+            {label ? LABEL_HINTS[label] : "Mark each working separately: an adit, then its dump, then the shaft."}
           </Text>
         </View>
 
-        {/* Hazards */}
+        <PhotoPicker
+          photos={photos}
+          canShoot={canShoot}
+          onShoot={takePhoto}
+          onRemove={(i) => setPhotos((p) => p.filter((_, j) => j !== i))}
+          why={gps !== "locked" ? `Photos need a GPS lock. ${describeGps(gps, fix?.accuracy).label}.` : `Photos have to be taken within ${ON_SITE_M} m of the pin.`}
+          hint="Optional. The opening first, then its surroundings."
+        />
+
         <View style={styles.section}>
-          <Text style={[type.label, fg]} accessibilityRole="header">
-            Hazards <Text style={[type.meta, sub]}>· all that apply</Text>
+          <Text style={[type.label, fg]}>
+            Note <Text style={[type.meta, sub]}>· optional</Text>
           </Text>
-          <View style={styles.wrap}>
-            {HAZARDS.map(([key, label]) => {
-              const on = hazards.includes(key);
-              return (
-                <Chip
-                  key={key}
-                  label={label}
-                  role="checkbox"
-                  tone="danger"
-                  selected={on}
-                  icon={on ? (c) => <Feather name="alert-triangle" size={14} color={c} /> : undefined}
-                  onPress={() => setHazards((h) => (on ? h.filter((x) => x !== key) : [...h, key]))}
-                />
-              );
-            })}
-          </View>
+          <BottomSheetTextInput
+            style={input}
+            value={text}
+            onChangeText={setText}
+            maxLength={MAX_TEXT}
+            multiline
+            placeholder="Depth, condition, what's around it…"
+            placeholderTextColor={colors.mutedForeground}
+            accessibilityLabel="Note, optional"
+          />
         </View>
-
-        {/* Optional details */}
-        <View>
-          <Pressable
-            onPress={() => setMoreOpen((o) => !o)}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: moreOpen }}
-            style={[styles.disclosure, { borderColor: colors.border }]}
-          >
-            <Text style={[type.label, fg, { flex: 1 }]}>
-              Name, commodity, notes <Text style={[type.meta, sub]}>· optional</Text>
-            </Text>
-            <Feather name={moreOpen ? "chevron-down" : "chevron-right"} size={18} color={colors.mutedForeground} />
-          </Pressable>
-          {moreOpen && (
-            <View style={styles.fields}>
-              <Field label="Name" hint="A name on a sign, map or claim post.">
-                <BottomSheetTextInput style={input} value={name} onChangeText={setName} maxLength={80} accessibilityLabel="Name" />
-              </Field>
-              <Field label="Commodity" hint="What was mined, if you know. For example Au, Cu, coal.">
-                <BottomSheetTextInput style={input} value={commodity} onChangeText={setCommodity} maxLength={40} accessibilityLabel="Commodity" />
-              </Field>
-              <Field label="Notes" hint={`${500 - notes.length} characters left`}>
-                <BottomSheetTextInput
-                  style={[input, styles.notes]}
-                  value={notes}
-                  onChangeText={setNotes}
-                  maxLength={500}
-                  multiline
-                  accessibilityLabel="Notes"
-                />
-              </Field>
-            </View>
-          )}
-        </View>
-        <Text style={[type.meta, sub]}>SGS reviews every mine. Ones in parks, protected areas and First Nations reserves are checked before anyone else sees them. Photos of the opening help most.</Text>
+        {/* After the choices, not in the footer: the first thing on screen is what you found. */}
+        <SafetyAck checked={safetyAck} onToggle={() => setSafetyAck((a) => !a)} />
+        <Text style={[type.meta, sub]}>
+          Other visitors confirm or dispute each point. SGS reviews a new member's first reports, and any point in a park,
+          protected area or First Nations reserve, before anyone else sees them.
+        </Text>
       </BottomSheetScrollView>
     </Sheet>
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint: string; children: React.ReactNode }) {
+/** "I stayed outside the workings", required before anything is saved from a site. */
+export function SafetyAck({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
   const colors = useColors();
   return (
-    <View style={{ gap: 6 }}>
-      <Text style={[type.label, { color: colors.foreground, fontSize: 14 }]}>{label}</Text>
-      {children}
-      <Text style={[type.meta, { color: colors.mutedForeground }]}>{hint}</Text>
+    <Pressable onPress={onToggle} accessibilityRole="checkbox" accessibilityState={{ checked }} style={styles.ackRow}>
+      <View
+        style={[
+          styles.box,
+          { borderColor: checked ? colors.primary : colors.mutedForeground, backgroundColor: checked ? colors.primary : "transparent" },
+        ]}
+      >
+        {checked && <Feather name="check" size={14} color={colors.primaryForeground} />}
+      </View>
+      <Text style={[type.meta, { color: colors.foreground, flex: 1 }]}>
+        I stayed outside the workings. Old mines collapse and can hold bad air.
+      </Text>
+    </Pressable>
+  );
+}
+
+/** Up to three camera photos, taken on site only. */
+export function PhotoPicker({
+  photos,
+  canShoot,
+  onShoot,
+  onRemove,
+  why,
+  hint,
+}: {
+  photos: string[];
+  canShoot: boolean;
+  onShoot: () => void;
+  onRemove: (i: number) => void;
+  /** Why the shutter is off, when it is. */
+  why: string;
+  hint: string;
+}) {
+  const colors = useColors();
+  return (
+    <View style={styles.section}>
+      <Text style={[type.label, { color: colors.foreground }]} accessibilityRole="header">
+        Photos
+      </Text>
+      <View style={styles.photoRow}>
+        {photos.length < MAX_PHOTOS && (
+          <Pressable
+            onPress={onShoot}
+            disabled={!canShoot}
+            accessibilityRole="button"
+            accessibilityLabel="Take photo"
+            accessibilityState={{ disabled: !canShoot }}
+            style={({ pressed }) => [
+              styles.photo,
+              styles.shutter,
+              { borderColor: colors.border, backgroundColor: pressed ? colors.muted : "transparent", opacity: canShoot ? 1 : 0.5 },
+            ]}
+          >
+            <Feather name="camera" size={22} color={colors.foreground} />
+          </Pressable>
+        )}
+        {photos.map((uri, i) => (
+          <View key={uri}>
+            <Image source={{ uri }} style={styles.photo} accessibilityLabel={`Photo ${i + 1}`} />
+            <Pressable
+              onPress={() => onRemove(i)}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove photo ${i + 1}`}
+              hitSlop={8}
+              style={[styles.photoX, { backgroundColor: colors.scrim }]}
+            >
+              <Feather name="x" size={16} color="#FFFFFF" />
+            </Pressable>
+          </View>
+        ))}
+      </View>
+      <Text style={[type.meta, { color: colors.mutedForeground }]}>{canShoot || photos.length >= MAX_PHOTOS ? hint : why}</Text>
     </View>
   );
 }
@@ -434,22 +373,14 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 4,
     right: 4,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    // 28 + 8 slop each side = 44 to the touch.
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
   },
   wrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  disclosure: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    minHeight: 48,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  fields: { gap: 16, paddingTop: 16 },
   input: {
     borderWidth: 1,
     borderRadius: 12,

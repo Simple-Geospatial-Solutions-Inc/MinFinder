@@ -97,7 +97,7 @@ export function CalibrationSheet({
         <View style={styles.pair}>
           <PillButton label="Reset" variant="secondary" onPress={onClear} disabled={currentOffset === 0} />
           <PillButton
-            label="Set"
+            label="Set heading"
             disabled={setDisabled}
             onPress={() => {
               if (setDisabled) return;

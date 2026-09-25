@@ -1,19 +1,25 @@
 import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { LayoutAnimation, Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AccessibilityInfo, LayoutAnimation, Pressable, StyleSheet, Text, View } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import * as Location from "expo-location";
+
+import { FieldReports, onSiteForAny, sectionOf, useReports } from "@/components/FieldReports";
 import { Feather } from "@/components/Icon";
 import { StatusBadge } from "@/components/StatusBadge";
-import { GUTTER, IconButton, ListRow, ListSection, PillButton, Sheet, type, useLast } from "@/components/ui";
+import { GUTTER, IconButton, ListRow, ListSection, PillButton, radius, Segmented, Sheet, type, useLast } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 import { useEntitlement } from "@/hooks/useEntitlement";
 import { getNamesForOccurrence, type Occurrence, type OccurrenceName } from "@/lib/db";
 import { formatDMS } from "@/lib/geo";
 
 const SNAPS = ["60%", "100%"];
+
+type Tab = "details" | "reports" | "comments";
 
 function Row({ label, value }: { label: string; value: string | null | undefined }) {
   const colors = useColors();
@@ -59,16 +65,46 @@ export function DetailsSheet({
   // of the map's in-memory dataset.
   const [names, setNames] = useState<OccurrenceName[]>([]);
   const [namesOpen, setNamesOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>("details");
   // Held through the close animation, match and all.
   const last = useLast(useMemo(() => current && { occurrence: current, matchedName }, [current, matchedName]));
   const match = last?.matchedName ?? null;
   const id = last?.occurrence.id ?? null;
+  const { reports, state: reportsState } = useReports(last?.occurrence.MINFILNO?.trim());
+  // Standing at the mine with something to confirm: open on Reports, where the
+  // "Can you see it?" prompt is. Once per mine, and never over a tab the user chose.
+  const picked = useRef(false);
+  useEffect(() => {
+    const o = last?.occurrence;
+    const m = o?.MINFILNO?.trim();
+    // reports lags a render behind a new mine; don't judge this one by the last one's.
+    if (picked.current || !m || o!.LATITUDE == null || o!.LONGITUDE == null || reports[0]?.minfilno !== m) return;
+    let cancelled = false;
+    (async () => {
+      // Only read a fix the user already allowed; opening a sheet shouldn't prompt.
+      if ((await Location.getForegroundPermissionsAsync()).status !== "granted") return;
+      const l = await Location.getLastKnownPositionAsync({ maxAge: 60_000, requiredAccuracy: 30 });
+      if (cancelled || picked.current || !l) return;
+      const fix = { lat: l.coords.latitude, lon: l.coords.longitude, accuracy: l.coords.accuracy ?? Infinity, altitude: null, time: l.timestamp };
+      const mine = { minfilno: m, name: "", published: { lat: o!.LATITUDE!, lon: o!.LONGITUDE! } };
+      if (onSiteForAny(reports, fix, mine)) {
+        picked.current = true;
+        setTab("reports");
+        AccessibilityInfo.announceForAccessibility("You're at this mine. Showing its reports.");
+      }
+    })().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [last, reports]);
 
   useEffect(() => {
     if (id == null) return;
     let cancelled = false;
     setNames([]);
     setNamesOpen(false);
+    setTab("details");
+    picked.current = false;
     getNamesForOccurrence(id)
       .then((rows) => {
         if (cancelled) return;
@@ -85,10 +121,11 @@ export function DetailsSheet({
     };
   }, [id, match]);
 
+  const reduceMotion = useReducedMotion();
   const toggleNames = useCallback(() => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    if (!reduceMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setNamesOpen((prev) => !prev);
-  }, []);
+  }, [reduceMotion]);
 
   if (!last) return null;
   const { occurrence } = last;
@@ -100,8 +137,14 @@ export function DetailsSheet({
     ? `https://minfile.gov.bc.ca/Summary.aspx?minfilno=${encodeURIComponent(minfilno)}`
     : null;
 
+  const reportable = !!minfilno && occurrence.LATITUDE != null && occurrence.LONGITUDE != null;
+  const count = (label: string, s: Tab) => {
+    const n = reports.filter((r) => sectionOf(r) === s).length;
+    return n ? `${label} · ${n}` : label;
+  };
+
   const navigate = () => {
-    if (!isPaid) return onRequestUpgrade("Navigate");
+    if (!isPaid) return onRequestUpgrade("navigation");
     onClose();
     router.push({ pathname: "/compass", params: { id: String(occurrence.id) } });
   };
@@ -197,7 +240,38 @@ export function DetailsSheet({
           )}
         </View>
 
-        {!isPaid ? (
+        {reportable && (
+          <Segmented
+            options={[
+              { value: "details", label: "Details" },
+              { value: "reports", label: count("Reports", "reports") },
+              { value: "comments", label: count("Comments", "comments") },
+            ]}
+            value={tab}
+            onChange={(t) => {
+              picked.current = true;
+              setTab(t);
+            }}
+          />
+        )}
+
+        {/* Free and Pro alike: comments and searches are for everyone; the exact
+            points inside stay behind the same gate as the coordinates. */}
+        {reportable && tab !== "details" ? (
+          <FieldReports
+            mine={{
+              minfilno,
+              name: occurrence.NAME1?.trim() || `MINFILE ${minfilno}`,
+              published: { lat: occurrence.LATITUDE!, lon: occurrence.LONGITUDE! },
+            }}
+            reports={reports}
+            state={reportsState}
+            section={tab}
+            isPaid={isPaid}
+            onLeave={onClose}
+            onRequestUpgrade={onRequestUpgrade}
+          />
+        ) : !isPaid ? (
           // Free tier keeps the summary above (name, status, MINFILNO) and swaps
           // the full record for an upgrade prompt.
           <View style={[styles.upsell, { backgroundColor: colors.muted }]}>
@@ -210,7 +284,7 @@ export function DetailsSheet({
               compass navigation to any occurrence.
             </Text>
             <View style={styles.pair}>
-              <PillButton label="Unlock MinFinder Pro" onPress={() => onRequestUpgrade("Full details")} />
+              <PillButton label="Unlock MinFinder Pro" onPress={() => onRequestUpgrade("full details")} />
             </View>
           </View>
         ) : (
@@ -265,7 +339,7 @@ const styles = StyleSheet.create({
   namesList: { paddingLeft: 22 },
   matchedName: { fontFamily: "Inter_700Bold" },
   pair: { flexDirection: "row", gap: 8 },
-  upsell: { borderRadius: 12, padding: 16, gap: 12 },
+  upsell: { borderRadius: radius.md, padding: 16, gap: 12 },
   upsellHead: { flexDirection: "row", alignItems: "center", gap: 8 },
   rowText: { flex: 1, gap: 2 },
 });
