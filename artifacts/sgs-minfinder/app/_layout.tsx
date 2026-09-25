@@ -16,8 +16,11 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ToastHost } from "@/components/Toast";
 import colors from "@/constants/colors";
+import { useColors } from "@/hooks/useColors";
 import { SubscriptionProvider } from "@/lib/revenuecat";
+import { startSync } from "@/lib/sync";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 // Cross-fade the splash out instead of cutting to the map.
@@ -26,10 +29,11 @@ SplashScreen.setOptions({ duration: 400, fade: true });
 const queryClient = new QueryClient();
 
 const HEADER_BG = colors.light.navyDeep;
-const HEADER_FG = "#F4F1EA";
+const HEADER_FG = colors.dark.foreground;
 const HEADER_ACCENT = colors.light.gold;
 
 function RootLayoutNav() {
+  const { background } = useColors();
   return (
     <Stack
       screenOptions={{
@@ -40,7 +44,7 @@ function RootLayoutNav() {
           color: HEADER_FG,
           fontFamily: "Inter_700Bold",
         },
-        contentStyle: { backgroundColor: colors.light.background },
+        contentStyle: { backgroundColor: background },
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -57,6 +61,11 @@ function RootLayoutNav() {
         options={{ title: "About", headerBackTitle: "Map" }}
       />
       <Stack.Screen name="redeem" options={{ title: "Redeem code" }} />
+      <Stack.Screen name="submit" options={{ title: "Field report", headerBackTitle: "Back" }} />
+      <Stack.Screen
+        name="my-submissions"
+        options={{ title: "My reports", headerBackTitle: "Map" }}
+      />
     </Stack>
   );
 }
@@ -68,6 +77,8 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+
+  useEffect(() => startSync(), []);
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
@@ -86,6 +97,7 @@ export default function RootLayout() {
               <KeyboardProvider>
                 <StatusBar style="light" />
                 <RootLayoutNav />
+                <ToastHost />
               </KeyboardProvider>
             </GestureHandlerRootView>
           </SubscriptionProvider>

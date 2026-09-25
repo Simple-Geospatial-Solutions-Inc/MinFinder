@@ -1,11 +1,21 @@
+import Animated, {
+  Easing,
+  Extrapolation,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
+
 import { Feather, type FeatherIconName } from "@/components/Icon";
 import { router, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AccessibilityInfo,
+    AccessibilityInfo,
   ActivityIndicator,
+  BackHandler,
   Keyboard,
   Platform,
   Pressable,
@@ -35,12 +45,22 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DetailsSheet } from "@/components/DetailsSheet";
 import { OfflineRegionPill } from "@/components/OfflineRegionPill";
+import { PillMenu } from "@/components/PillMenu";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { SatelliteCredit } from "@/components/SatelliteCredit";
 import { QuickInfoCard } from "@/components/QuickInfoCard";
 import { SearchMatchesPill } from "@/components/SearchMatchesPill";
+import {
+  floating,
+  IconButton,
+  MapButton,
+  radius,
+  type,
+} from "@/components/ui";
+import colorTokens from "@/constants/colors";
 import { STATUS_MAP, STATUS_ORDER, getStatusInfo } from "@/constants/status";
 import { useColors } from "@/hooks/useColors";
+import { useEntitlement } from "@/hooks/useEntitlement";
 import {
   hitIsAlias,
   hitTitle,
@@ -81,6 +101,7 @@ import {
   type Basemap,
 } from "@/lib/satellite";
 import { loadStatuses, saveStatuses } from "@/lib/statusFilter";
+import { getReports, onSyncChange, type Report } from "@/lib/sync";
 
 const BC_REGION: Region = {
   latitude: 54.5,
@@ -89,11 +110,17 @@ const BC_REGION: Region = {
   longitudeDelta: 14,
 };
 
-// Height of the floating top bar below the safe-area inset: brand row + search
-// field + status chips. Used to place the search dropdown and the offline-region
-// pill, and to keep `fitBounds` from tucking a region under the bar.
-const TOP_BAR_HEIGHT = 132;
-const REGION_PILL_HEIGHT = 46;
+// The floating top chrome below the safe-area inset: an 8 pt margin, the search
+// pill and the status chips. Places the search dropdown and the pill slot, and
+// keeps `fitBounds` from tucking a region under the chrome.
+const SEARCH_HEIGHT = 48;
+const CHIP_HEIGHT = 36;
+const TOP_BAR_HEIGHT = 8 + SEARCH_HEIGHT + 8 + CHIP_HEIGHT;
+const REGION_PILL_HEIGHT = 56;
+// The bottom row (the map buttons) sits this far above the safe area.
+const BOTTOM_INSET = 24;
+// What fitBounds keeps clear at the bottom: the 48 pt row plus a margin.
+const BOTTOM_CHROME = BOTTOM_INSET + 48 + 24;
 
 // --- MapLibre layer styling. Markers are a data-driven clustered symbol layer
 // (GPU-rendered from a GeoJSON source), not per-marker views — which is why the
@@ -192,6 +219,31 @@ const selectedRingStyle = {
   circleStrokeWidth: 4,
 } as unknown as CircleLayerStyle;
 
+// --- Field-report points --------------------------------------------------------
+// Where members marked a mine's workings. Hollow rings, so they never read as a
+// MINFILE dot: navy once other visitors have confirmed one (or SGS has verified
+// it), grey until then.
+// ponytail: unclustered. Cluster like `occ` once there are enough to crowd BC.
+const COMMUNITY_NAVY = "#16365C";
+const COMMUNITY_GREY = "#5F6B7A";
+const communityRingStyle = {
+  circleColor: "#ffffff",
+  circleRadius: 9,
+  circleStrokeWidth: 4,
+  circleStrokeColor: ["case", ["get", "trusted"], COMMUNITY_NAVY, COMMUNITY_GREY],
+} as unknown as CircleLayerStyle;
+const communityLinkStyle = {
+  lineColor: COMMUNITY_NAVY,
+  lineWidth: 1.5,
+  lineDasharray: [2, 2],
+} as unknown as LineLayerStyle;
+const communitySelectedStyle = {
+  circleColor: "rgba(0,0,0,0)",
+  circleRadius: 15,
+  circleStrokeColor: "#FCBA19",
+  circleStrokeWidth: 4,
+} as unknown as CircleLayerStyle;
+
 // --- Downloaded offline-region outlines ------------------------------------
 // Colors are hardcoded rather than themed: the basemap renders the same light
 // cartography in both app themes, so these are matched to the basemap, not to
@@ -275,9 +327,9 @@ export default function MapScreen() {
 
   // All occurrences with coords, loaded once.
   const [allRows, setAllRows] = useState<Occurrence[]>([]);
-  // Two-tier popup: tapping a marker shows `quickInfo` (small preview card).
-  // The "+" expand button promotes that occurrence into `selected`, which
-  // opens the full DetailsSheet. DetailsSheet gates its own body and Navigate
+  // Two-tier popup: tapping a marker shows `quickInfo` (the peek sheet). Its
+  // Details button promotes that occurrence into `selected`, which opens the
+  // full DetailsSheet. DetailsSheet gates its own body and Navigate
   // button on the Pro entitlement, so search picks (which skip quickInfo
   // entirely) stay behind the paywall too.
   const [quickInfo, setQuickInfo] = useState<Occurrence | null>(null);
@@ -299,9 +351,21 @@ export default function MapScreen() {
   // through `matchedNameById` — but the row the user tapped was titled with the
   // matched name, and the sheet must not silently drop it.
   const [pickedMatch, setPickedMatch] = useState<string | null>(null);
-  // Paywall lives here rather than inside DetailsSheet: that component is a
-  // Modal, and stacking a second Modal on top of it is unreliable on Android.
+  // Paywall lives here rather than inside DetailsSheet, which unmounts as it
+  // hands a free user over to the paywall.
   const [paywallFor, setPaywallFor] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [pillWidth, setPillWidth] = useState(0);
+  // The search pill's morph into the menu, 0 closed to 1 open (see PillMenu).
+  // withTiming follows the system's reduce-motion setting by default.
+  const menuProgress = useSharedValue(0);
+  useEffect(() => {
+    menuProgress.value = withTiming(menuOpen ? 1 : 0, { duration: 800, easing: Easing.bezier(0.2, 0, 0, 1) });
+  }, [menuOpen, menuProgress]);
+  // The typed query gives way as the divider sweeps over it; the glyph stays.
+  const searchFieldStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(menuProgress.value, [0, 0.35], [1, 0], Extrapolation.CLAMP),
+  }));
 
   // The downloaded region the user tapped on the Offline screen, plus every
   // cached region for the coverage toggle.
@@ -446,6 +510,73 @@ export default function MapScreen() {
     for (const r of allRows) m.set(r.id, r);
     return m;
   }, [allRows]);
+
+  // Field-report points: exact coordinates, so like MINFILE's own they're Pro.
+  // The user's own always show: they're the field notes they came back for.
+  const { isPaid } = useEntitlement();
+  const [reportPoints, setReportPoints] = useState<Report[]>([]);
+  useEffect(() => {
+    const load = () =>
+      void getReports()
+        .then((rs) => setReportPoints(rs.filter((r) => r.kind === "location")))
+        .catch((e) => console.warn("field reports", e));
+    load();
+    return onSyncChange(load);
+  }, []);
+  const communityShape = useMemo<GeoJSON.FeatureCollection>(() => {
+    const trusted = (r: Report) => r.status === "confirmed" || r.status === "verified";
+    return {
+      type: "FeatureCollection",
+      features: isPaid
+        ? reportPoints
+            // Everything visitors haven't voted down; the ring colour tells confirmed from not yet.
+            .filter((r) => r.own || (r.status !== "collapsed" && r.status !== "hidden"))
+            .map((r) => ({
+              type: "Feature",
+              geometry: { type: "Point", coordinates: [r.lon!, r.lat!] },
+              properties: { id: r.id, minfilno: r.minfilno, trusted: trusted(r) },
+            }))
+        : [],
+    };
+  }, [reportPoints, isPaid]);
+  const occByMinfilno = useMemo(() => {
+    const m = new Map<string, Occurrence>();
+    for (const r of allRows) if (r.MINFILNO) m.set(r.MINFILNO.trim(), r);
+    return m;
+  }, [allRows]);
+  // A point belongs to a MINFILE mine: tapping it opens that mine, reports and all.
+  const onCommunityPress = useCallback(
+    (e: { nativeEvent?: { features?: GeoJSON.Feature[] } }) => {
+      const occ = occByMinfilno.get(e.nativeEvent?.features?.[0]?.properties?.minfilno);
+      if (!occ) return;
+      setQuickInfo(null);
+      setPickedMatch(null);
+      setSelected(occ);
+    },
+    [occByMinfilno],
+  );
+  // While a mine is open, a dashed line runs from its published pin to each point.
+  const openMine = quickInfo ?? selected;
+  const openMinfilno = openMine?.MINFILNO?.trim() ?? "";
+  const linkShape = useMemo<GeoJSON.FeatureCollection>(
+    () => ({
+      type: "FeatureCollection",
+      features:
+        openMine?.LATITUDE != null && openMine.LONGITUDE != null
+          ? communityShape.features
+              .filter((f) => f.properties?.minfilno === openMinfilno)
+              .map((f) => ({
+                type: "Feature",
+                properties: {},
+                geometry: {
+                  type: "LineString",
+                  coordinates: [[openMine.LONGITUDE!, openMine.LATITUDE!], (f.geometry as GeoJSON.Point).coordinates],
+                },
+              }))
+          : [],
+    }),
+    [communityShape, openMine, openMinfilno],
+  );
 
   // The pin currently previewed (quickInfo) or opened (selected) gets a ring.
   const selectedId = quickInfo?.id ?? selected?.id ?? null;
@@ -633,7 +764,7 @@ export default function MapScreen() {
     cameraRef.current?.fitBounds(normalizeBounds(bounds), {
       padding: {
         top: insets.top + TOP_BAR_HEIGHT + REGION_PILL_HEIGHT + 12,
-        bottom: insets.bottom + 96, // clears the FAB stack
+        bottom: insets.bottom + BOTTOM_CHROME,
         left: 24,
         right: 24,
       },
@@ -658,6 +789,22 @@ export default function MapScreen() {
     setPickedMatch(hitIsAlias(row) ? row.matchedName : null);
     setTimeout(() => setSelected(toOccurrence(row)), 350);
   }, []);
+
+  // Android Back closes the topmost thing on the map before it leaves the app:
+  // the paywall, then the details sheet, then the peek card, then the menu.
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+        if (paywallFor != null) setPaywallFor(null);
+        else if (selected) setSelected(null);
+        else if (quickInfo) setQuickInfo(null);
+        else if (menuOpen) setMenuOpen(false);
+        else return false;
+        return true;
+      });
+      return () => sub.remove();
+    }, [paywallFor, selected, quickInfo, menuOpen]),
+  );
 
   // Tapping a region on the Offline screen hands it over through lib/mapFocus
   // (see that file for why not route params) and pops back here. The request is
@@ -728,7 +875,7 @@ export default function MapScreen() {
           cameraRef.current?.fitBounds(normalizeBounds(region.bounds), {
             padding: {
               top: insets.top + TOP_BAR_HEIGHT + REGION_PILL_HEIGHT + 12,
-              bottom: insets.bottom + 96, // clears the FAB stack
+              bottom: insets.bottom + BOTTOM_CHROME,
               left: 24,
               right: 24,
             },
@@ -785,6 +932,8 @@ export default function MapScreen() {
 
   // The pill and the search dropdown occupy the same slot below the top bar.
   const searchDropdownOpen = !!(searchActive && searchResults && searchResults.length > 0);
+  // Whether anything occupies the slot below the chips (see the render order).
+  const slotTaken = !searchDropdownOpen && (dbError || !!highlight || !!focusRegion || showCoverage);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.navyDeep }]}>
@@ -900,6 +1049,19 @@ export default function MapScreen() {
           />
         </GeoJSONSource>
 
+        <GeoJSONSource id="community-links" data={linkShape}>
+          <Layer id="community-links" type="line" style={communityLinkStyle} />
+        </GeoJSONSource>
+        <GeoJSONSource id="community" data={communityShape} onPress={onCommunityPress}>
+          <Layer id="community-ring" type="circle" style={communityRingStyle} />
+          <Layer
+            id="community-selected"
+            type="circle"
+            filter={["==", ["get", "minfilno"], openMinfilno] as never}
+            style={communitySelectedStyle}
+          />
+        </GeoJSONSource>
+
         {/*
           The open pin on an un-clustered source, so its gold ring survives being
           zoomed out (see overlayShape). Declared after `occ` so it paints above
@@ -932,113 +1094,104 @@ export default function MapScreen() {
         {userLoc && <UserLocation animated heading />}
       </MapLibreMap>
 
-      {/* Top bar */}
-      <View
-        style={[
-          styles.topBar,
-          { paddingTop: insets.top + 8, backgroundColor: "rgba(14,36,68,0.92)" },
-        ]}
-      >
-        <View style={styles.titleRow}>
-          <View style={styles.brandBlock}>
-            <Text style={styles.brandTitle}>SGS MinFinder</Text>
-            <Text style={styles.brandSub}>
-              {loadingDb
-                ? "Loading…"
-                : dbError
-                  ? "Occurrence data failed to load"
-                  : `${drawnRows.length.toLocaleString()} of ${allRows.length.toLocaleString()} BC MINFILE occurrences`}
-            </Text>
-          </View>
-          <View style={styles.topActions}>
-            <TopIcon
-              icon="download-cloud"
-              label="Offline"
-              onPress={() => router.push("/offline")}
-            />
-            <TopIcon
-              icon="info"
-              label="About"
-              onPress={() => router.push("/about")}
-            />
-          </View>
-        </View>
-
+      {/* A tap anywhere off the open menu folds it back into the search field. */}
+      {menuOpen && (
         <Pressable
-          onPress={() => searchInputRef.current?.focus()}
+          style={StyleSheet.absoluteFill}
+          onPress={() => setMenuOpen(false)}
+          accessibilityRole="button"
+          accessibilityLabel="Close menu"
+        />
+      )}
+
+      {/* Floating chrome: search pill and status filters, AllTrails-style. */}
+      <View style={[styles.topBar, { top: insets.top + 8 }]} pointerEvents="box-none">
+        <Pressable
+          onPress={() => (menuOpen ? setMenuOpen(false) : searchInputRef.current?.focus())}
           accessible={false}
-          style={[styles.searchBar, { backgroundColor: "rgba(244,241,234,0.12)" }]}
+          style={styles.searchBar}
         >
-          <Feather name="search" size={16} color="#F4F1EA" />
-          <TextInput
-            ref={searchInputRef}
-            placeholder="Search any name or MINFILNO"
-            placeholderTextColor="rgba(244,241,234,0.6)"
-            value={search}
-            onChangeText={(t) => {
-              setSearch(t);
-              setSearchActive(true);
-              // The highlight belongs to the query that was committed; editing
-              // the field invalidates it, and a pill reading "59 matches for
-              // SPAR" above a field saying SPARK is worse than no pill.
-              setHighlight(null);
-            }}
-            onFocus={() => setSearchActive(true)}
-            onSubmitEditing={onSubmitSearch}
-            style={styles.searchInput}
-            autoCorrect={false}
-            autoCapitalize="characters"
-            returnKeyType="search"
-          />
-          {search.length > 0 && (
-            <Pressable
-              onPress={() => {
-                setSearch("");
-                setSearchResults(null);
-                setHighlight(null);
-              }}
-              hitSlop={10}
+          <View style={styles.searchClip} onLayout={(e) => setPillWidth(e.nativeEvent.layout.width)}>
+            <Feather name="search" size={18} color={MAP.mapChromeForeground} />
+            <Animated.View
+              style={[styles.searchField, searchFieldStyle]}
+              pointerEvents={menuOpen ? "none" : "box-none"}
+              accessibilityElementsHidden={menuOpen}
+              importantForAccessibility={menuOpen ? "no-hide-descendants" : "auto"}
             >
-              <Feather name="x" size={16} color="#F4F1EA" />
-            </Pressable>
-          )}
+              <TextInput
+                ref={searchInputRef}
+                placeholder="Search a name or MINFILE number"
+                placeholderTextColor={MAP.mapChromeMuted}
+                value={search}
+                onChangeText={(t) => {
+                  setSearch(t);
+                  setSearchActive(true);
+                  // The highlight belongs to the query that was committed; editing
+                  // the field invalidates it, and a pill reading "59 matches for
+                  // SPAR" above a field saying SPARK is worse than no pill.
+                  setHighlight(null);
+                }}
+                onFocus={() => setSearchActive(true)}
+                onSubmitEditing={onSubmitSearch}
+                style={styles.searchInput}
+                autoCorrect={false}
+                autoCapitalize="characters"
+                returnKeyType="search"
+              />
+              {search.length > 0 && (
+                <IconButton
+                  icon="x"
+                  label="Clear search"
+                  variant="plain"
+                  color={MAP.mapChromeForeground}
+                  onPress={() => {
+                    setSearch("");
+                    setSearchResults(null);
+                    setHighlight(null);
+                  }}
+                />
+              )}
+            </Animated.View>
+            <PillMenu
+              width={pillWidth}
+              progress={menuProgress}
+              open={menuOpen}
+              items={MENU}
+              color={MAP.mapChromeForeground}
+              dividerColor={MAP.border}
+              onOpen={() => {
+                Keyboard.dismiss();
+                setSearchActive(false);
+                setMenuOpen(true);
+              }}
+              onPick={(href) => {
+                setMenuOpen(false);
+                router.push(href);
+              }}
+            />
+          </View>
         </Pressable>
 
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          style={styles.chipsScroll}
           contentContainerStyle={styles.chipsRow}
         >
-          {STATUS_ORDER.map((code) => {
-            const info = STATUS_MAP[code];
-            const active = statuses.includes(code);
-            return (
-              <Pressable
-                key={code}
-                onPress={() => toggleStatus(code)}
-                style={({ pressed }) => [
-                  styles.chip,
-                  {
-                    backgroundColor: active ? info.color : "rgba(244,241,234,0.10)",
-                    borderColor: active ? info.color : "rgba(244,241,234,0.18)",
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.chipDot,
-                    { backgroundColor: active ? "#fff" : info.color },
-                  ]}
-                />
-                <Text
-                  style={[styles.chipText, { color: active ? "#fff" : "#F4F1EA" }]}
-                >
-                  {info.label}
-                </Text>
-              </Pressable>
-            );
-          })}
+          {STATUS_ORDER.map((code) => (
+            <FilterChip
+              key={code}
+              label={STATUS_MAP[code].label}
+              color={STATUS_MAP[code].color}
+              active={statuses.includes(code)}
+              onPress={() => {
+                setMenuOpen(false);
+                toggleStatus(code);
+              }}
+            />
+          ))}
         </ScrollView>
       </View>
 
@@ -1046,11 +1199,7 @@ export default function MapScreen() {
         <View
           style={[
             styles.searchResults,
-            {
-              top: insets.top + TOP_BAR_HEIGHT,
-              backgroundColor: colors.card,
-              borderColor: colors.border,
-            },
+            { top: insets.top + TOP_BAR_HEIGHT + 8, backgroundColor: colors.card },
           ]}
         >
           <ScrollView keyboardShouldPersistTaps="handled">
@@ -1070,23 +1219,17 @@ export default function MapScreen() {
                 >
                   <View style={[styles.resultDot, { backgroundColor: info.color }]} />
                   <View style={{ flex: 1 }}>
-                    <Text
-                      style={[styles.resultTitle, { color: colors.foreground }]}
-                      numberOfLines={1}
-                    >
+                    <Text style={[type.label, { color: colors.foreground }]} numberOfLines={1}>
                       {hitTitle(r)}
                     </Text>
-                    <Text
-                      style={[styles.resultSub, { color: colors.mutedForeground }]}
-                      numberOfLines={1}
-                    >
+                    <Text style={[type.meta, { color: colors.mutedForeground }]} numberOfLines={1}>
                       {/* An alias hit leads with the primary name, so the row the
                           user taps is still identifiable as the right record. */}
                       {hitIsAlias(r) ? `${r.NAME1?.trim()} · ` : ""}
                       {r.MINFILNO?.trim()} · {info.label}
                     </Text>
                   </View>
-                  <Feather name="map-pin" size={14} color={colors.mutedForeground} />
+                  <Feather name="map-pin" size={16} color={colors.mutedForeground} />
                 </Pressable>
               );
             })}
@@ -1094,77 +1237,36 @@ export default function MapScreen() {
         </View>
       )}
 
-      <View style={[styles.fabStack, { bottom: insets.bottom + 24 }]}>
-        {Platform.OS !== "web" && (
-          <Pressable
-            onPress={toggleBasemap}
-            accessibilityRole="button"
-            accessibilityState={{ selected: basemap === "satellite" }}
-            accessibilityLabel={
-              basemap === "satellite" ? "Show topographic map" : "Show satellite imagery"
-            }
-            accessibilityHint={
-              "Imagery needs a connection; the topo map shows wherever it is unavailable"
-            }
-            style={({ pressed }) => [
-              styles.fab,
-              {
-                backgroundColor:
-                  basemap === "satellite" ? colors.gold : "rgba(14,36,68,0.92)",
-                opacity: pressed ? 0.85 : 1,
-              },
-            ]}
-          >
-            <Feather
-              name="satellite"
-              size={20}
-              color={basemap === "satellite" ? colors.navyDeep : "#F4F1EA"}
-            />
-          </Pressable>
-        )}
+      {/* The sheets own the bottom edge while they're open. */}
+      {!quickInfo && !selected && (
+        <>
+          <View style={[styles.mapButtons, { bottom: insets.bottom + BOTTOM_INSET }]}>
+            {Platform.OS !== "web" && (
+              <MapButton
+                icon="satellite"
+                label="Satellite imagery"
+                accessibilityHint="Imagery needs a connection; the topo map shows wherever it is unavailable"
+                active={basemap === "satellite"}
+                onPress={toggleBasemap}
+              />
+            )}
+            {/* Offline coverage. Hidden with no downloads so the control is never
+                dead, and it doubles as the thumb-reachable way to clear the
+                region outline (the pill's Hide sits at the top of the screen). */}
+            {packRegions.length > 0 && Platform.OS !== "web" && (
+              <MapButton icon="layers" label="Offline coverage" active={showCoverage} onPress={toggleCoverage} />
+            )}
+            <MapButton icon="locate-fixed" label="Go to my location" onPress={recenter} />
+          </View>
+        </>
+      )}
 
-        {/* Offline coverage. Hidden with no downloads so the control is never
-            dead, and it doubles as the thumb-reachable way to clear the
-            region outline (the pill's Hide sits at the top of the screen). */}
-        {packRegions.length > 0 && Platform.OS !== "web" && (
-          <Pressable
-            onPress={toggleCoverage}
-            accessibilityRole="button"
-            accessibilityState={{ selected: showCoverage }}
-            accessibilityLabel={
-              showCoverage ? "Hide offline coverage" : "Show offline coverage"
-            }
-            style={({ pressed }) => [
-              styles.fab,
-              {
-                backgroundColor: showCoverage ? colors.gold : "rgba(14,36,68,0.92)",
-                opacity: pressed ? 0.85 : 1,
-              },
-            ]}
-          >
-            <Feather
-              name="layers"
-              size={20}
-              color={showCoverage ? colors.navyDeep : "#F4F1EA"}
-            />
-          </Pressable>
-        )}
-
-        <Pressable
-          onPress={recenter}
-          style={({ pressed }) => [
-            styles.fab,
-            { backgroundColor: colors.gold, opacity: pressed ? 0.85 : 1 },
-          ]}
-        >
-          <Feather name="navigation" size={20} color={colors.navyDeep} />
-        </Pressable>
-      </View>
-
-      {/* Esri requires its credit on the map while imagery is showing, and the
-          map's own attribution control is off. Collapsed to a small pill;
-          tapping it shows the full credit plus the online-only hint. */}
-      {basemap === "satellite" && <SatelliteCredit bottom={insets.bottom + 12} />}
+      {permissionDenied && !quickInfo && !selected && (
+        <View style={[styles.mapNotice, styles.mapNoticeBottom, { bottom: insets.bottom + BOTTOM_INSET + 60 }]}>
+          <Feather name="alert-triangle" size={16} color={MAP.mapChromeForeground} />
+          <Text style={styles.mapNoticeText}>Location is off, so the map starts on all of BC.</Text>
+        </View>
+      )}
 
       {loadingDb && (
         <View style={styles.dbOverlay}>
@@ -1173,29 +1275,28 @@ export default function MapScreen() {
         </View>
       )}
 
-      {permissionDenied && (
-        <View style={[styles.permissionBanner, { bottom: insets.bottom + 88 }]}>
-          <Feather name="alert-triangle" size={14} color="#FCBA19" />
-          <Text style={styles.permissionText}>
-            Location permission denied — map is centered on BC.
-          </Text>
+      {/* One slot below the chips, several claimants. The dropdown wins while
+          results are open, then a failed load (nothing else works without the
+          data); a committed search outranks the offline-region pill, because it
+          is the more recent thing the user asked for. */}
+      {!searchDropdownOpen && dbError && (
+        <View style={[styles.mapNotice, { top: insets.top + TOP_BAR_HEIGHT + 8 }]}>
+          <Feather name="alert-triangle" size={16} color={MAP.mapChromeForeground} />
+          <Text style={styles.mapNoticeText}>Occurrence data failed to load.</Text>
         </View>
       )}
 
-      {/* One slot below the top bar, three claimants. The dropdown wins while
-          results are open; a committed search outranks the offline-region pill,
-          because it is the more recent thing the user asked for. */}
-      {!searchDropdownOpen && highlight && (
+      {!searchDropdownOpen && !dbError && highlight && (
         <SearchMatchesPill
           term={highlight.term}
           count={highlightRows?.length ?? 0}
           bounds={highlightBounds}
           onClear={clearHighlight}
-          topOffset={insets.top + TOP_BAR_HEIGHT + 6}
+          topOffset={insets.top + TOP_BAR_HEIGHT + 8}
         />
       )}
 
-      {!searchDropdownOpen && !highlight && (
+      {!searchDropdownOpen && !dbError && !highlight && (
         <OfflineRegionPill
           region={focusRegion}
           coverageCount={showCoverage ? packRegions.length : null}
@@ -1204,8 +1305,15 @@ export default function MapScreen() {
             setFocusRegion(null);
             setShowCoverage(false);
           }}
-          topOffset={insets.top + TOP_BAR_HEIGHT + 6}
+          topOffset={insets.top + TOP_BAR_HEIGHT + 8}
         />
+      )}
+
+      {/* Esri requires its credit on the map while imagery is showing, and the
+          map's own attribution control is off. It sits under the top chrome (and
+          under the pill when one is up) so no sheet can cover it. */}
+      {basemap === "satellite" && (
+        <SatelliteCredit top={insets.top + TOP_BAR_HEIGHT + 8 + (slotTaken ? REGION_PILL_HEIGHT + 8 : 0)} />
       )}
 
       <QuickInfoCard
@@ -1219,17 +1327,15 @@ export default function MapScreen() {
           }
           setQuickInfo(null);
         }}
-        bottomOffset={insets.bottom + 96}
+        onRequestUpgrade={setPaywallFor}
       />
 
       <DetailsSheet
         occurrence={selected}
         matchedName={selectedMatch}
         onClose={() => setSelected(null)}
-        onRequestUpgrade={(feature) => {
-          setSelected(null);
-          setPaywallFor(feature);
-        }}
+        // The paywall stacks over the mine: buying unlocks the open sheet in place.
+        onRequestUpgrade={setPaywallFor}
       />
 
       <PaywallSheet
@@ -1241,168 +1347,141 @@ export default function MapScreen() {
   );
 }
 
-function TopIcon({
-  icon,
+const MENU = [
+  ["download-cloud", "Offline", "/offline"],
+  ["inbox", "Reports", "/my-submissions"],
+  ["info", "About", "/about"],
+] as const satisfies readonly (readonly [FeatherIconName, string, string])[];
+
+/**
+ * A status filter on the map. On shows the status colour as a solid dot; off
+ * hollows the dot and greys the label, so the state reads without colour.
+ */
+function FilterChip({
   label,
+  color,
+  active,
   onPress,
-  accent,
 }: {
-  icon: FeatherIconName;
   label: string;
+  color: string;
+  active: boolean;
   onPress: () => void;
-  accent?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
-      hitSlop={8}
-      accessibilityLabel={label}
-      style={({ pressed }) => [
-        styles.topIcon,
-        accent && { backgroundColor: "rgba(252,186,25,0.22)" },
-        { opacity: pressed ? 0.6 : 1 },
-      ]}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: active }}
+      accessibilityLabel={`Show ${label}`}
+      hitSlop={{ top: 4, bottom: 4 }}
+      style={({ pressed }) => [styles.filterChip, { opacity: pressed ? 0.8 : 1 }]}
     >
-      <Feather name={icon} size={20} color={accent ? "#FCBA19" : "#F4F1EA"} />
+      <View style={[styles.filterDot, { borderColor: color, backgroundColor: active ? color : "transparent" }]} />
+      <Text style={[styles.filterText, { color: active ? MAP.mapChromeForeground : MAP.mapChromeMuted }]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
 
+// The chrome sits on the light basemap in both colour schemes.
+const MAP = colorTokens.light;
+
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  topBar: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-    gap: 10,
-  },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  brandBlock: { flex: 1, paddingRight: 8 },
-  brandTitle: {
-    color: "#FCBA19",
-    fontFamily: "Inter_700Bold",
-    fontSize: 18,
-    letterSpacing: 0.2,
-  },
-  brandSub: {
-    color: "rgba(244,241,234,0.8)",
-    fontFamily: "Inter_500Medium",
-    fontSize: 11,
-    marginTop: 1,
-  },
-  topActions: { flexDirection: "row", gap: 6 },
-  topIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(244,241,234,0.10)",
-  },
+  topBar: { position: "absolute", left: 0, right: 0, gap: 8 },
   searchBar: {
+    height: SEARCH_HEIGHT,
+    marginHorizontal: 16,
+    borderRadius: SEARCH_HEIGHT / 2,
+    backgroundColor: MAP.mapChrome,
+    ...floating,
+  },
+  // Clips the menu button as the divider pushes it out; the bar itself can't
+  // clip without losing its shadow on iOS.
+  searchClip: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: Platform.OS === "ios" ? 10 : 6,
-    // Below the 44pt floor on Android from the padding alone, and the whole row
-    // is the touch target now, so give it the height to be one.
-    minHeight: 44,
+    gap: 4,
+    paddingLeft: 16,
+    paddingRight: 4,
+    borderRadius: SEARCH_HEIGHT / 2,
+    overflow: "hidden",
   },
   searchInput: {
     flex: 1,
-    color: "#F4F1EA",
-    fontFamily: "Inter_500Medium",
-    fontSize: 14,
+    marginLeft: 6,
+    color: MAP.mapChromeForeground,
+    fontFamily: "Inter_400Regular",
+    fontSize: 16,
     padding: 0,
   },
-  chipsRow: { flexDirection: "row", gap: 6, paddingRight: 8 },
-  chip: {
+  // Stops short of PillMenu's divider and button: 4 + hairline + 4 + 36.
+  searchField: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4, marginRight: 45 },
+  // Room for the chips' shadow, which the scroll view would otherwise clip.
+  chipsScroll: { marginVertical: -4 },
+  chipsRow: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 4 },
+  filterChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    borderWidth: 1,
+    gap: 8,
+    height: CHIP_HEIGHT,
+    paddingHorizontal: 14,
+    borderRadius: CHIP_HEIGHT / 2,
+    backgroundColor: MAP.mapChrome,
+    ...floating,
   },
-  chipDot: { width: 8, height: 8, borderRadius: 4 },
-  chipText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  filterDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2 },
+  filterText: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
   searchResults: {
     position: "absolute",
     left: 16,
     right: 16,
     maxHeight: 320,
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: radius.lg,
     overflow: "hidden",
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    ...floating,
   },
   searchResult: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 14,
+    gap: 12,
+    paddingHorizontal: 16,
     paddingVertical: 12,
+    minHeight: 56,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   resultDot: { width: 10, height: 10, borderRadius: 5 },
-  resultTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  resultSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 1 },
-  fabStack: { position: "absolute", right: 16, gap: 12 },
-  fab: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+  mapButtons: { position: "absolute", right: 16, gap: 12 },
+  mapNotice: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 6,
+    gap: 10,
+    minHeight: 48,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: radius.lg,
+    backgroundColor: MAP.mapChrome,
+    ...floating,
   },
+  // Stays clear of the map-button column on the right.
+  mapNoticeBottom: { right: 16 + 40 + 12 },
+  mapNoticeText: { flex: 1, color: MAP.mapChromeForeground, fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20 },
   dbOverlay: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "rgba(14,36,68,0.85)",
+    backgroundColor: MAP.navyScrim,
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
   },
-  dbOverlayText: { color: "#F4F1EA", fontFamily: "Inter_500Medium", fontSize: 14 },
-  permissionBanner: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(14,36,68,0.92)",
-    borderColor: "rgba(252,186,25,0.4)",
-    borderWidth: 1,
-    padding: 10,
-    borderRadius: 10,
-  },
-  permissionText: {
-    flex: 1,
-    color: "#F4F1EA",
-    fontSize: 12,
-    fontFamily: "Inter_500Medium",
-  },
+  dbOverlayText: { color: MAP.background, fontFamily: "Inter_500Medium", fontSize: 14 },
 });

@@ -1,0 +1,433 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-23T00:00:00Z",
+  "title": "Design System: SGS MinFinder",
+  "extensions": {
+    "colorMeta": {
+      "navy": {
+        "role": "primary",
+        "displayName": "Navy",
+        "canonical": "oklch(33.0% 0.077 254)",
+        "tonalRamp": [
+          "#00082A",
+          "#032448",
+          "#214168",
+          "#3E5F89",
+          "#6083AD",
+          "#88A7CF",
+          "#B1CDF0",
+          "#D9F1FF"
+        ]
+      },
+      "navy-deep": {
+        "role": "primary",
+        "displayName": "Navy Deep",
+        "canonical": "oklch(26.2% 0.066 257)",
+        "tonalRamp": [
+          "#000926",
+          "#0E2443",
+          "#294063",
+          "#465F83",
+          "#6882A7",
+          "#8FA6C8",
+          "#B8CCEA",
+          "#DEF0FF"
+        ]
+      },
+      "gold": {
+        "role": "primary",
+        "displayName": "Gold",
+        "canonical": "oklch(82.8% 0.167 81)",
+        "tonalRamp": [
+          "#1A0500",
+          "#391C00",
+          "#5C3700",
+          "#815300",
+          "#AC7400",
+          "#D89700",
+          "#FFBE22",
+          "#FFE257"
+        ]
+      },
+      "gold-dim": {
+        "role": "primary",
+        "displayName": "Gold Dim",
+        "canonical": "oklch(68.9% 0.141 79)",
+        "tonalRamp": [
+          "#1C0300",
+          "#3C1A00",
+          "#5F3500",
+          "#845200",
+          "#AC7400",
+          "#D39921",
+          "#FBBF54",
+          "#FFE58A"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(21.6% 0.038 257)",
+        "tonalRamp": [
+          "#030B1B",
+          "#182536",
+          "#334154",
+          "#505F73",
+          "#728197",
+          "#96A6BD",
+          "#BDCCE1",
+          "#E2F0FF"
+        ]
+      },
+      "stone": {
+        "role": "neutral",
+        "displayName": "Stone",
+        "canonical": "oklch(95.9% 0.010 87)",
+        "tonalRamp": [
+          "#0D0B07",
+          "#26241F",
+          "#423F3A",
+          "#605D57",
+          "#83807A",
+          "#A7A49E",
+          "#CDCAC3",
+          "#F1EEE7"
+        ]
+      },
+      "lichen": {
+        "role": "neutral",
+        "displayName": "Lichen",
+        "canonical": "oklch(90.5% 0.024 88)",
+        "tonalRamp": [
+          "#0F0A02",
+          "#292316",
+          "#453F31",
+          "#635D4E",
+          "#868070",
+          "#ABA494",
+          "#D1CAB9",
+          "#F5EEDD"
+        ]
+      },
+      "scree": {
+        "role": "neutral",
+        "displayName": "Scree",
+        "canonical": "oklch(85.6% 0.025 85)",
+        "tonalRamp": [
+          "#100A02",
+          "#292316",
+          "#463F31",
+          "#645D4E",
+          "#877F70",
+          "#ABA494",
+          "#D2CAB9",
+          "#F6EEDC"
+        ]
+      },
+      "slate-muted": {
+        "role": "neutral",
+        "displayName": "Slate Muted",
+        "canonical": "oklch(52.3% 0.028 254)",
+        "tonalRamp": [
+          "#040C17",
+          "#1B2531",
+          "#36414E",
+          "#535F6D",
+          "#758191",
+          "#99A6B6",
+          "#BECCDD",
+          "#E2F0FF"
+        ]
+      },
+      "status-producer": {
+        "role": "data",
+        "displayName": "Producer",
+        "canonical": "oklch(57.1% 0.209 21)",
+        "tonalRamp": [
+          "#320000",
+          "#5C0000",
+          "#880009",
+          "#B60022",
+          "#E23345",
+          "#FF666C",
+          "#FF9899",
+          "#FFC4C2"
+        ]
+      },
+      "status-past-producer": {
+        "role": "data",
+        "displayName": "Past Producer",
+        "canonical": "oklch(42.6% 0.145 8)",
+        "tonalRamp": [
+          "#2D0003",
+          "#530016",
+          "#780430",
+          "#9D304D",
+          "#C35870",
+          "#E58395",
+          "#FFAEBD",
+          "#FFD6E3"
+        ]
+      },
+      "status-developed-prospect": {
+        "role": "data",
+        "displayName": "Developed Prospect",
+        "canonical": "oklch(67.4% 0.191 36)",
+        "tonalRamp": [
+          "#2B0000",
+          "#520000",
+          "#7C0500",
+          "#A92600",
+          "#D94719",
+          "#FF6F46",
+          "#FF9B74",
+          "#FFC6A2"
+        ]
+      },
+      "status-prospect": {
+        "role": "data",
+        "displayName": "Prospect",
+        "canonical": "oklch(82.8% 0.167 81)"
+      },
+      "status-showing": {
+        "role": "data",
+        "displayName": "Showing",
+        "canonical": "oklch(58.5% 0.099 230)",
+        "tonalRamp": [
+          "#000E24",
+          "#002945",
+          "#004769",
+          "#00678A",
+          "#348BB0",
+          "#5CB0D7",
+          "#88D6FC",
+          "#B5FAFF"
+        ]
+      },
+      "status-anomaly": {
+        "role": "data",
+        "displayName": "Anomaly",
+        "canonical": "oklch(68.4% 0.034 261)",
+        "tonalRamp": [
+          "#040B19",
+          "#1B2435",
+          "#364052",
+          "#535E71",
+          "#758195",
+          "#99A5BA",
+          "#BFCBE1",
+          "#E2EFFF"
+        ]
+      },
+      "destructive": {
+        "role": "error",
+        "displayName": "Destructive",
+        "canonical": "oklch(50.1% 0.178 28)",
+        "tonalRamp": [
+          "#310000",
+          "#5A0000",
+          "#840000",
+          "#AC1D17",
+          "#D64A3D",
+          "#F87969",
+          "#FFA696",
+          "#FFD0C1"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Screen and sheet titles, empty-state headings."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "List-section titles, in-screen sheet headers."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "List-row titles, emphasised values; buttons use 600/16."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Descriptions, secondary lines, helper copy."
+      },
+      "link": {
+        "displayName": "Link",
+        "purpose": "TextButton, segmented control, inline actions."
+      },
+      "fine": {
+        "displayName": "Fine",
+        "purpose": "Store disclosures, legal line, credits, status chips. The 12px floor."
+      },
+      "reading": {
+        "displayName": "Reading",
+        "purpose": "Stat values in tabular figures; unit steps back to 500/14."
+      }
+    },
+    "shadows": [
+      {
+        "name": "floating",
+        "value": "0 2px 4px rgba(0,0,0,0.16)",
+        "purpose": "Anything above the page: map chrome, bottom sheets, the selected segment (RN: shadowOpacity 0.16, shadowRadius 4, elevation 4)."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state",
+        "value": "160-250ms ease-out",
+        "purpose": "Press, toggle and status changes."
+      },
+      {
+        "name": "sheet",
+        "value": "Gorhom spring, both ways",
+        "purpose": "Sheets open and animate shut before unmounting (Sheet open + useLast)."
+      },
+      {
+        "name": "menu-morph",
+        "value": "800ms cubic-bezier(0.2,0,0,1)",
+        "purpose": "Search-pill hamburger breaking into the menu options; reverses on outside tap. Instant under reduced motion."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one gold action per screen.",
+      "html": "<button class=\"ds-pill ds-pill-primary\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z\"/><circle cx=\"12\" cy=\"10\" r=\"3\"/></svg>Mark this spot</button>",
+      "css": ".ds-pill { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:48px; padding:0 16px; border:none; border-radius:999px; font-family:Inter,system-ui,sans-serif; font-weight:600; font-size:16px; cursor:pointer; transition:opacity 160ms cubic-bezier(0.25,1,0.5,1); } .ds-pill:active { opacity:0.85; } .ds-pill:focus-visible { outline:2px solid #16365C; outline-offset:2px; } .ds-pill-primary { background:#FCBA19; color:#0E2444; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Sits beside the primary in a quiet lichen fill.",
+      "html": "<button class=\"ds-pill2\">Cancel</button>",
+      "css": ".ds-pill2 { display:inline-flex; align-items:center; justify-content:center; height:48px; padding:0 16px; border:none; border-radius:999px; background:#E6DFCE; color:#0E1A2B; font-family:Inter,system-ui,sans-serif; font-weight:600; font-size:16px; cursor:pointer; transition:opacity 160ms cubic-bezier(0.25,1,0.5,1); } .ds-pill2:active { opacity:0.85; } .ds-pill2:focus-visible { outline:2px solid #16365C; outline-offset:2px; } .ds-pill2:disabled { color:#5F6B7A; cursor:default; }"
+    },
+    {
+      "name": "Map Button",
+      "kind": "button",
+      "refersTo": "map-button",
+      "description": "White disc floating on the map; fills Night Dial when toggled on.",
+      "html": "<div style=\"display:flex;gap:12px\"><button class=\"ds-disc\" aria-label=\"Locate me\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><polygon points=\"3 11 22 2 13 21 11 13 3 11\"/></svg></button><button class=\"ds-disc ds-disc-on\" aria-label=\"Satellite\" aria-pressed=\"true\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><polygon points=\"12 2 2 7 12 12 22 7 12 2\"/><polyline points=\"2 17 12 22 22 17\"/><polyline points=\"2 12 12 17 22 12\"/></svg></button></div>",
+      "css": ".ds-disc { width:40px; height:40px; border-radius:999px; border:none; background:#FFFFFF; color:#0E1A2B; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.16); cursor:pointer; transition:opacity 160ms cubic-bezier(0.25,1,0.5,1); } .ds-disc:active { opacity:0.85; } .ds-disc:focus-visible { outline:2px solid #16365C; outline-offset:2px; } .ds-disc-on { background:#0E2444; color:#FFFFFF; }"
+    },
+    {
+      "name": "Search Pill",
+      "kind": "input",
+      "refersTo": "search-pill",
+      "description": "Floating white search field on the map with the menu behind a hairline divider.",
+      "html": "<div class=\"ds-search\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m20 20-3.5-3.5\"/></svg><span class=\"ds-search-ph\">Search a name or MINFILE number</span><i class=\"ds-search-div\"></i><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M4 6h16M4 12h16M4 18h16\"/></svg></div>",
+      "css": ".ds-search{display:flex;align-items:center;gap:10px;height:48px;padding:0 14px 0 16px;border-radius:999px;background:#FFFFFF;color:#0E1A2B;box-shadow:0 2px 4px rgba(0,0,0,0.16);font:400 16px Inter,system-ui,sans-serif;max-width:360px}.ds-search-ph{flex:1;color:#5F6B7A}.ds-search-div{width:1px;height:24px;background:#D7CFBE}"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "status-chip-wait",
+      "description": "Icon plus words in a weak-fill pill so capture state reads without colour.",
+      "html": "<div style=\"display:flex;gap:8px;flex-wrap:wrap\"><span class=\"ds-chip ds-chip-wait\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\"><path d=\"M1 1l22 22M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 12.55a10.94 10.94 0 0 1 5.17-2.39M10.71 5.05A16 16 0 0 1 22.58 9M1.42 9a15.91 15.91 0 0 1 4.7-2.88M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01\"/></svg>Waiting for signal</span><span class=\"ds-chip ds-chip-ok\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\"><path d=\"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z\"/><polyline points=\"9 12 11 14 15 10\"/></svg>Verified by SGS</span><span class=\"ds-chip ds-chip-bad\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M15 9l-6 6M9 9l6 6\"/></svg>Not accepted</span></div>",
+      "css": ".ds-chip { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border-radius:999px; font-family:Inter,system-ui,sans-serif; font-weight:600; font-size:12px; } .ds-chip-ok { background:#E3F1E7; color:#1B6B3A; } .ds-chip-wait { background:#FFF1CC; color:#6B4700; } .ds-chip-bad { background:#FBE4E2; color:#8C1D17; }"
+    },
+    {
+      "name": "MINFILE Status Badge",
+      "kind": "chip",
+      "refersTo": "status-producer",
+      "description": "Status colour pill with the full label. Data, never decoration.",
+      "html": "<div style=\"display:flex;gap:6px;flex-wrap:wrap\"><span class=\"ds-badge\" style=\"background:#D7263D\">Producer</span><span class=\"ds-badge\" style=\"background:#8B1E3F\">Past Producer</span><span class=\"ds-badge\" style=\"background:#F46036\">Developed Prospect</span><span class=\"ds-badge\" style=\"background:#FCBA19;color:#0E2444\">Prospect</span><span class=\"ds-badge\" style=\"background:#2E86AB\">Showing</span><span class=\"ds-badge\" style=\"background:#8E9AAF\">Anomaly</span></div>",
+      "css": ".ds-badge { display:inline-block; padding:4px 10px; border-radius:999px; color:#FFFFFF; font-family:Inter,system-ui,sans-serif; font-weight:600; font-size:12px; letter-spacing:0.3px; }"
+    },
+    {
+      "name": "Reading",
+      "kind": "custom",
+      "refersTo": "reading",
+      "description": "Instrument reading: the number carries the weight, the unit steps back.",
+      "html": "<div class=\"ds-stats\"><div><div class=\"ds-val\">24<span class=\"ds-unit\"> m</span></div><div class=\"ds-lab\">from you</div></div><div><div class=\"ds-val\">312°<span class=\"ds-unit\"> NW</span></div><div class=\"ds-lab\">bearing</div></div><div><div class=\"ds-val\">±4<span class=\"ds-unit\"> m</span></div><div class=\"ds-lab\">GPS accuracy</div></div></div>",
+      "css": ".ds-stats { display:flex; gap:24px; background:#FFFFFF; padding:16px 24px; border-radius:16px; font-family:Inter,system-ui,sans-serif; } .ds-val { font-weight:600; font-size:22px; line-height:28px; color:#0E1A2B; font-variant-numeric:tabular-nums; } .ds-unit { font-weight:500; font-size:14px; } .ds-lab { font-size:13px; line-height:20px; color:#5F6B7A; }"
+    },
+    {
+      "name": "Segmented",
+      "kind": "control",
+      "refersTo": "segmented-selected",
+      "description": "Two or three exclusive options; the chosen one lifts out on white.",
+      "html": "<div class=\"ds-seg\"><span class=\"on\">True north</span><span>Magnetic north</span></div>",
+      "css": ".ds-seg{display:flex;padding:4px;border-radius:999px;background:#E6DFCE;max-width:340px;font:600 14px Inter,system-ui,sans-serif}.ds-seg span{flex:1;text-align:center;line-height:40px;border-radius:999px;color:#5F6B7A}.ds-seg .on{background:#FFFFFF;color:#0E1A2B;box-shadow:0 2px 4px rgba(0,0,0,0.16)}"
+    },
+    {
+      "name": "List Section",
+      "kind": "list",
+      "refersTo": "list-section",
+      "description": "Titled white card of hairline-divided rows; pressable rows get a chevron.",
+      "html": "<div class=\"ds-ls\"><div class=\"ds-ls-t\">Geology</div><div class=\"ds-ls-c\"><div class=\"ds-ls-r\"><small>Status</small>Past Producer</div><div class=\"ds-ls-r\"><small>Host rock</small>Quartz diorite</div></div></div>",
+      "css": ".ds-ls{max-width:360px;font-family:Inter,system-ui,sans-serif;color:#0E1A2B}.ds-ls-t{font:700 18px/24px Inter,system-ui,sans-serif;margin-bottom:10px}.ds-ls-c{background:#FFFFFF;border:1px solid #D7CFBE;border-radius:16px;overflow:hidden}.ds-ls-r{padding:12px 16px;border-bottom:1px solid #D7CFBE;font:600 15px/20px Inter,system-ui,sans-serif}.ds-ls-r:last-child{border-bottom:none}.ds-ls-r small{display:block;font:400 14px/20px Inter,system-ui,sans-serif;color:#5F6B7A}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Field Map",
+    "overview": "MinFinder is a map you carry into the backcountry, and the map is the screen. Controls float on it AllTrails-style (a white search pill and status chips on top, a gold Add a mine pill and white map buttons at the bottom) and bottom sheets rise over it to carry content. Everything off the map uses the same small kit in components/ui.tsx.",
+    "keyCharacteristics": [
+      "Map-first: floating chrome, bottom sheets for content.",
+      "One gold pill per screen; the rest is white, lichen, ink.",
+      "One kit in components/ui.tsx; screens compose it.",
+      "Inter on a six-step type scale; tabular figures for readings.",
+      "Map chrome light in both schemes; compass dark in both.",
+      "Every sheet animates both ways; motion follows reduce-motion."
+    ],
+    "rules": [
+      {
+        "name": "The One Gold Rule",
+        "body": "At most one gold pill per screen or sheet. If two things are gold, one of them is wrong.",
+        "section": "colors"
+      },
+      {
+        "name": "The Legend Is Data Rule",
+        "body": "MINFILE status colours appear only on pins, badges, filter-chip dots and the About legend, always beside the status name.",
+        "section": "colors"
+      },
+      {
+        "name": "The Token Rule",
+        "body": "Every colour comes from useColors(), MAP/DIAL or STATUS_MAP. Literals only in MapLibre layer styles and pin SVGs.",
+        "section": "colors"
+      },
+      {
+        "name": "The Instrument Reading Rule",
+        "body": "Every navigational number and price is set in tabular figures.",
+        "section": "typography"
+      },
+      {
+        "name": "The Float Rule",
+        "body": "floating means above something: map chrome, sheets, the selected segment. Never flat content.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Closing Rule",
+        "body": "Nothing that animates in may vanish on the way out: sheets take open plus useLast.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Start from components/ui.tsx before writing styles.",
+      "Put content in a bottom sheet over the map, not a new full-screen form.",
+      "Use exactly one gold pill per screen.",
+      "Read MAP on the basemap and DIAL on the compass, whatever the scheme.",
+      "Give every sheet open + useLast.",
+      "Set navigational numbers and prices in tabular figures.",
+      "Keep touch targets at 44pt or more; primary field actions toward 56pt.",
+      "Pair every status colour with its words."
+    ],
+    "donts": [
+      "No font size, radius or colour outside type, radius and the tokens (no 9/10/11/13, no inline hex).",
+      "No government forms: long scrolls of fields and boilerplate.",
+      "No social or gamified patterns.",
+      "No consumer-cute: pastel blobs, mascots, jokey copy.",
+      "No enterprise GIS attribute tables.",
+      "No MINFILE status colours on buttons or chrome.",
+      "No floating shadow on flat content.",
+      "No centred RN Modal for new dialogs; use Sheet.",
+      "Nothing Pro in front of the paywall.",
+      "No coloured side-stripe borders over 1px."
+    ]
+  }
+}

@@ -54,11 +54,18 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@expo/app-integrity": "~56.0.3",
+    "@gorhom/bottom-sheet": "^5.2.14",
     "@maplibre/maplibre-react-native": "^11.3.6",
+    "@react-native-google-signin/google-signin": "^16.1.5",
     "babel-preset-expo": "~56.0.17",
+    "expo-apple-authentication": "~56.0.4",
     "expo-asset": "^56.0.20",
     "expo-clipboard": "~56.0.4",
+    "expo-crypto": "~56.0.5",
     "expo-file-system": "~56.0.8",
+    "expo-network": "~56.0.5",
+    "expo-secure-store": "~56.0.4",
     "expo-sqlite": "^56.0.5",
     "expo-updates": "~56.0.23",
     "lucide-react-native": "^1.16.0",

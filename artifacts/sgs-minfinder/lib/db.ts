@@ -152,6 +152,17 @@ export async function getOccurrenceById(id: number): Promise<Occurrence | null> 
   return row ?? null;
 }
 
+/** MINFILNO -> primary name, for lists of field reports. */
+export async function getNamesByMinfilno(nos: string[]): Promise<Map<string, string>> {
+  if (!nos.length) return new Map();
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ m: string; n: string | null }>(
+    `SELECT TRIM(MINFILNO) AS m, NAME1 AS n FROM minfile_occurrences WHERE TRIM(MINFILNO) IN (${nos.map(() => "?").join(",")})`,
+    nos,
+  );
+  return new Map(rows.map((r) => [r.m, r.n?.trim() || `MINFILE ${r.m}`]));
+}
+
 /** One of an occurrence's names. Rank 1 is the primary name, i.e. NAME1. */
 export interface OccurrenceName {
   name: string;

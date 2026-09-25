@@ -1,36 +1,23 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+
+import { Feather } from "@/components/Icon";
+import { EmptyState, GUTTER } from "@/components/ui";
+import { useColors } from "@/hooks/useColors";
 
 export default function IndexWeb() {
+  const colors = useColors();
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>SGS MinFinder</Text>
-      <Text style={styles.subtitle}>
-        This is a mobile app. Open it in Expo Go on iOS or Android to use the
-        map.
-      </Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <EmptyState
+        glyph={<Feather name="map" size={32} color={colors.foreground} />}
+        title="SGS MinFinder"
+        body="This is a mobile app. Open it on iOS or Android to use the map."
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#0E2444",
-    padding: 24,
-  },
-  title: {
-    color: "#E5C76B",
-    fontSize: 22,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
-  subtitle: {
-    color: "#F4F1EA",
-    fontSize: 14,
-    textAlign: "center",
-    maxWidth: 320,
-  },
+  container: { flex: 1, padding: GUTTER },
 });

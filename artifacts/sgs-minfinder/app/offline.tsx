@@ -14,7 +14,6 @@ import {
   Alert,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -31,6 +30,8 @@ import {
 } from "@maplibre/maplibre-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { EmptyState, GUTTER, IconButton, ListRow, ListSection, PillButton, radius, TextButton, type } from "@/components/ui";
+import colorTokens from "@/constants/colors";
 import { useColors } from "@/hooks/useColors";
 import { countOccurrencesInBbox, queryOccurrences } from "@/lib/db";
 import { formatBytes, formatShortDate } from "@/lib/format";
@@ -836,166 +837,111 @@ export default function OfflineScreen() {
       ]}
     >
       <ScrollView contentContainerStyle={styles.scroll}>
-        <View
-          style={[
-            styles.headerCard,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
-          <Feather name="download-cloud" size={20} color={colors.navy} />
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-              Offline map regions
-            </Text>
-            <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
-              Pre-download map tiles so the basemap works without a data
-              connection. MINFILE occurrence data is always available offline.
-              One region can cover up to about 285 km across.
-            </Text>
-          </View>
+        <Text style={[type.meta, { color: colors.mutedForeground }]}>
+          Pre-download map tiles so the basemap works without a data connection.
+          MINFILE occurrence data is always available offline. One region can
+          cover up to about 285 km across.
+        </Text>
+
+        <View style={styles.btnRow}>
+          <PillButton label="Download a new region" icon="plus" onPress={openPicker} />
         </View>
 
-        <Pressable
-          onPress={openPicker}
-          style={({ pressed }) => [
-            styles.primaryBtn,
-            {
-              backgroundColor: colors.primary,
-              opacity: pressed ? 0.85 : 1,
-            },
-          ]}
-        >
-          <Feather name="plus" size={18} color={colors.primaryForeground} />
-          <Text
-            style={[styles.primaryBtnText, { color: colors.primaryForeground }]}
-          >
-            Download a new region
-          </Text>
-        </Pressable>
-
         {loading ? (
-          <View style={styles.emptyWrap}>
-            <ActivityIndicator color={colors.navy} />
-          </View>
+          <ActivityIndicator color={colors.foreground} style={styles.loader} />
         ) : packs.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <Feather name="map" size={32} color={colors.mutedForeground} />
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              No offline regions yet
-            </Text>
-            <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
-              Tap "Download a new region" to cache the map of an area for
-              offline use.
-            </Text>
-          </View>
+          <EmptyState
+            glyph={<Feather name="map" size={32} color={colors.foreground} />}
+            title="No offline regions yet"
+            body={'Tap "Download a new region" to cache the map of an area for offline use.'}
+          />
         ) : (
-          packs.map((p) => {
-            const meta = (p.metadata ?? {}) as PackMeta;
-            const bounds = p.bounds as Bounds;
-            const st = statuses[p.id];
-            const incomplete = st ? !isPackComplete(st) : false;
-            const title = meta.name?.trim() || "Offline region";
-            const saved = formatShortDate(meta.createdAt);
-            const occCount = counts[p.id];
+          <ListSection title="Your regions">
+            {packs.map((p) => {
+              const meta = (p.metadata ?? {}) as PackMeta;
+              const bounds = p.bounds as Bounds;
+              const st = statuses[p.id];
+              const incomplete = st ? !isPackComplete(st) : false;
+              const title = meta.name?.trim() || "Offline region";
+              const saved = formatShortDate(meta.createdAt);
+              const occCount = counts[p.id];
 
-            // Line 2 is the sentence the user came for, so it always uses the
-            // full-contrast foreground colour rather than the muted one.
-            let answer: string;
-            let answerColor = colors.foreground;
-            if (incomplete && st) {
-              if (st.state === "active") {
-                answer = `Downloading ${Math.round(st.percentage)}% · ${st.completedTileCount.toLocaleString()} tiles so far`;
+              // Line 2 is the sentence the user came for, so it always uses the
+              // full-contrast foreground colour rather than the muted one.
+              let answer: string;
+              let answerColor = colors.foreground;
+              if (incomplete && st) {
+                if (st.state === "active") {
+                  answer = `Downloading ${Math.round(st.percentage)}% · ${st.completedTileCount.toLocaleString()} tiles so far`;
+                } else {
+                  // A half-cached region is the failure that strands someone, so
+                  // it gets the warning colour rather than a muted note.
+                  answerColor = colors.destructive;
+                  answer = `Paused at ${Math.round(st.percentage)}% — may have blank areas`;
+                }
+              } else if (userLoc) {
+                const near = distanceToBoundsKm(
+                  userLoc.latitude,
+                  userLoc.longitude,
+                  bounds,
+                );
+                answer = near.inside
+                  ? `You're inside · ${formatKm(near.km)} km to the edge ${near.octant}`
+                  : `${formatKm(near.km)} km away · ${near.octant}`;
+              } else if (meta.place) {
+                answer = `Centred near ${meta.place}`;
               } else {
-                // A half-cached region is the failure that strands someone, so
-                // it gets the warning colour rather than a muted note.
-                answerColor = colors.destructive;
-                answer = `Paused at ${Math.round(st.percentage)}% — may have blank areas`;
+                answer = `Centred at ${boundsToPlaceName(bounds)}`;
               }
-            } else if (userLoc) {
-              const near = distanceToBoundsKm(
-                userLoc.latitude,
-                userLoc.longitude,
-                bounds,
-              );
-              answer = near.inside
-                ? `You're inside · ${formatKm(near.km)} km to the edge ${near.octant}`
-                : `${formatKm(near.km)} km away · ${near.octant}`;
-            } else if (meta.place) {
-              answer = `Centred near ${meta.place}`;
-            } else {
-              answer = `Centred at ${boundsToPlaceName(bounds)}`;
-            }
 
-            return (
-              <Pressable
-                key={p.id}
-                onPress={() => showOnMap(p)}
-                accessibilityRole="button"
-                accessibilityLabel={`Show ${title} on the map`}
-                style={({ pressed }) => [
-                  styles.regionCard,
-                  {
-                    backgroundColor: pressed ? colors.muted : colors.card,
-                    borderColor: pressed ? colors.gold : colors.border,
-                  },
-                ]}
-              >
-                <View style={styles.regionBody}>
-                  <Text
-                    style={[styles.regionTitle, { color: colors.foreground }]}
-                    numberOfLines={1}
-                  >
-                    {title}
-                  </Text>
-
-                  <Text style={[styles.regionAnswer, { color: answerColor }]}>
-                    {answer}
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.regionMeta,
-                      { color: colors.mutedForeground },
-                    ]}
-                  >
-                    {formatSpanKm(bounds)}
-                    {occCount != null
-                      ? occCount === 0
-                        ? " · no MINFILE occurrences inside"
-                        : ` · ${occCount.toLocaleString()} MINFILE occurrences`
-                      : ""}
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.regionMeta,
-                      { color: colors.mutedForeground },
-                    ]}
-                  >
-                    {st
-                      ? formatBytes(st.completedTileSize)
-                      : formatBytes(meta.estBytes ?? 0)}{" "}
-                    · detail to ~{MAX_DETAIL_M_PER_PX} m/pixel
-                  </Text>
-
-                  {saved ? (
+              return (
+                <ListRow
+                  key={p.id}
+                  onPress={() => showOnMap(p)}
+                  accessibilityLabel={`Show ${title} on the map`}
+                >
+                  <View style={styles.regionBody}>
                     <Text
-                      style={[
-                        styles.regionMeta,
-                        { color: colors.mutedForeground },
-                      ]}
+                      style={[type.title, { color: colors.foreground }]}
+                      numberOfLines={1}
                     >
-                      Downloaded {saved}
+                      {title}
                     </Text>
-                  ) : null}
-                </View>
 
-                {/* Beside the text rather than in a row underneath it, so the
-                    card is only as tall as its own content. There is no
-                    "show on map" button: tapping the card does that. */}
-                <View style={styles.regionActions}>
+                    <Text style={[type.label, { color: answerColor }]}>
+                      {answer}
+                    </Text>
+
+                    <Text style={[type.meta, { color: colors.mutedForeground }]}>
+                      {formatSpanKm(bounds)}
+                      {occCount != null
+                        ? occCount === 0
+                          ? " · no MINFILE occurrences inside"
+                          : ` · ${occCount.toLocaleString()} MINFILE occurrences`
+                        : ""}
+                    </Text>
+
+                    <Text style={[type.meta, { color: colors.mutedForeground }]}>
+                      {st
+                        ? formatBytes(st.completedTileSize)
+                        : formatBytes(meta.estBytes ?? 0)}{" "}
+                      · detail to ~{MAX_DETAIL_M_PER_PX} m/pixel
+                    </Text>
+
+                    {saved ? (
+                      <Text style={[type.meta, { color: colors.mutedForeground }]}>
+                        Downloaded {saved}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  {/* Beside the text rather than in a row underneath it, so the
+                      row is only as tall as its own content. There is no
+                      "show on map" button: tapping the row does that. */}
                   {incomplete && st?.state === "inactive" ? (
-                    <Pressable
+                    <IconButton
+                      icon="play"
+                      label={`Resume downloading ${title}`}
                       onPress={async () => {
                         try {
                           await p.resume();
@@ -1004,50 +950,24 @@ export default function OfflineScreen() {
                         }
                         refresh();
                       }}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Resume downloading ${title}`}
-                      hitSlop={6}
-                      style={({ pressed }) => [
-                        styles.actionBtn,
-                        styles.actionIcon,
-                        {
-                          borderColor: colors.gold,
-                          opacity: pressed ? 0.6 : 1,
-                        },
-                      ]}
-                    >
-                      <Feather name="play" size={18} color={colors.goldDim} />
-                    </Pressable>
-                  ) : null}
-
-                  <Pressable
-                    onPress={() => removePack(p)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Remove offline region ${title}`}
-                    hitSlop={6}
-                    style={({ pressed }) => [
-                      styles.actionBtn,
-                      styles.actionIcon,
-                      {
-                        borderColor: colors.destructive,
-                        opacity: pressed ? 0.6 : 1,
-                      },
-                    ]}
-                  >
-                    <Feather
-                      name="trash-2"
-                      size={18}
-                      color={colors.destructive}
                     />
-                  </Pressable>
-                </View>
-              </Pressable>
-            );
-          })
+                  ) : null}
+                  <IconButton
+                    icon="trash-2"
+                    label={`Remove offline region ${title}`}
+                    color={colors.destructive}
+                    onPress={() => removePack(p)}
+                  />
+                </ListRow>
+              );
+            })}
+          </ListSection>
         )}
 
         {packs.length > 0 && (
-          <Pressable
+          <TextButton
+            label="Clear all offline maps"
+            tone="destructive"
             onPress={() => {
               Alert.alert(
                 "Clear all offline maps?",
@@ -1069,29 +989,22 @@ export default function OfflineScreen() {
                 ],
               );
             }}
-            style={({ pressed }) => [
-              styles.dangerBtn,
-              {
-                borderColor: colors.destructive,
-                opacity: pressed ? 0.7 : 1,
-              },
-            ]}
-          >
-            <Text style={[styles.dangerBtnText, { color: colors.destructive }]}>
-              Clear all offline maps
-            </Text>
-          </Pressable>
+          />
         )}
 
-        <Text style={[styles.footer, { color: colors.mutedForeground }]}>
-          Offline maps are stored on this device by MapLibre.
-        </Text>
-        <Text style={[styles.footer, { color: colors.mutedForeground }]}>
-          © OpenStreetMap contributors, © OpenMapTiles, MRDEM-30 and Copernicus
-          DEM, and the Province of British Columbia (OGL-Canada, OGL-BC).
-        </Text>
+        <View style={styles.footer}>
+          <Text style={[type.fine, styles.center, { color: colors.mutedForeground }]}>
+            Offline maps are stored on this device by MapLibre.
+          </Text>
+          <Text style={[type.fine, styles.center, { color: colors.mutedForeground }]}>
+            © OpenStreetMap contributors, © OpenMapTiles, MRDEM-30 and Copernicus
+            DEM, and the Province of British Columbia (OGL-Canada, OGL-BC).
+          </Text>
+        </View>
       </ScrollView>
 
+      {/* A full-screen modal, not a sheet: the picker is a whole map the user
+          pans and pinches, and a sheet's drag would fight the map's gestures. */}
       <Modal
         visible={showAdd}
         animationType="slide"
@@ -1109,15 +1022,22 @@ export default function OfflineScreen() {
               },
             ]}
           >
-            <Pressable
-              onPress={() => setShowAdd(false)}
-              hitSlop={8}
-              disabled={!!downloading}
+            <IconButton
+              icon="x"
+              label="Close"
+              variant="plain"
+              color={ON_NAVY.foreground}
+              onPress={() => {
+                if (!downloading) setShowAdd(false);
+              }}
+            />
+            <Text
+              style={[type.title, { color: ON_NAVY.foreground }]}
+              accessibilityRole="header"
             >
-              <Feather name="x" size={22} color="#F4F1EA" />
-            </Pressable>
-            <Text style={styles.modalTitle}>Select a region</Text>
-            <View style={{ width: 22 }} />
+              Select a region
+            </Text>
+            <View style={styles.headerSpacer} />
           </View>
 
           <View
@@ -1142,11 +1062,12 @@ export default function OfflineScreen() {
                 initialViewState={{ bounds: regionToBounds(BC_REGION) }}
               />
             </MapLibreMap>
+            {/* Drawn on the light basemap in both colour schemes. */}
             <View
               pointerEvents="none"
               style={[
                 styles.selectionFrame,
-                { borderColor: tooLarge ? "#E66A60" : "#FCBA19" },
+                { borderColor: tooLarge ? MAP.destructive : MAP.gold },
               ]}
             />
           </View>
@@ -1161,13 +1082,8 @@ export default function OfflineScreen() {
               },
             ]}
           >
-            <View>
-              <Text
-                style={[
-                  styles.modalInfoLabel,
-                  { color: colors.mutedForeground },
-                ]}
-              >
+            <View style={styles.field}>
+              <Text style={[type.meta, { color: colors.mutedForeground }]}>
                 Name this region
               </Text>
               <TextInput
@@ -1181,6 +1097,7 @@ export default function OfflineScreen() {
                 editable={!downloading}
                 returnKeyType="done"
                 style={[
+                  type.label,
                   styles.nameInput,
                   {
                     color: colors.foreground,
@@ -1193,57 +1110,38 @@ export default function OfflineScreen() {
 
             <View style={styles.tileInfoRow}>
               <View>
-                <Text
-                  style={[
-                    styles.modalInfoLabel,
-                    { color: colors.mutedForeground },
-                  ]}
-                >
+                <Text style={[type.meta, { color: colors.mutedForeground }]}>
                   Estimated size
                 </Text>
                 <Text
                   style={[
-                    styles.modalInfoValue,
-                    {
-                      color: tooLarge ? colors.destructive : colors.foreground,
-                    },
+                    type.title,
+                    styles.num,
+                    { color: tooLarge ? colors.destructive : colors.foreground },
                   ]}
                 >
                   {formatBytes(estBytes)}
                 </Text>
               </View>
               <View>
-                <Text
-                  style={[
-                    styles.modalInfoLabel,
-                    { color: colors.mutedForeground },
-                  ]}
-                >
+                <Text style={[type.meta, { color: colors.mutedForeground }]}>
                   Area
                 </Text>
                 <Text
                   style={[
-                    styles.modalInfoValue,
-                    {
-                      color: tooLarge ? colors.destructive : colors.foreground,
-                    },
+                    type.title,
+                    styles.num,
+                    { color: tooLarge ? colors.destructive : colors.foreground },
                   ]}
                 >
                   {formatSpanKm(selectionBounds)}
                 </Text>
               </View>
               <View>
-                <Text
-                  style={[
-                    styles.modalInfoLabel,
-                    { color: colors.mutedForeground },
-                  ]}
-                >
+                <Text style={[type.meta, { color: colors.mutedForeground }]}>
                   Zoom levels
                 </Text>
-                <Text
-                  style={[styles.modalInfoValue, { color: colors.foreground }]}
-                >
+                <Text style={[type.title, styles.num, { color: colors.foreground }]}>
                   {MIN_ZOOM_DEFAULT}–{MAX_ZOOM_DEFAULT}
                 </Text>
               </View>
@@ -1265,70 +1163,34 @@ export default function OfflineScreen() {
                     }}
                   />
                 </View>
-                <Text
-                  style={[styles.progressText, { color: colors.foreground }]}
-                >
+                <Text style={[type.meta, styles.center, { color: colors.foreground }]}>
                   {Math.round(downloading.percentage)}% ·{" "}
                   {downloading.tiles.toLocaleString()} tiles
                 </Text>
                 {downloading.retrying ? (
                   <Text
-                    style={[
-                      styles.progressText,
-                      { color: colors.mutedForeground },
-                    ]}
+                    style={[type.meta, styles.center, { color: colors.mutedForeground }]}
                   >
                     Connection trouble — retrying, nothing lost
                   </Text>
                 ) : null}
-                <Pressable
-                  onPress={cancelDownload}
-                  style={({ pressed }) => [
-                    styles.cancelBtn,
-                    { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-                  ]}
-                >
-                  <Text
-                    style={[styles.cancelBtnText, { color: colors.foreground }]}
-                  >
-                    Cancel
-                  </Text>
-                </Pressable>
+                <View style={styles.btnRow}>
+                  <PillButton label="Cancel" variant="secondary" onPress={cancelDownload} />
+                </View>
               </View>
             ) : (
-              <Pressable
-                onPress={startDownload}
-                disabled={tooLarge}
-                style={({ pressed }) => [
-                  styles.downloadBtn,
-                  {
-                    backgroundColor: tooLarge ? colors.muted : colors.primary,
-                    opacity: pressed ? 0.85 : 1,
-                  },
-                ]}
-              >
-                <Feather
-                  name="download"
-                  size={18}
-                  color={
-                    tooLarge ? colors.mutedForeground : colors.primaryForeground
+              <View style={styles.btnRow}>
+                <PillButton
+                  label={
+                    tooLarge
+                      ? `Too large (max ${formatBytes(PACK_BYTE_BUDGET)})`
+                      : "Download this region"
                   }
+                  icon="download"
+                  disabled={tooLarge}
+                  onPress={startDownload}
                 />
-                <Text
-                  style={[
-                    styles.downloadBtnText,
-                    {
-                      color: tooLarge
-                        ? colors.mutedForeground
-                        : colors.primaryForeground,
-                    },
-                  ]}
-                >
-                  {tooLarge
-                    ? `Too large (max ${formatBytes(PACK_BYTE_BUDGET)})`
-                    : "Download this region"}
-                </Text>
-              </Pressable>
+              </View>
             )}
           </View>
         </View>
@@ -1337,99 +1199,34 @@ export default function OfflineScreen() {
   );
 }
 
+// The picker's selection frame sits on the light basemap in both schemes; the
+// modal header is navy in both.
+const MAP = colorTokens.light;
+const ON_NAVY = colorTokens.dark;
+
 const styles = StyleSheet.create({
   root: { flex: 1 },
   scroll: {
-    padding: 16,
-    gap: 12,
+    paddingHorizontal: GUTTER,
+    paddingTop: 16,
+    gap: 24,
   },
-  headerCard: {
-    flexDirection: "row",
-    gap: 12,
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    alignItems: "flex-start",
-  },
-  headerTitle: { fontSize: 15, fontFamily: "Inter_700Bold" },
-  headerSub: { marginTop: 2, fontSize: 12, fontFamily: "Inter_400Regular" },
-  primaryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
-  },
-  primaryBtnText: { fontFamily: "Inter_700Bold", fontSize: 15 },
-  emptyWrap: {
-    alignItems: "center",
-    paddingVertical: 32,
-    gap: 8,
-  },
-  emptyTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  emptySub: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    textAlign: "center",
-    paddingHorizontal: 24,
-  },
-  regionCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  regionBody: { flex: 1 },
-  regionTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
-  regionAnswer: {
-    fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
-    marginTop: 3,
-  },
-  regionMeta: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
-  regionActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    minHeight: 44,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  // Square, label-free variant for the card's icon actions.
-  actionIcon: { width: 44, paddingHorizontal: 0 },
-  dangerBtn: {
-    marginTop: 4,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: "center",
-  },
-  dangerBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
-  footer: {
-    fontSize: 10,
-    fontFamily: "Inter_400Regular",
-    marginTop: 8,
-    textAlign: "center",
-  },
+  btnRow: { flexDirection: "row" },
+  loader: { paddingVertical: 32 },
+  regionBody: { flex: 1, gap: 2 },
+  footer: { gap: 4 },
+  center: { textAlign: "center" },
+  num: { fontVariant: ["tabular-nums"] },
   modalRoot: { flex: 1 },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 10,
+    paddingHorizontal: 8,
+    paddingBottom: 4,
   },
-  modalTitle: { color: "#F4F1EA", fontFamily: "Inter_700Bold", fontSize: 16 },
+  // Balances the close button so the title stays centred.
+  headerSpacer: { width: 36 },
   mapWrap: { flex: 1 },
   selectionFrame: {
     position: "absolute",
@@ -1438,58 +1235,29 @@ const styles = StyleSheet.create({
     left: SELECTION_INSET,
     right: SELECTION_INSET,
     borderWidth: 3,
-    borderRadius: 12,
+    borderRadius: radius.md,
   },
   modalFooter: {
-    borderTopWidth: 1,
-    padding: 16,
-    gap: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: GUTTER,
+    paddingTop: 16,
+    gap: 16,
   },
+  field: { gap: 4 },
   nameInput: {
-    marginTop: 4,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: radius.md,
     paddingHorizontal: 12,
-    paddingVertical: Platform.OS === "ios" ? 10 : 6,
-    fontFamily: "Inter_500Medium",
-    fontSize: 15,
+    minHeight: 48,
   },
   tileInfoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
   },
-  modalInfoLabel: {
-    fontSize: 11,
-    fontFamily: "Inter_500Medium",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  modalInfoValue: { fontSize: 18, fontFamily: "Inter_700Bold", marginTop: 2 },
-  downloadBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
-  },
-  downloadBtnText: { fontFamily: "Inter_700Bold", fontSize: 15 },
   progressWrap: { gap: 8 },
   progressBar: {
     height: 8,
-    borderRadius: 4,
+    borderRadius: radius.pill,
     overflow: "hidden",
   },
-  progressText: {
-    fontSize: 12,
-    fontFamily: "Inter_500Medium",
-    textAlign: "center",
-  },
-  cancelBtn: {
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: "center",
-  },
-  cancelBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
 });

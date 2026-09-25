@@ -35,6 +35,22 @@ const colors = {
     border: "#D7CFBE",
     input: "#D7CFBE",
 
+    // Status tones: strong text on a weak fill.
+    success: "#1B6B3A",
+    successSubtle: "#E3F1E7",
+    warning: "#6B4700",
+    warningSubtle: "#FFF1CC",
+    danger: "#8C1D17",
+    dangerSubtle: "#FBE4E2",
+
+    // Controls floating on the map stay light in both schemes: the basemap is light.
+    mapChrome: "#FFFFFF",
+    mapChromeForeground: "#0E1A2B",
+    mapChromeMuted: "#5F6B7A",
+    scrim: "rgba(0,0,0,0.55)",
+    // Navy veil over the map: the loading overlay, the imagery credit.
+    navyScrim: "rgba(14,36,68,0.85)",
+
     // App-specific
     navy,
     navyDeep,
@@ -70,13 +86,24 @@ const colors = {
     border: "#1F3E70",
     input: "#1F3E70",
 
+    success: "#8FD9A8",
+    successSubtle: "#12321F",
+    warning: "#F2C45A",
+    warningSubtle: "#3A2C08",
+    danger: "#F08A80",
+    dangerSubtle: "#3D1714",
+
+    mapChrome: "#FFFFFF",
+    mapChromeForeground: "#0E1A2B",
+    mapChromeMuted: "#5F6B7A",
+    scrim: "rgba(0,0,0,0.55)",
+    navyScrim: "rgba(14,36,68,0.85)",
+
     navy,
     navyDeep,
     gold,
     goldDim,
   },
-
-  radius: 14,
 };
 
 export default colors;

@@ -53,10 +53,13 @@ Two corollaries, both learned the hard way:
 | 8080 | the sgss.ca site's API | binds `*:8080`, **not** loopback — a `ss -ltn` filtered on `127.0.0.1` will not show it |
 | 8081 | `go-pmtiles` v1.31.2, loopback only | `serve/pmtiles.service` |
 | 8082 | reserved for the optional nginx sidecar | `serve/nginx-tiles.conf.example`, not installed |
+| 8083 | `gno` (Good News Only API), loopback only | its own repo; `/etc/caddy/conf.d/gno.caddy` |
+| 8084 | `minfinder-api` (Community Mines), loopback only | `artifacts/minfinder-api/deploy/` |
+| 25115 | the sgss.ca website | binds `*:25115`; proxied from `/etc/caddy/Caddyfile` |
 | 10240–65535 | ephemeral port range | widened by `serve/sysctl-tiles.conf`; its lower bound is deliberately above every listener |
 
-**Picking a port for something new:** take the next free port *below 10240* (8083 is the
-obvious one) so an outgoing connection can never race your listener for an ephemeral port.
+**Picking a port for something new:** take the next free port *below 10240* (8085 as of
+2026-09-22) so an outgoing connection can never race your listener for an ephemeral port.
 Check `ss -ltnp` **and** `grep -n 'reverse_proxy' /etc/caddy/Caddyfile /etc/caddy/conf.d/*.caddy`
 — the 8080 wildcard bind is invisible to a loopback-filtered `ss` alone.
 

@@ -1,0 +1,24 @@
+# Nightly consistent copy of the Community Mines database, via minfinder-api-backup.timer.
+# `.backup` is SQLite's online backup, safe while the API is writing. Keeps 14 nights.
+#
+# ponytail: the copy sits on the same disk as the original, so it covers bad deletes and
+# corruption, not losing the box. Add an off-box rsync of backups/ and photos/ once there's a
+# destination to send them to.
+
+[Unit]
+Description=Back up the MinFinder Community Mines database
+
+[Service]
+Type=oneshot
+User=minfinder-api
+Group=minfinder-api
+StateDirectory=minfinder-api
+# Must match minfinder-api.service, or each run resets the directory to systemd's 0755.
+StateDirectoryMode=0750
+# The copies hold users' provider ids; nobody but the service user reads them.
+UMask=0077
+ExecStart=/bin/sh -c 'mkdir -p /var/lib/minfinder-api/backups && sqlite3 /var/lib/minfinder-api/api.db ".backup /var/lib/minfinder-api/backups/api-$(date -u +%%Y%%m%%d).db" && find /var/lib/minfinder-api/backups -name "api-*.db" -mtime +14 -delete'
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
