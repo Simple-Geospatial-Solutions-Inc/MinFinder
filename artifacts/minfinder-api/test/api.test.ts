@@ -2,14 +2,15 @@
 // against a throwaway database. Sign-in is the one thing not exercised over HTTP: Apple and
 // Google tokens can't be minted offline, so users are created with signIn() directly.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { randomBytes, randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
+import { jwtVerify } from "jose";
 import sharp from "sharp";
-import { signIn } from "../src/auth.ts";
+import { signIn, storeAppleToken } from "../src/auth.ts";
 import { openDb } from "../src/db.ts";
 import { distanceM, status, travelKmh, weight, type StatusInput } from "../src/rules.ts";
 import { createApp } from "../src/server.ts";
@@ -360,4 +361,35 @@ test("locations in parks and reserves wait for review; notes don't", async () =>
   assert.equal(note.status, 201, JSON.stringify(note.json));
   assert.equal(note.json.contribution.status, "unconfirmed", "a trusted account's note publishes straight away");
   assert.equal(note.json.contribution.held_for, null);
+});
+
+test("deleting an account revokes its Sign in with Apple grant", async () => {
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const keyFile = join(dir, "apple-signin.p8");
+  writeFileSync(keyFile, privateKey.export({ type: "pkcs8", format: "pem" }));
+  Object.assign(process.env, { APPLE_APP_ID: "TEAM123456.ca.sgss.minfinder", APPLE_SIGNIN_KEY_ID: "KEY1", APPLE_SIGNIN_KEY_FILE: keyFile });
+  // Stand in for appleid.apple.com; everything else goes to the real fetch (this test's server).
+  const calls: Record<string, string>[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (!String(url).startsWith("https://appleid.apple.com/")) return realFetch(url, init);
+    calls.push({ url: String(url), ...Object.fromEntries(init!.body as URLSearchParams) });
+    return Response.json(String(url).endsWith("/token") ? { refresh_token: "r-hal" } : {});
+  };
+  try {
+    const hal = signIn(db(), "apple", "hal");
+    await storeAppleToken(db(), hal.userId, "code-hal");
+    const del = await fetch(`${base}/v1/me`, { method: "DELETE", headers: { authorization: `Bearer ${hal.token}` } });
+    assert.equal(del.status, 204);
+    assert.deepEqual(calls.map((c) => [c.url, c.code ?? c.token]), [
+      ["https://appleid.apple.com/auth/token", "code-hal"],
+      ["https://appleid.apple.com/auth/revoke", "r-hal"],
+    ]);
+    const { payload, protectedHeader } = await jwtVerify(calls[1].client_secret, publicKey, { audience: "https://appleid.apple.com" });
+    assert.deepEqual([protectedHeader.kid, payload.iss, payload.sub, calls[1].client_id], ["KEY1", "TEAM123456", "ca.sgss.minfinder", "ca.sgss.minfinder"]);
+    assert.equal(db().prepare("SELECT COUNT(*) AS n FROM apple_tokens").get()!.n, 0);
+  } finally {
+    globalThis.fetch = realFetch;
+    for (const k of ["APPLE_APP_ID", "APPLE_SIGNIN_KEY_ID", "APPLE_SIGNIN_KEY_FILE"]) delete process.env[k];
+  }
 });

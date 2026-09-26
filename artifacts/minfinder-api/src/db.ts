@@ -18,6 +18,11 @@ CREATE TABLE IF NOT EXISTS sessions (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at INTEGER NOT NULL
 );
+-- Sign in with Apple refresh tokens, kept only to revoke the grant when the account is deleted.
+CREATE TABLE IF NOT EXISTS apple_tokens (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  refresh_token TEXT NOT NULL
+);
 -- One field report on an existing MINFILE mine: a located working (location), a search that
 -- found nothing at the published spot (not_found), or a note written from anywhere.
 -- id is the client's UUID: the device mints it offline, so a retried upload after a lost

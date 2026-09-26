@@ -99,11 +99,13 @@ export type Provider = "apple" | "google";
 /** Returns false when the user backs out of the provider's sheet. */
 export async function signIn(provider: Provider): Promise<boolean> {
   let idToken: string | null = null;
+  let authorizationCode: string | null = null; // Apple only: lets the API revoke the grant on account deletion
   if (provider === "apple") {
     try {
       // No scopes: we store only Apple's opaque user id, never a name or email.
       const cred = await AppleAuthentication.signInAsync({ requestedScopes: [] });
       idToken = cred.identityToken;
+      authorizationCode = cred.authorizationCode;
     } catch (e) {
       if ((e as { code?: string }).code === "ERR_REQUEST_CANCELED") return false;
       throw e;
@@ -122,7 +124,7 @@ export async function signIn(provider: Provider): Promise<boolean> {
   const { token: session } = await api<{ token: string }>(`/auth/${provider}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id_token: idToken }),
+    body: JSON.stringify({ id_token: idToken, authorization_code: authorizationCode ?? undefined }),
   });
   await setToken(session);
   return true;

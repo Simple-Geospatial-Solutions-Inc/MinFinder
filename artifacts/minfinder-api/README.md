@@ -25,7 +25,7 @@ branch on.
 |---|---|---|
 | `GET health` | – | `{ ok: true }` |
 | `GET config` | – | `min_app_version`, `submissions_enabled` (the kill switch), `limits` |
-| `POST auth/apple`, `POST auth/google` | – | `{ id_token }` → `{ token }`. Send it as `Authorization: Bearer <token>`. |
+| `POST auth/apple`, `POST auth/google` | – | `{ id_token, authorization_code? }` → `{ token }`. Apple's `authorization_code` is traded for a refresh token so account deletion can revoke the grant. Send it as `Authorization: Bearer <token>`. |
 | `GET attest/challenge` | ✔ | `{ challenge }`, single use, valid 5 minutes. For registering an App Attest key. |
 | `POST attest/ios` | ✔ | `{ key_id, attestation, challenge }`: registers this install's App Attest key. |
 | `POST submissions` | ✔ | See the next section. |

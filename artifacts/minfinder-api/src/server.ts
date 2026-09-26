@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { isProvider, sessionUser, signIn, verifyIdToken } from "./auth.ts";
+import { isProvider, revokeApple, sessionUser, signIn, storeAppleToken, verifyIdToken } from "./auth.ts";
 import { bump, CONTRIBUTION_SELECT, nextSeq, openDb, tx, type DB } from "./db.ts";
 import { adminGate, adminPage } from "./adminPage.ts";
 import { AttestError, bodyHash, decodePlayToken, newChallenge, playVerdict, verifyAssertion, verifyAttestation } from "./attest.ts";
@@ -561,6 +561,7 @@ export function createApp({ db, photoDir }: AppOptions) {
 
   async function deleteMe(req: IncomingMessage) {
     const uid = requireUser(req);
+    const apple = db.prepare("SELECT refresh_token FROM apple_tokens WHERE user_id = ?").get(uid) as Row | undefined;
     const photoIds = tx(db, () => {
       // Their responses and reports move other reports' status, so those need a new seq too.
       const touched = db
@@ -572,6 +573,8 @@ export function createApp({ db, photoDir }: AppOptions) {
       return ids;
     });
     await unlinkPhotos(photoIds);
+    // The account is already gone; a failed revoke is logged, not put back on the user.
+    if (apple) await revokeApple(apple.refresh_token).catch((e) => console.error("[apple revoke]", e));
     return { status: 204, body: null };
   }
 
@@ -602,18 +605,25 @@ export function createApp({ db, photoDir }: AppOptions) {
     }
     if (method === "POST" && (m = p.match(/^\/v1\/auth\/(\w+)$/))) {
       if (!isProvider(m[1])) throw new HttpError(404, "not_found");
-      const { id_token } = parse(z.object({ id_token: z.string().min(1).max(8192) }), await readJson(req));
+      const Body = z.object({ id_token: z.string().min(1).max(8192), authorization_code: z.string().min(1).max(4096).optional() });
+      const { id_token, authorization_code } = parse(Body, await readJson(req));
       let sub: string;
       try {
         sub = await verifyIdToken(m[1], id_token);
       } catch {
         throw new HttpError(401, "bad_token");
       }
+      let session: ReturnType<typeof signIn>;
       try {
-        return { status: 200, body: { token: signIn(db, m[1], sub).token } };
+        session = signIn(db, m[1], sub);
       } catch {
         throw new HttpError(403, "banned");
       }
+      // Only needed to revoke on account deletion, so a failed exchange doesn't fail sign-in.
+      if (m[1] === "apple" && authorization_code) {
+        await storeAppleToken(db, session.userId, authorization_code).catch((e) => console.error("[apple token]", e));
+      }
+      return { status: 200, body: { token: session.token } };
     }
     if (method === "GET" && p === "/v1/attest/challenge") {
       requireUser(req);
