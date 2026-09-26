@@ -21,8 +21,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "SGS MinFinder uses your location to center the map, to indicate the direction and distance to selected MINFILE occurrences, and to record where a mine you add was found.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "SGS MinFinder uses your location to center the map, to indicate the direction and distance to selected MINFILE occurrences, and to record where a mine you add was found."
+        "NSLocationWhenInUseUsageDescription": "SGS MinFinder uses your location to center the map, to indicate the direction and distance to selected MINFILE occurrences, and to record where you stood when you send or confirm a field report at a site.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "SGS MinFinder uses your location to center the map, to indicate the direction and distance to selected MINFILE occurrences, and to record where you stood when you send or confirm a field report at a site."
       },
       "usesAppleSignIn": true,
       "entitlements": {
@@ -54,7 +54,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "SGS MinFinder uses your location to center the map, to indicate the direction and distance to selected MINFILE occurrences, and to record where a mine you add was found."
+          "locationAlwaysAndWhenInUsePermission": "SGS MinFinder uses your location to center the map, to indicate the direction and distance to selected MINFILE occurrences, and to record where you stood when you send or confirm a field report at a site."
         }
       ],
       "expo-sqlite",
@@ -64,7 +64,7 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "SGS MinFinder uses the camera to photograph a mine you add, as proof of what's there.",
+          "cameraPermission": "SGS MinFinder uses the camera to photograph a mine's workings, or the ground you searched, for a field report you send.",
           "photosPermission": false,
           "microphonePermission": false
         }
