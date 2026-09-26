@@ -7,7 +7,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { DB } from "./db.ts";
 import { publishedPoint } from "./minfile.ts";
-import { queue, reportReasons, statusOfRow } from "./moderation.ts";
+import { mineItems, minesWithReports, queue, reportReasons, statusOfRow } from "./moderation.ts";
 
 const sha = (s: string) => createHash("sha256").update(s).digest();
 
@@ -54,7 +54,7 @@ const fact = (label: string, value: string) => `<div><dt>${label}</dt><dd>${valu
  * One queue item, read top to bottom in the order staff decide: why it's here, what it is and
  * where, what the member wrote, the evidence, then the actions.
  */
-function card(db: DB, m: Record<string, any>): string {
+function card(db: DB, m: Record<string, any>, back = ""): string {
   const verdicts = JSON.parse(m.verdicts) as [number, number][];
   // Visitors other than the author, whose own capture the status counts as one more agree.
   const agree = verdicts.filter((v) => v[0] > 0).length;
@@ -101,7 +101,7 @@ function card(db: DB, m: Record<string, any>): string {
   ].filter(Boolean);
 
   const btn = (action: string, label: string, cls = "") =>
-    `<form method="post" action="/admin/${action}/${esc(m.id)}"${cls === "danger" ? ` onsubmit="return confirm('${label}?')"` : ""}>` +
+    `<form method="post" action="/admin/${action}/${esc(m.id)}${back}"${cls === "danger" ? ` onsubmit="return confirm('${label}?')"` : ""}>` +
     `<button class="${cls}">${label}</button></form>`;
   return `<article data-id="${esc(m.id)}" tabindex="0">
   ${why.join("")}
@@ -141,10 +141,31 @@ function mapItem(m: Record<string, any>) {
   };
 }
 
-export function adminPage(db: DB, msg: string | null, failed = false): string {
-  const items = queue(db);
+/**
+ * The queue, or with `mine` everything posted at one MINFILE mine (approved or not), which is
+ * where staff go to take down something already public.
+ */
+export function adminPage(db: DB, msg: string | null, failed = false, mine: string | null = null): string {
+  const items = mine ? mineItems(db, mine) : queue(db);
+  const here = mine ? publishedPoint(mine) : null;
+  // Actions from the mine view come back to it.
+  const back = mine ? `?mine=${encodeURIComponent(mine)}` : "";
+  const mines = minesWithReports(db).flatMap((r) => {
+    const p = publishedPoint(r.minfilno);
+    return p ? [{ minfilno: r.minfilno, name: p.name || `MINFILE ${r.minfilno}`, n: r.n, pub: [p.lon, p.lat] }] : [];
+  });
   // "<" escaped so nothing in the data can close the script tag it's embedded in.
-  const data = JSON.stringify(items.map(mapItem)).replace(/</g, "\\u003c");
+  const data = JSON.stringify({ items: items.map(mapItem), mines, mine }).replace(/</g, "\\u003c");
+  const n = items.length;
+  const head = mine
+    ? `<a class="back" href="/admin">← Moderation queue</a>
+<h1>${esc(here?.name || "Unnamed mine")}</h1>
+<p class="sub"><span class="count">${n} ${n === 1 ? "report" : "reports"}</span> at MINFILE ${esc(mine)}, newest first, including ones already public. Remove takes one down for everyone.</p>`
+    : `<h1>Moderation queue</h1>
+<p class="sub"><span class="count">${n} waiting.</span> New members' first reports, held locations, and anything flagged or mostly disputed by visitors. Click one to see it on the map, or click any mine on the map to see everything posted there.</p>`;
+  const empty = mine
+    ? `<p class="empty">Nothing is posted at this mine any more.</p>`
+    : `<p class="empty">Nothing to review. New members' reports and flagged items land here.</p>`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MinFinder moderation</title>
@@ -194,6 +215,9 @@ export function adminPage(db: DB, msg: string | null, failed = false): string {
   @media (max-width: 860px) { .toast { left: 50%; bottom: 24px; max-width: calc(100vw - 32px); } }
   @media (prefers-reduced-motion: reduce) { .toast { animation-duration: 0s; } }
   .empty { color: var(--muted); margin-top: 24px; }
+  .back { display: inline-flex; align-items: center; min-height: 32px; margin: -6px 0 6px; color: var(--navy); font-weight: 600; font-size: 0.9375rem; text-decoration: none; }
+  .back:hover { text-decoration: underline; }
+  .maplibregl-popup-content { font: 500 0.875rem/1.35 Inter, system-ui, sans-serif; color: #0E1A2B; padding: 8px 12px; border-radius: 10px; }
   .num { font-variant-numeric: tabular-nums; }
 
   article {
@@ -255,13 +279,11 @@ export function adminPage(db: DB, msg: string | null, failed = false): string {
 </style></head>
 <body>
 <aside>
-<h1>Moderation queue</h1>
-<p class="sub"><span class="count">${items.length} waiting.</span> New members' first reports, held locations, and anything flagged or mostly disputed by visitors. Click one to see it on the map.</p>
-
-${items.map((m) => card(db, m)).join("\n") || `<p class="empty">Nothing to review. New members' reports and flagged items land here.</p>`}
+${head}
+${items.map((m) => card(db, m, back)).join("\n") || empty}
 </aside>
 ${msg ? `<p class="toast${failed ? " failed" : ""}" role="${failed ? "alert" : "status"}">${esc(msg)}</p>` : ""}
-<div id="map"><div class="legend"><i style="background:#0E2444"></i>Published MINFILE point<i style="background:#E8A317"></i>Reported point</div></div>
+<div id="map"><div class="legend"><i style="background:#0E2444"></i>Mine with reports: click for all of them<i style="background:#E8A317"></i>Reported point</div></div>
 <script type="application/json" id="items">${data}</script>
 <script src="${MAPLIBRE}/maplibre-gl.js"></script>
 <script>${MAP_SCRIPT}</script>
@@ -270,9 +292,14 @@ ${msg ? `<p class="toast${failed ? " failed" : ""}" role="${failed ? "alert" : "
 
 // Runs in the browser: plain JS, no build step.
 const MAP_SCRIPT = `
-// The message has been shown; drop it from the URL so a refresh doesn't show it again.
-if (location.search) history.replaceState(null, "", location.pathname);
-const items = JSON.parse(document.getElementById("items").textContent);
+// The message has been shown; drop it from the URL so a refresh doesn't show it again. The mine stays.
+const url = new URL(location.href);
+if (url.searchParams.has("msg")) {
+  url.searchParams.delete("msg");
+  url.searchParams.delete("failed");
+  history.replaceState(null, "", url);
+}
+const { items, mines, mine } = JSON.parse(document.getElementById("items").textContent);
 const byId = new Map(items.map((i) => [i.id, i]));
 const fc = (features) => ({ type: "FeatureCollection", features });
 const point = (c, id) => ({ type: "Feature", geometry: { type: "Point", coordinates: c }, properties: { id } });
@@ -286,9 +313,9 @@ const circle = ([lon, lat], m) => {
   return { type: "Feature", geometry: { type: "Polygon", coordinates: [ring] }, properties: {} };
 };
 const bounds = (cs) => cs.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(cs[0], cs[0]));
-const seen = new Set();
-const pubs = items.filter((i) => i.pub && !seen.has(i.minfilno) && seen.add(i.minfilno)).map((i) => point(i.pub, i.id));
+const mineDots = mines.map((m) => ({ type: "Feature", geometry: { type: "Point", coordinates: m.pub }, properties: { minfilno: m.minfilno, name: m.name, n: m.n } }));
 const pts = items.filter((i) => i.pt).map((i) => point(i.pt, i.id));
+const openMine = (minfilno) => (location.href = "/admin?mine=" + encodeURIComponent(minfilno));
 
 const map = new maplibregl.Map({ container: "map", style: "${STYLE_URL}", center: [-123.5, 53.5], zoom: 4.3, attributionControl: { compact: true } });
 map.addControl(new maplibregl.NavigationControl(), "top-right");
@@ -299,21 +326,44 @@ map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
 map.once("idle", () => document.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show"));
 map.once("style.load", () => {
   map.addSource("sel", { type: "geojson", data: fc([]) });
-  map.addSource("pubs", { type: "geojson", data: fc(pubs) });
+  map.addSource("mines", { type: "geojson", data: fc(mineDots) });
   map.addSource("pts", { type: "geojson", data: fc(pts) });
   map.addLayer({ id: "sel-fill", type: "fill", source: "sel", filter: ["==", "$type", "Polygon"], paint: { "fill-color": "#E8A317", "fill-opacity": 0.15 } });
   map.addLayer({ id: "sel-edge", type: "line", source: "sel", filter: ["==", "$type", "Polygon"], paint: { "line-color": "#E8A317", "line-width": 2 } });
   map.addLayer({ id: "sel-link", type: "line", source: "sel", filter: ["==", "$type", "LineString"], paint: { "line-color": "#0E2444", "line-width": 2, "line-dasharray": [2, 2] } });
   const dot = (color, r) => ({ "circle-color": color, "circle-radius": r, "circle-stroke-color": "#fff", "circle-stroke-width": 2 });
-  map.addLayer({ id: "pubs", type: "circle", source: "pubs", paint: dot("#0E2444", 6) });
+  // Busier mines draw a little larger.
+  map.addLayer({ id: "mines", type: "circle", source: "mines", paint: { ...dot("#0E2444", 6), "circle-radius": ["interpolate", ["linear"], ["get", "n"], 1, 6, 10, 10] } });
+  map.addLayer({ id: "mine-here", type: "circle", source: "mines", filter: ["==", ["get", "minfilno"], mine ?? ""],
+    paint: { "circle-color": "rgba(0,0,0,0)", "circle-radius": 13, "circle-stroke-color": "#E8A317", "circle-stroke-width": 3 } });
   map.addLayer({ id: "pts", type: "circle", source: "pts", paint: dot("#E8A317", 7) });
-  for (const layer of ["pubs", "pts"]) {
-    map.on("click", layer, (e) => select(e.features[0].properties.id, true));
-    map.on("mouseenter", layer, () => (map.getCanvas().style.cursor = "pointer"));
-    map.on("mouseleave", layer, () => (map.getCanvas().style.cursor = ""));
-  }
-  const all = [...pubs, ...pts].map((f) => f.geometry.coordinates);
-  if (all.length) map.fitBounds(bounds(all), { padding: 60, maxZoom: 12, duration: 0 });
+
+  // One handler, top layer first: a reported point over its mine selects the card rather than
+  // opening the mine.
+  map.on("click", (e) => {
+    const f = map.queryRenderedFeatures(e.point, { layers: ["pts", "mines"] })[0];
+    if (!f) return;
+    if (f.layer.id === "pts") select(f.properties.id, true);
+    else if (f.properties.minfilno !== mine) openMine(f.properties.minfilno);
+  });
+  const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
+  map.on("mouseenter", "mines", (e) => {
+    const p = e.features[0].properties;
+    map.getCanvas().style.cursor = "pointer";
+    popup.setLngLat(e.features[0].geometry.coordinates).setText(p.name + " · " + p.n + (p.n === 1 ? " report" : " reports")).addTo(map);
+  });
+  map.on("mouseleave", "mines", () => {
+    map.getCanvas().style.cursor = "";
+    popup.remove();
+  });
+  map.on("mouseenter", "pts", () => (map.getCanvas().style.cursor = "pointer"));
+  map.on("mouseleave", "pts", () => (map.getCanvas().style.cursor = ""));
+
+  // Open on what the panel lists: this mine's reports, else the queue, else every mine with reports.
+  const here = mine ? mines.filter((m) => m.minfilno === mine).map((m) => m.pub) : [];
+  const listed = items.flatMap((i) => [i.pub, i.pt].filter(Boolean));
+  const all = here.length || listed.length ? [...here, ...listed] : mineDots.map((f) => f.geometry.coordinates);
+  if (all.length) map.fitBounds(bounds(all), { padding: 60, maxZoom: mine ? 15 : 12, duration: 0 });
 });
 
 function select(id, fromMap) {

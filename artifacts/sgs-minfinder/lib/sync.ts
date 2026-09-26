@@ -158,6 +158,20 @@ export async function discardOutboxItem(id: string): Promise<void> {
   notify();
 }
 
+/**
+ * Takes back one of the user's own reports: from the phone if it hasn't gone up yet, otherwise
+ * from SGS, which needs a connection. The server keeps only a tombstone, so other phones drop it
+ * at their next sync.
+ */
+export async function deleteMyReport(id: string): Promise<void> {
+  const db = await getUserDb();
+  if (await db.getFirstAsync("SELECT 1 FROM outbox WHERE id = ?", [id])) return discardOutboxItem(id);
+  await api(`/contributions/${id}`, { method: "DELETE" });
+  await db.runAsync("DELETE FROM contributions WHERE id = ?", [id]);
+  await kvSet("my_submissions", (await getMySubmissions()).filter((c) => c.id !== id));
+  notify();
+}
+
 /** The user's uploaded reports, as of the last sync (including pending review). */
 export async function getMySubmissions(): Promise<Contribution[]> {
   return (await kvGet<Contribution[]>("my_submissions")) ?? [];

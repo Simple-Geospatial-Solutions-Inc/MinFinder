@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { MineGlyph } from "@/components/capture/MineGlyph";
+import { confirmDelete } from "@/components/FieldReports";
 import { outboxStatus, reportStatus, StatusChip, type Status } from "@/components/capture/StatusChip";
 import { EmptyState, GUTTER, ListRow, ListSection, PillButton, radius, TextButton, type } from "@/components/ui";
 import { Feather } from "@/components/Icon";
@@ -156,6 +157,8 @@ export default function MySubmissionsScreen() {
               meta={`${what(o.data)} · ${formatShortDate(when(o.data) ?? o.created_at)}`}
               status={outboxStatus(o, signedIn)}
               reason={o.error === "upload_failed" && o.message ? `Error: ${o.message}` : undefined}
+              removeLabel="Delete"
+              onRemove={() => confirmDelete({ id: o.id, kind: o.data.kind, queued: true })}
             />
           ))}
         </ListSection>
@@ -172,7 +175,7 @@ export default function MySubmissionsScreen() {
               meta={`${what(o.data)} · ${formatShortDate(when(o.data) ?? o.created_at)}`}
               status={outboxStatus(o, signedIn)}
               reason={REJECTED[o.error ?? ""] ?? (o.message || "The server didn't accept this report.")}
-              onDiscard={() => void discardOutboxItem(o.id)}
+              onRemove={() => void discardOutboxItem(o.id)}
             />
           ))}
         </ListSection>
@@ -190,6 +193,8 @@ export default function MySubmissionsScreen() {
               }`}
               status={reportStatus({ ...m, queued: false })}
               reason={m.held_for ? heldReason(m.held_for) : undefined}
+              removeLabel="Delete"
+              onRemove={() => confirmDelete(m)}
             />
           ))}
         </ListSection>
@@ -364,7 +369,8 @@ function Row({
   meta,
   status,
   reason,
-  onDiscard,
+  onRemove,
+  removeLabel = "Discard",
 }: {
   photo?: string;
   /** A located working's label, for the glyph; otherwise a report icon. */
@@ -373,7 +379,8 @@ function Row({
   meta: string;
   status: Status;
   reason?: string;
-  onDiscard?: () => void;
+  onRemove?: () => void;
+  removeLabel?: string;
 }) {
   const colors = useColors();
   return (
@@ -396,7 +403,7 @@ function Row({
         <Text style={[type.meta, { color: colors.mutedForeground }]}>{meta}</Text>
         <StatusChip status={status} />
         {reason && <Text style={[type.meta, { color: colors.foreground }]}>{reason}</Text>}
-        {onDiscard && <TextButton label="Discard" icon="trash-2" tone="destructive" onPress={onDiscard} />}
+        {onRemove && <TextButton label={removeLabel} icon="trash-2" tone="destructive" onPress={onRemove} />}
       </View>
     </ListRow>
   );
