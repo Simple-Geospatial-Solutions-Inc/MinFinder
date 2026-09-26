@@ -498,7 +498,8 @@ export function createApp({ db, photoDir }: AppOptions) {
     let m: RegExpMatchArray | null;
     if (req.method === "GET" && p === "/admin") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-      res.end(adminPage(db, url.searchParams.get("msg"), url.searchParams.has("failed")));
+      const mine = url.searchParams.get("mine");
+      res.end(adminPage(db, url.searchParams.get("msg"), url.searchParams.has("failed"), mine && /^\w{1,20}$/.test(mine) ? mine : null));
       return;
     }
     if (req.method === "GET" && (m = p.match(/^\/admin\/photos\/([\w-]{1,64}?)(_t)?\.jpg$/))) {
@@ -517,39 +518,60 @@ export function createApp({ db, photoDir }: AppOptions) {
         failed = "&failed=1";
       }
       req.resume();
-      res.writeHead(303, { Location: `/admin?msg=${encodeURIComponent(msg)}${failed}` }).end();
+      // Back to wherever the action was taken: the queue, or one mine's list.
+      const mine = url.searchParams.get("mine");
+      const at = mine && /^\w{1,20}$/.test(mine) ? `mine=${encodeURIComponent(mine)}&` : "";
+      res.writeHead(303, { Location: `/admin?${at}msg=${encodeURIComponent(msg)}${failed}` }).end();
       return;
     }
     throw new HttpError(404, "not_found");
   }
 
+  /**
+   * The author takes a report back. Keeps the id as a tombstone so devices drop it, and wipes
+   * everything the user wrote. Where they stood goes too: the placeholder keeps only the mine,
+   * the kind and a location's pin (a search's position is where they stood, so it goes).
+   * Runs inside a transaction; returns the photo ids whose files to delete after it commits.
+   */
+  function tombstone(id: string): string[] {
+    const photoIds = (db.prepare("SELECT id FROM photos WHERE contribution_id = ?").all(id) as Row[]).map((r) => r.id);
+    db.prepare(
+      `UPDATE contributions SET removed = 1, text = NULL, visit_id = NULL, attest = NULL, hold = NULL,
+         lat = CASE WHEN kind = 'location' THEN lat END, lon = CASE WHEN kind = 'location' THEN lon END,
+         user_lat = CASE WHEN kind = 'location' THEN lat END, user_lon = CASE WHEN kind = 'location' THEN lon END, seq = ?
+       WHERE id = ?`,
+    ).run(nextSeq(db), id);
+    db.prepare("DELETE FROM photos WHERE contribution_id = ?").run(id);
+    return photoIds;
+  }
+  const unlinkPhotos = (ids: string[]) =>
+    Promise.all(ids.flatMap((id) => [unlink(photoPath(id, false)), unlink(photoPath(id, true))]).map((p) => p.catch(() => {})));
+
+  async function deleteOwn(req: IncomingMessage, id: string) {
+    const uid = requireUser(req);
+    const photoIds = tx(db, () => {
+      const c = db.prepare("SELECT user_id, removed FROM contributions WHERE id = ?").get(id) as Row | undefined;
+      if (!c || c.removed) throw new HttpError(404, "not_found");
+      if (c.user_id !== uid) throw new HttpError(403, "not_yours", "only its author can delete a report");
+      return tombstone(id);
+    });
+    await unlinkPhotos(photoIds);
+    return { status: 204, body: null };
+  }
+
   async function deleteMe(req: IncomingMessage) {
     const uid = requireUser(req);
     const photoIds = tx(db, () => {
-      const ids = (
-        db.prepare("SELECT p.id FROM photos p JOIN contributions c ON c.id = p.contribution_id WHERE c.user_id = ?").all(uid) as Row[]
-      ).map((r) => r.id);
       // Their responses and reports move other reports' status, so those need a new seq too.
       const touched = db
         .prepare("SELECT contribution_id FROM responses WHERE user_id = ? UNION SELECT contribution_id FROM reports WHERE user_id = ?")
         .all(uid, uid) as Row[];
-      for (const c of db.prepare("SELECT id FROM contributions WHERE user_id = ?").all(uid) as Row[]) {
-        // Keep the id as a tombstone so devices drop it; wipe everything the user wrote.
-        // Where they stood goes too: the placeholder keeps only the mine, the kind and a
-        // location's pin (a search's position is where they stood, so it goes).
-        db.prepare(
-          `UPDATE contributions SET removed = 1, text = NULL, visit_id = NULL, attest = NULL, hold = NULL,
-             lat = CASE WHEN kind = 'location' THEN lat END, lon = CASE WHEN kind = 'location' THEN lon END,
-             user_lat = CASE WHEN kind = 'location' THEN lat END, user_lon = CASE WHEN kind = 'location' THEN lon END, seq = ?
-           WHERE id = ?`,
-        ).run(nextSeq(db), c.id);
-        db.prepare("DELETE FROM photos WHERE contribution_id = ?").run(c.id);
-      }
+      const ids = (db.prepare("SELECT id FROM contributions WHERE user_id = ?").all(uid) as Row[]).flatMap((c) => tombstone(c.id));
       db.prepare("DELETE FROM users WHERE id = ?").run(uid); // cascades sessions, responses, reports
       for (const t of touched) bump(db, t.contribution_id);
       return ids;
     });
-    await Promise.all(photoIds.flatMap((id) => [unlink(photoPath(id, false)), unlink(photoPath(id, true))]).map((p) => p.catch(() => {})));
+    await unlinkPhotos(photoIds);
     return { status: 204, body: null };
   }
 
@@ -609,6 +631,7 @@ export function createApp({ db, photoDir }: AppOptions) {
       return { status: 200, body: { contributions: rows.map(serialize) } };
     }
     if (method === "DELETE" && p === "/v1/me") return deleteMe(req);
+    if (method === "DELETE" && (m = p.match(/^\/v1\/contributions\/([\w-]{1,64})$/))) return deleteOwn(req, m[1]);
     if (method === "GET" && p === "/v1/me/blocks") return blocked(req);
     if (method === "DELETE" && p === "/v1/me/blocks") {
       db.prepare("DELETE FROM blocks WHERE user_id = ?").run(requireUser(req));

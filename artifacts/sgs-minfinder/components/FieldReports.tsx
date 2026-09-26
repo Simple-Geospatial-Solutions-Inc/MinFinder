@@ -12,8 +12,10 @@ import { Chip, ListRow, PillButton, radius, TextButton, type } from "@/component
 import { useColors } from "@/hooks/useColors";
 import { API_URL, authHeader, useSignedIn } from "@/lib/auth";
 import { bearingDegrees, bearingToCompass, distanceMeters, formatDistance } from "@/lib/geo";
+import { toast } from "@/components/Toast";
 import {
   blockAuthor,
+  deleteMyReport,
   flagReport,
   getMyResponses,
   getReports,
@@ -48,6 +50,30 @@ const month = (ms: number) =>
   });
 
 const OFFLINE = "That needs a connection. Try again when you have signal.";
+
+const KIND_WORD = { location: "point", not_found: "search report", note: "comment" } as const;
+
+/** Confirms, then deletes one of the user's own reports. Shared with My reports. */
+export function confirmDelete(r: { id: string; kind: keyof typeof KIND_WORD; queued?: boolean }) {
+  const word = KIND_WORD[r.kind];
+  Alert.alert(
+    `Delete this ${word}?`,
+    r.queued
+      ? "It hasn't uploaded yet, so it's only on this phone."
+      : "It's removed from MinFinder for everyone, photos and all. This can't be undone.",
+    [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () =>
+          void deleteMyReport(r.id)
+            .then(() => toast(`${word[0].toUpperCase()}${word.slice(1)} deleted.`))
+            .catch(() => Alert.alert("Couldn't delete it", OFFLINE)),
+      },
+    ],
+  );
+}
 
 /**
  * Reading never needs an account; anything that adds to a mine does. Without one the app can't
@@ -521,13 +547,16 @@ function ReportItem({
       )}
 
       {r.own ? (
-        <Text style={[type.meta, sub]}>
-          {r.queued
-            ? "Added by you · uploads when you have signal"
-            : r.held_for
-              ? `Added by you · SGS checks reports in a ${r.held_for.split(":")[0].toLowerCase()} first`
-              : "Added by you"}
-        </Text>
+        <View style={styles.ownRow}>
+          <Text style={[type.meta, sub, styles.shrink]}>
+            {r.queued
+              ? "Added by you · uploads when you have signal"
+              : r.held_for
+                ? `Added by you · SGS checks reports in a ${r.held_for.split(":")[0].toLowerCase()} first`
+                : "Added by you"}
+          </Text>
+          <TextButton label="Delete" icon="trash-2" tone="destructive" onPress={() => confirmDelete(r)} />
+        </View>
       ) : theirs(r) && r.kind === "note" ? (
         <View style={styles.chips}>
           <Chip
@@ -648,6 +677,7 @@ function MenuRow({
 
 const styles = StyleSheet.create({
   section: { gap: 12 },
+  ownRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   sectionHead: { flexDirection: "row", alignItems: "center", gap: 12 },
   banner: {
     flexDirection: "row",

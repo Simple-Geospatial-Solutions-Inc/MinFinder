@@ -31,6 +31,17 @@ export function queue(db: DB): Record<string, any>[] {
   return rows.filter((c) => !c.approved || c.reports > 0 || statusOfRow(c) === "collapsed");
 }
 
+/** Everything still up at one mine, newest first: what staff see after clicking it on the map. */
+export function mineItems(db: DB, minfilno: string): Record<string, any>[] {
+  return db.prepare(`${CONTRIBUTION_SELECT} WHERE c.removed = 0 AND c.minfilno = ? ORDER BY c.created_at DESC`).all(minfilno) as Record<string, any>[];
+}
+
+/** Mines with anything still up, for the map. */
+// ponytail: one row per mine, unbounded. Add a bbox filter once thousands of mines have reports.
+export function minesWithReports(db: DB): { minfilno: string; n: number }[] {
+  return db.prepare("SELECT minfilno, COUNT(*) AS n FROM contributions WHERE removed = 0 GROUP BY minfilno").all() as any[];
+}
+
 export function reportReasons(db: DB, id: string): { reason: string; n: number }[] {
   return db.prepare("SELECT reason, COUNT(*) AS n FROM reports WHERE contribution_id = ? GROUP BY reason").all(id) as any[];
 }

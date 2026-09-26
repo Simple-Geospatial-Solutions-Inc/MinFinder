@@ -256,6 +256,19 @@ test("field reports, safeguards, visitor verdicts and sync", async () => {
   assert.equal(blocks.authors, 1);
   assert.deepEqual([...blocks.ids].sort(), [adit.id, shaft.id, nfId, noteBody.id].sort());
 
+  // An author can take one report back; nobody else can.
+  const mistake = { id: randomUUID(), kind: "note", minfilno: MINE.minfilno, text: "Wrong mine, sorry." };
+  assert.equal((await submit(bob.token, mistake, [])).status, 201);
+  const delOne = (who: { token: string }) =>
+    fetch(`${base}/v1/contributions/${mistake.id}`, { method: "DELETE", headers: { authorization: `Bearer ${who.token}` } });
+  assert.equal((await delOne(alice)).status, 403);
+  assert.equal((await delOne(bob)).status, 204);
+  assert.equal((await delOne(bob)).status, 404);
+  const taken = db().prepare("SELECT removed, text FROM contributions WHERE id = ?").get(mistake.id) as any;
+  assert.deepEqual([taken.removed, taken.text], [1, null]);
+  const bobs = (await (await fetch(`${base}/v1/me/submissions`, { headers: { authorization: `Bearer ${bob.token}` } })).json()) as any;
+  assert.ok(!bobs.contributions.some((c: any) => c.id === mistake.id));
+
   // Account deletion wipes Alice's reports and her session.
   const del = await fetch(`${base}/v1/me`, { method: "DELETE", headers: { authorization: `Bearer ${alice.token}` } });
   assert.equal(del.status, 204);
@@ -293,6 +306,15 @@ test("admin page", async () => {
     assert.equal((await act({ origin: "https://evil.example" })).status, 403, "cross-site POST refused");
     assert.equal((await act({})).status, 303);
     assert.equal((db().prepare("SELECT approved FROM contributions WHERE id = ?").get(m.id) as any).approved, 1);
+
+    // Approved, it leaves the queue but is still listed under its mine, where staff can remove it.
+    assert.doesNotMatch(await (await fetch(`${base}/admin`, { headers: auth("correct horse") })).text(), new RegExp(`data-id="${m.id}"`));
+    const minePage = await (await fetch(`${base}/admin?mine=${MINE.minfilno}`, { headers: auth("correct horse") })).text();
+    assert.match(minePage, new RegExp(`action="/admin/remove/${m.id}\\?mine=${MINE.minfilno}"`));
+    const rm = await fetch(`${base}/admin/remove/${m.id}?mine=${MINE.minfilno}`, { method: "POST", redirect: "manual", headers: auth("correct horse") });
+    assert.equal(rm.status, 303);
+    assert.match(rm.headers.get("location") ?? "", new RegExp(`^/admin\\?mine=${MINE.minfilno}&msg=`), "back to the mine's list");
+    assert.equal((db().prepare("SELECT removed FROM contributions WHERE id = ?").get(m.id) as any).removed, 1);
   } finally {
     delete process.env.ADMIN_PASSWORD;
   }
