@@ -1,7 +1,7 @@
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { LinearTransition } from "react-native-reanimated";
 
 import { MAX_ACCURACY_M, useLiveFix, type LiveFix } from "@/components/capture/gps";
@@ -557,17 +557,7 @@ function ReportItem({
           </Text>
           <TextButton label="Delete" icon="trash-2" tone="destructive" onPress={() => confirmDelete(r)} />
         </View>
-      ) : theirs(r) && r.kind === "note" ? (
-        <View style={styles.chips}>
-          <Chip
-            label={`Helpful${helpfulCount(r, response) ? ` · ${helpfulCount(r, response)}` : ""}`}
-            role="checkbox"
-            selected={!!response?.helpful}
-            onPress={onHelpful}
-            icon={(c) => <Feather name="thumbs-up" size={16} color={c} />}
-          />
-        </View>
-      ) : theirs(r) ? (
+      ) : theirs(r) && r.kind !== "note" ? (
         <View style={{ gap: 6 }}>
           {here ? (
             <View style={styles.chips} accessibilityRole="radiogroup">
@@ -602,9 +592,7 @@ function ReportItem({
       ) : null}
 
       {theirs(r) &&
-        (flagged ? (
-          <Text style={[type.meta, sub]}>Thanks. SGS will take a look.</Text>
-        ) : flagging ? (
+        (flagging ? (
           <View style={[styles.menu, { borderColor: colors.border }]}>
             {REPORT_REASONS.map(([reason, text]) => (
               <ListRow key={reason} onPress={() => void flag(reason)} accessibilityLabel={text}>
@@ -617,7 +605,31 @@ function ReportItem({
             </View>
           </View>
         ) : (
-          <TextButton label="Flag" icon="flag" onPress={() => (signedIn ? setFlagging(true) : askSignIn("flag it"))} />
+          <View style={styles.ownRow}>
+            {flagged ? (
+              <Text style={[type.meta, sub, styles.shrink]}>Thanks. SGS will take a look.</Text>
+            ) : (
+              <TextButton label="Flag" icon="flag" onPress={() => (signedIn ? setFlagging(true) : askSignIn("flag it"))} />
+            )}
+            {/* Tucked in the corner, just the thumb and its count, so it never competes with the comment. */}
+            {r.kind === "note" && (
+              <Pressable
+                onPress={onHelpful}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: !!response?.helpful }}
+                accessibilityLabel={`Helpful${helpfulCount(r, response) ? `, ${helpfulCount(r, response)}` : ""}`}
+                hitSlop={{ left: 12, right: 8 }}
+                style={({ pressed }) => [styles.helpful, { opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Feather name="thumbs-up" size={16} color={response?.helpful ? colors.primary : colors.mutedForeground} />
+                {!!helpfulCount(r, response) && (
+                  <Text style={[type.meta, { color: response?.helpful ? colors.primary : colors.mutedForeground }]}>
+                    {helpfulCount(r, response)}
+                  </Text>
+                )}
+              </Pressable>
+            )}
+          </View>
         ))}
       {error && (
         <Text style={[type.meta, { color: colors.destructive }]} accessibilityLiveRegion="polite">
@@ -677,6 +689,7 @@ function MenuRow({
 
 const styles = StyleSheet.create({
   section: { gap: 12 },
+  helpful: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 44, marginLeft: "auto" },
   ownRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   sectionHead: { flexDirection: "row", alignItems: "center", gap: 12 },
   banner: {
