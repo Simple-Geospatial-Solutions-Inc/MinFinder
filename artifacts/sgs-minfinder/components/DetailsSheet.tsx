@@ -381,13 +381,8 @@ export function MineSheet({
       topInset={insets.top}
       onClose={onClose}
     >
-      {/* Scrolls only at full height. Below it gorhom locks the scroll after the
-          fact, so the list still soaks up part of each swipe and soft ones fall
-          short of the next height and spring back. */}
-      <BottomSheetScrollView
-        scrollEnabled={target === 2}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
-      >
+      {/* Everything down to the tabs stays put; only the tab's body scrolls under it. */}
+      <View style={styles.content}>
         <View style={styles.header} onLayout={measure("headerY", "y")}>
           <View style={styles.titleCol}>
             {/* The peek leads with the matched name, as the search dropdown
@@ -516,9 +511,8 @@ export function MineSheet({
           />
         </Animated.View>
 
-        {bodyOn && (
-          <Animated.View style={[styles.rest, restStyle]} {...side(up)}>
-          {reportable && (
+        {bodyOn && reportable && (
+          <Animated.View style={restStyle} {...side(up)}>
             <Segmented
               options={[
                 { value: "details", label: "Details" },
@@ -531,7 +525,19 @@ export function MineSheet({
                 setTab(t);
               }}
             />
-          )}
+          </Animated.View>
+        )}
+      </View>
+
+      {/* Scrolls only at full height. Below it gorhom locks the scroll after the
+          fact, so the list still soaks up part of each swipe and soft ones fall
+          short of the next height and spring back. */}
+      <BottomSheetScrollView
+        scrollEnabled={target === 2}
+        contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 32 }]}
+      >
+        {bodyOn && (
+          <Animated.View style={[styles.rest, restStyle]} {...side(up)}>
 
           {/* Free and Pro alike: comments and searches are for everyone; the exact
               points inside stay behind the same gate as the coordinates. */}
@@ -615,6 +621,7 @@ const renderBackdrop = (props: BottomSheetBackdropProps) => (
 
 const styles = StyleSheet.create({
   content: { paddingHorizontal: GUTTER, paddingTop: 4, gap: 24 },
+  body: { paddingHorizontal: GUTTER, paddingTop: 24 },
   header: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   titleCol: { flex: 1, gap: 2 },
   titleOrigin: { transformOrigin: "left top" },
