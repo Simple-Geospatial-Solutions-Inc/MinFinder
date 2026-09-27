@@ -333,6 +333,7 @@ export default function MapScreen() {
   // button on the Pro entitlement, so search picks (which skip quickInfo
   // entirely) stay behind the paywall too.
   const [quickInfo, setQuickInfo] = useState<Occurrence | null>(null);
+  const [peekKey, setPeekKey] = useState(0);
   const [selected, setSelected] = useState<Occurrence | null>(null);
   // Search hits carry which of the occurrence's names matched, so a row found by
   // an old claim name can show that name rather than the primary one.
@@ -936,7 +937,12 @@ export default function MapScreen() {
   const slotTaken = !searchDropdownOpen && (dbError || !!highlight || !!focusRegion || showCoverage);
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.navyDeep }]}>
+    // A touch anywhere off the open menu folds it and still does what it touched:
+    // this only watches touches go by, it never takes them. The pill stops its own.
+    <View
+      style={[styles.root, { backgroundColor: colors.navyDeep }]}
+      onTouchStart={menuOpen ? () => setMenuOpen(false) : undefined}
+    >
       <MapLibreMap
         style={StyleSheet.absoluteFill}
         mapStyle={BASEMAP_STYLE_JSON}
@@ -1094,20 +1100,11 @@ export default function MapScreen() {
         {userLoc && <UserLocation animated heading />}
       </MapLibreMap>
 
-      {/* A tap anywhere off the open menu folds it back into the search field. */}
-      {menuOpen && (
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={() => setMenuOpen(false)}
-          accessibilityRole="button"
-          accessibilityLabel="Close menu"
-        />
-      )}
-
       {/* Floating chrome: search pill and status filters, AllTrails-style. */}
       <View style={[styles.topBar, { top: insets.top + 8 }]} pointerEvents="box-none">
         <Pressable
           onPress={() => (menuOpen ? setMenuOpen(false) : searchInputRef.current?.focus())}
+          onTouchStart={(e) => e.stopPropagation()}
           accessible={false}
           style={styles.searchBar}
         >
@@ -1186,10 +1183,7 @@ export default function MapScreen() {
               label={STATUS_MAP[code].label}
               color={STATUS_MAP[code].color}
               active={statuses.includes(code)}
-              onPress={() => {
-                setMenuOpen(false);
-                toggleStatus(code);
-              }}
+              onPress={() => toggleStatus(code)}
             />
           ))}
         </ScrollView>
@@ -1316,16 +1310,17 @@ export default function MapScreen() {
         <SatelliteCredit top={insets.top + TOP_BAR_HEIGHT + 8 + (slotTaken ? REGION_PILL_HEIGHT + 8 : 0)} />
       )}
 
+      {/* Details opens on top of the card, which stays put underneath until
+          the sheet is drawn, then goes at once (a fresh key, not a slide down). */}
       <QuickInfoCard
+        key={peekKey}
         occurrence={quickInfo}
         matchedName={quickInfoMatch}
         onClose={() => setQuickInfo(null)}
         onExpand={() => {
-          if (quickInfo) {
-            setPickedMatch(null);
-            setSelected(quickInfo);
-          }
-          setQuickInfo(null);
+          if (!quickInfo) return;
+          setPickedMatch(null);
+          setSelected(quickInfo);
         }}
         onRequestUpgrade={setPaywallFor}
       />
@@ -1333,6 +1328,14 @@ export default function MapScreen() {
       <DetailsSheet
         occurrence={selected}
         matchedName={selectedMatch}
+        onHandoff={
+          quickInfo && selected
+            ? () => {
+                setQuickInfo(null);
+                setPeekKey((k) => k + 1);
+              }
+            : undefined
+        }
         onClose={() => setSelected(null)}
         // The paywall stacks over the mine: buying unlocks the open sheet in place.
         onRequestUpgrade={setPaywallFor}
@@ -1349,7 +1352,7 @@ export default function MapScreen() {
 
 const MENU = [
   ["download-cloud", "Offline", "/offline"],
-  ["inbox", "Reports", "/my-submissions"],
+  ["inbox", "My reports", "/my-submissions"],
   ["info", "About", "/about"],
 ] as const satisfies readonly (readonly [FeatherIconName, string, string])[];
 

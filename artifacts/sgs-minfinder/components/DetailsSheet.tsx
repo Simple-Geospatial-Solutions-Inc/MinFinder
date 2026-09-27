@@ -1,9 +1,10 @@
 import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, LayoutAnimation, Pressable, StyleSheet, Text, View } from "react-native";
-import { useReducedMotion } from "react-native-reanimated";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AccessibilityInfo, Dimensions, LayoutAnimation, Pressable, StyleSheet, Text, View } from "react-native";
+import { useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as Location from "expo-location";
@@ -17,7 +18,7 @@ import { useEntitlement } from "@/hooks/useEntitlement";
 import { getNamesForOccurrence, type Occurrence, type OccurrenceName } from "@/lib/db";
 import { formatDMS } from "@/lib/geo";
 
-const SNAPS = ["60%", "100%"];
+export const DETAILS_SNAPS = ["60%", "100%"];
 
 type Tab = "details" | "reports" | "comments";
 
@@ -41,6 +42,7 @@ export function DetailsSheet({
   matchedName,
   onClose,
   onRequestUpgrade,
+  onHandoff,
 }: {
   occurrence: Occurrence | null;
   /**
@@ -53,6 +55,12 @@ export function DetailsSheet({
   onClose: () => void;
   /** Called when a free user taps a gated action; the parent owns the paywall. */
   onRequestUpgrade: (feature: string) => void;
+  /**
+   * Set while the peek card hands over, standing at this sheet's first snap: the
+   * sheet appears there without sliding in, dimless, and calls this once it is
+   * drawn so the card can go.
+   */
+  onHandoff?: () => void;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -121,6 +129,30 @@ export function DetailsSheet({
     };
   }, [id, match]);
 
+  // Starts below the screen; dropping onto it means the sheet has been placed.
+  const screenHeight = Dimensions.get("window").height;
+  const position = useSharedValue(screenHeight);
+  // Taking over from the peek card, whose content has faded, this sheet's
+  // content fades up in place rather than arriving all at once.
+  const reveal = useSharedValue(1);
+  const handingOff = !!onHandoff;
+  useLayoutEffect(() => {
+    if (handingOff) reveal.value = 0;
+  }, [handingOff, reveal]);
+  useAnimatedReaction(
+    () => position.value < screenHeight,
+    (shown, was) => {
+      if (!shown || was || !onHandoff) return;
+      reveal.value = withTiming(1, { duration: 220 });
+      scheduleOnRN(onHandoff);
+    },
+    [onHandoff, screenHeight],
+  );
+  const revealStyle = useAnimatedStyle(() => ({
+    opacity: reveal.value,
+    transform: [{ translateY: (1 - reveal.value) * 8 }],
+  }));
+
   const reduceMotion = useReducedMotion();
   const toggleNames = useCallback(() => {
     if (!reduceMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -152,14 +184,18 @@ export function DetailsSheet({
   return (
     <Sheet
       open={!!current}
-      snapPoints={SNAPS}
+      snapPoints={DETAILS_SNAPS}
       enableDynamicSizing={false}
       enablePanDownToClose
-      backdrop
+      backdrop={!onHandoff}
+      animateOnMount={!onHandoff}
+      animatedPosition={position}
       topInset={insets.top}
       onClose={onClose}
     >
-      <BottomSheetScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}>
+      <BottomSheetScrollView
+        style={revealStyle}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}>
         <View style={styles.header}>
           <View style={styles.titleCol}>
             <Text style={[type.display, { color: colors.foreground }]} numberOfLines={2} accessibilityRole="header">
