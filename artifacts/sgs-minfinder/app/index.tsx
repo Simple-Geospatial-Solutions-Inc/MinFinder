@@ -948,10 +948,12 @@ export default function MapScreen() {
     // A touch anywhere off the open menu folds it and still does what it touched:
     // this only watches touches go by, it never takes them. The pill stops its
     // own, and so does the map, which folds it from its tap handlers instead:
-    // re-rendering this screen mid-tap can lose the tap on a pin.
+    // re-rendering this screen mid-tap can lose the tap on a pin. The handler is
+    // always attached: on Fabric an event prop makes a View a stacking context,
+    // and toggling it re-parents the map on Android, which reloads its style.
     <View
       style={[styles.root, { backgroundColor: colors.navyDeep }]}
-      onTouchStart={menuOpen ? () => setMenuOpen(false) : undefined}
+      onTouchStart={() => menuOpen && setMenuOpen(false)}
     >
       <View style={StyleSheet.absoluteFill} onTouchStart={(e) => e.stopPropagation()}>
         <MapLibreMap
