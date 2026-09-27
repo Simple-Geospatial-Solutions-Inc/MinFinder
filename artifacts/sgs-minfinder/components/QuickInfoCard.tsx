@@ -20,7 +20,7 @@ import { mineSummary } from "@/lib/sync";
  * everyone: free users get the field reports there, and DetailsSheet gates the
  * full record itself.
  *
- * The card can be pulled up to where the details sheet opens; arriving there
+ * The card can be pulled up to where the details sheet opens; heading there
  * (swiped, or carried by Details) calls `onExpand`, and DetailsSheet fades in
  * over it in place.
  */
@@ -41,7 +41,7 @@ export function QuickInfoCard({
    */
   matchedName?: string | null;
   onClose: () => void;
-  /** The card reached the details sheet's height. */
+  /** The card is headed for the details sheet's height. */
   onExpand: () => void;
   /** A free user tapped Navigate. The map owns the one paywall, stacked over this card. */
   onRequestUpgrade: (feature: string) => void;
@@ -71,7 +71,9 @@ export function QuickInfoCard({
       onClose={onClose}
       snapPoints={EXPANDED}
       topInset={insets.top}
-      onChange={(i) => i === 1 && onExpand()}
+      // On setting off rather than arriving: onChange waits out the spring's
+      // long tail, and the details sheet takes a moment to mount.
+      onAnimate={(_, to) => to === 1 && onExpand()}
       backdropComponent={renderBackdrop}
     >
       <BottomSheetView style={[styles.body, { paddingBottom: insets.bottom + 16 }]}>

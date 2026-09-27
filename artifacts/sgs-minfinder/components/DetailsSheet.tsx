@@ -19,6 +19,7 @@ import { getNamesForOccurrence, type Occurrence, type OccurrenceName } from "@/l
 import { formatDMS } from "@/lib/geo";
 
 export const DETAILS_SNAPS = ["60%", "100%"];
+const INSTANT = { duration: 0 };
 
 type Tab = "details" | "reports" | "comments";
 
@@ -189,7 +190,9 @@ export function DetailsSheet({
       enableDynamicSizing={false}
       enablePanDownToClose
       backdrop={!onHandoff}
-      animateOnMount={!onHandoff}
+      // Mount lands it in place: skipping the mount animation instead leaves
+      // gorhom to place the sheet, and it can slide it up anyway.
+      animationConfigs={onHandoff ? INSTANT : undefined}
       animatedPosition={position}
       backgroundComponent={renderBackground}
       topInset={insets.top}
