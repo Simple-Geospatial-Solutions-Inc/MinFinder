@@ -3,16 +3,16 @@ import { AccessibilityInfo, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInUp, FadeOutUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Feather } from "@/components/Icon";
+import { Feather, type FeatherIconName } from "@/components/Icon";
 import { floating, type } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 
 // One app-wide toast: a line of confirmation that outlives the screen that
 // raised it (a report saved on the capture screen shows over the mine it's for).
-let show: ((text: string) => void) | null = null;
+let show: ((text: string, icon: FeatherIconName) => void) | null = null;
 
-export function toast(text: string): void {
-  show?.(text);
+export function toast(text: string, icon: FeatherIconName = "check"): void {
+  show?.(text, icon);
   AccessibilityInfo.announceForAccessibility(text);
 }
 
@@ -20,10 +20,10 @@ export function toast(text: string): void {
 export function ToastHost() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const [msg, setMsg] = useState<{ text: string; key: number } | null>(null);
+  const [msg, setMsg] = useState<{ text: string; icon: FeatherIconName; key: number } | null>(null);
 
   useEffect(() => {
-    show = (text) => setMsg({ text, key: Date.now() });
+    show = (text, icon) => setMsg({ text, icon, key: Date.now() });
     return () => {
       show = null;
     };
@@ -43,7 +43,7 @@ export function ToastHost() {
         exiting={FadeOutUp}
         style={[styles.toast, { backgroundColor: colors.navyDeep }]}
       >
-        <Feather name="check" size={18} color={colors.gold} />
+        <Feather name={msg.icon} size={18} color={colors.gold} />
         <Text style={[type.label, styles.text]}>{msg.text}</Text>
       </Animated.View>
     </View>

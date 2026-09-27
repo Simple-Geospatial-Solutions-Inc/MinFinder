@@ -4,6 +4,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Network from "expo-network";
 import { AppState } from "react-native";
 
+import { toast } from "@/components/Toast";
 import { attestHeaders, forgetAttestKey } from "@/lib/attest";
 import { api, ApiError, isSignedIn, signOut } from "@/lib/auth";
 import { getUserDb, kvGet, kvSet } from "@/lib/userDb";
@@ -304,6 +305,15 @@ export async function respond(id: string, body: ResponseBody): Promise<void> {
   void sync();
 }
 
+/** Why the server turned a response down, as the user hears it once the press has been undone. */
+function refusal(code: string, noun: string): string {
+  if (code === "not_found") return `That ${noun} is no longer available.`;
+  if (code === "not_on_site" || code === "gps_inaccurate")
+    return "Your answer didn't count: it has to come from the site, with a good GPS fix.";
+  if (code === "capture_too_old") return "Your answer was too old to count by the time it uploaded.";
+  return `Couldn't record that on the ${noun}.`;
+}
+
 async function pushResponses(): Promise<void> {
   if (!(await isSignedIn())) return;
   const db = await getUserDb();
@@ -333,6 +343,9 @@ async function pushResponses(): Promise<void> {
       const mine = (await kvGet<Record<string, MyResponse>>("my_responses")) ?? {};
       delete mine[id];
       await kvSet("my_responses", mine);
+      // Gone from the server: stop showing it here too.
+      if (e.code === "not_found") await db.runAsync("DELETE FROM contributions WHERE id = ?", [id]);
+      toast(refusal(e.code, "helpful" in sent ? "comment" : "report"), "alert-circle");
     }
     if (failure) console.warn(`[sync] response to ${id} refused: ${failure}`);
     // Re-read: a newer press while this one was in flight must not be lost.
@@ -493,9 +506,14 @@ async function refreshMine(): Promise<void> {
   notify();
 }
 
+/** Whether the phone has a connection worth trying the server on. */
+export async function online(): Promise<boolean> {
+  const net = await Network.getNetworkStateAsync().catch(() => null);
+  return !!net?.isConnected && net.isInternetReachable !== false;
+}
+
 async function run(): Promise<void> {
-  const net = await Network.getNetworkStateAsync();
-  if (!net.isConnected || net.isInternetReachable === false) return;
+  if (!(await online())) return;
   for (const step of [pushOutbox, pushResponses, pull, refreshMine]) {
     try {
       await step();

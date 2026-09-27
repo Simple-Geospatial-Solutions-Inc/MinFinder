@@ -23,7 +23,7 @@ import { toast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
 import { useSignedIn } from "@/lib/auth";
 import { distanceMeters, formatDistance } from "@/lib/geo";
-import { LABEL_TEXT, MAX_TEXT, queueSubmission, SEARCH_RADII, type Label } from "@/lib/sync";
+import { LABEL_TEXT, MAX_TEXT, online, queueSubmission, SEARCH_RADII, type Label } from "@/lib/sync";
 
 /**
  * A field report on one MINFILE mine, opened from its details sheet:
@@ -48,9 +48,16 @@ export default function SubmitScreen() {
 }
 
 /** Back to the mine's sheet, saying what was saved and what happens to it next. */
-function finish(what: string, signedIn: boolean) {
-  toast(signedIn ? `${what} saved. It uploads when you have signal.` : `${what} saved on this phone. Sign in to upload it.`);
+async function finish(what: string, signedIn: boolean) {
   router.back();
+  // ponytail: "posted" trusts the connection; an upload that fails anyway shows on the item in the list.
+  toast(
+    !signedIn
+      ? `${what} saved on this phone. Sign in to upload it.`
+      : (await online())
+        ? `${what} posted.`
+        : `${what} saved. It uploads when you have signal.`,
+  );
 }
 
 /**
