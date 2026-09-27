@@ -2,7 +2,6 @@ import BottomSheet, { BottomSheetBackdrop, BottomSheetView, type BottomSheetBack
 import { router } from "expo-router";
 import React, { useMemo, useRef } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import Animated, { Extrapolation, interpolate, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { StatusChip } from "@/components/capture/StatusChip";
@@ -22,8 +21,8 @@ import { mineSummary } from "@/lib/sync";
  * full record itself.
  *
  * The card can be pulled up to where the details sheet opens; arriving there
- * (swiped, or carried by Details) calls `onExpand`, and DetailsSheet takes over
- * in place.
+ * (swiped, or carried by Details) calls `onExpand`, and DetailsSheet fades in
+ * over it in place.
  */
 export function QuickInfoCard({
   occurrence,
@@ -51,12 +50,6 @@ export function QuickInfoCard({
   const insets = useSafeAreaInsets();
   const { isPaid } = useEntitlement();
   const sheet = useRef<BottomSheet>(null);
-  // The card's content fades as it is pulled up, clearing the way for the
-  // details sheet's, which fades in where it stops.
-  const index = useSharedValue(0);
-  const fade = useAnimatedStyle(() => ({
-    opacity: interpolate(index.value, [0, 0.6], [1, 0], Extrapolation.CLAMP),
-  }));
   // Held through the close animation, match and all.
   const last = useLast(useMemo(() => occurrence && { occurrence, matchedName }, [occurrence, matchedName]));
   const summary = mineSummary(useReports(last?.occurrence.MINFILNO?.trim()).reports);
@@ -80,42 +73,39 @@ export function QuickInfoCard({
       topInset={insets.top}
       onChange={(i) => i === 1 && onExpand()}
       backdropComponent={renderBackdrop}
-      animatedIndex={index}
     >
       <BottomSheetView style={[styles.body, { paddingBottom: insets.bottom + 16 }]}>
-        <Animated.View style={[styles.fade, fade]}>
-          <View style={styles.head}>
-            <View style={styles.titleCol}>
-              {/* Lead with the matched name, as the search dropdown does. The
-                    primary name then has to stay visible below it — "CAMP CREEK" alone
-                    would read as the occurrence's name, which is the opposite error. */}
-              <Text style={[type.title, { color: colors.foreground }]} numberOfLines={2} accessibilityRole="header">
-                {match || shown.NAME1 || "Unnamed"}
+        <View style={styles.head}>
+          <View style={styles.titleCol}>
+            {/* Lead with the matched name, as the search dropdown does. The
+                  primary name then has to stay visible below it — "CAMP CREEK" alone
+                  would read as the occurrence's name, which is the opposite error. */}
+            <Text style={[type.title, { color: colors.foreground }]} numberOfLines={2} accessibilityRole="header">
+              {match || shown.NAME1 || "Unnamed"}
+            </Text>
+            <View style={styles.metaRow}>
+              <StatusBadge code={shown.STATUS_C} />
+              <Text style={[type.meta, { color: colors.mutedForeground, flexShrink: 1 }]} numberOfLines={1}>
+                {match ? `${shown.NAME1?.trim() || "Unnamed"} · ${minfilno}` : `MINFILE ${minfilno}`}
               </Text>
-              <View style={styles.metaRow}>
-                <StatusBadge code={shown.STATUS_C} />
-                <Text style={[type.meta, { color: colors.mutedForeground, flexShrink: 1 }]} numberOfLines={1}>
-                  {match ? `${shown.NAME1?.trim() || "Unnamed"} · ${minfilno}` : `MINFILE ${minfilno}`}
-                </Text>
-              </View>
-              {summary.disputed ? (
-                <StatusChip status={{ icon: "wrench", label: "Location disputed by visitors", tone: "wait" }} />
-              ) : summary.best ? (
-                <StatusChip status={{ icon: "check", label: "Better location confirmed", tone: "ok" }} />
-              ) : null}
             </View>
-            <IconButton icon="x" label="Close" onPress={onClose} />
+            {summary.disputed ? (
+              <StatusChip status={{ icon: "wrench", label: "Location disputed by visitors", tone: "wait" }} />
+            ) : summary.best ? (
+              <StatusChip status={{ icon: "check", label: "Better location confirmed", tone: "ok" }} />
+            ) : null}
           </View>
-          <View style={styles.pair}>
-            <PillButton
-              label="Navigate"
-              icon={isPaid ? "navigation" : "lock"}
-              onPress={navigate}
-              accessibilityHint={isPaid ? undefined : "MinFinder Pro feature"}
-            />
-            <PillButton label="Details" variant="secondary" onPress={() => sheet.current?.snapToIndex(1)} />
-          </View>
-        </Animated.View>
+          <IconButton icon="x" label="Close" onPress={onClose} />
+        </View>
+        <View style={styles.pair}>
+          <PillButton
+            label="Navigate"
+            icon={isPaid ? "navigation" : "lock"}
+            onPress={navigate}
+            accessibilityHint={isPaid ? undefined : "MinFinder Pro feature"}
+          />
+          <PillButton label="Details" variant="secondary" onPress={() => sheet.current?.snapToIndex(1)} />
+        </View>
       </BottomSheetView>
     </Sheet>
   );
@@ -130,8 +120,7 @@ const renderBackdrop = (p: BottomSheetBackdropProps) => (
 );
 
 const styles = StyleSheet.create({
-  body: { paddingHorizontal: GUTTER, paddingTop: 4 },
-  fade: { gap: 16 },
+  body: { paddingHorizontal: GUTTER, paddingTop: 4, gap: 16 },
   head: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   titleCol: { flex: 1, minWidth: 0, gap: 6 },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 8 },

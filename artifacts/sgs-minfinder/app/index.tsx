@@ -506,6 +506,9 @@ export default function MapScreen() {
     () => occurrencesToFeatureCollection(drawnRows),
     [drawnRows],
   );
+  // Serialised once here: GeoJSONSource stringifies an object on every render,
+  // and this one is every pin in the province.
+  const featureJson = useMemo(() => JSON.stringify(featureCollection), [featureCollection]);
   const occById = useMemo(() => {
     const m = new Map<number, Occurrence>();
     for (const r of allRows) m.set(r.id, r);
@@ -549,6 +552,7 @@ export default function MapScreen() {
   const onCommunityPress = useCallback(
     (e: { nativeEvent?: { features?: GeoJSON.Feature[] } }) => {
       const occ = occByMinfilno.get(e.nativeEvent?.features?.[0]?.properties?.minfilno);
+      setMenuOpen(false);
       if (!occ) return;
       setQuickInfo(null);
       setPickedMatch(null);
@@ -618,6 +622,7 @@ export default function MapScreen() {
   // quick-info card.
   const onFeaturePress = useCallback(
     async (e: { nativeEvent?: { features?: GeoJSON.Feature[] } }) => {
+      setMenuOpen(false);
       const f = e.nativeEvent?.features?.[0];
       if (!f || f.geometry?.type !== "Point") return;
       const props = (f.properties ?? {}) as {
@@ -901,6 +906,7 @@ export default function MapScreen() {
   const onMapPress = useCallback(() => {
     Keyboard.dismiss();
     setSearchActive(false);
+    setMenuOpen(false);
   }, []);
 
   const toggleCoverage = useCallback(() => {
@@ -938,167 +944,171 @@ export default function MapScreen() {
 
   return (
     // A touch anywhere off the open menu folds it and still does what it touched:
-    // this only watches touches go by, it never takes them. The pill stops its own.
+    // this only watches touches go by, it never takes them. The pill stops its
+    // own, and so does the map, which folds it from its tap handlers instead:
+    // re-rendering this screen mid-tap can lose the tap on a pin.
     <View
       style={[styles.root, { backgroundColor: colors.navyDeep }]}
       onTouchStart={menuOpen ? () => setMenuOpen(false) : undefined}
     >
-      <MapLibreMap
-        style={StyleSheet.absoluteFill}
-        mapStyle={BASEMAP_STYLE_JSON}
-        attribution={false}
-        touchRotate={false}
-        touchPitch={false}
-        onPress={onMapPress}
-      >
-        <Camera
-          ref={cameraRef}
-          initialViewState={{ bounds: regionToBounds(BC_REGION) }}
-        />
-
-        {/*
-          Online-only satellite imagery, slotted into the topo style below the
-          contours so roads, boundaries and labels stay on top (see
-          SATELLITE_ANCHOR_LAYER). Permanently mounted and toggled through
-          `visibility` rather than conditionally rendered — a remounted layer
-          is appended to the top of the style (the trap noted on `occ-overlay`
-          below), and a hidden layer costs nothing: MapLibre requests no tiles
-          for a source none of whose layers are visible. Offline, failed tiles
-          draw nothing and the topo underneath shows through.
-        */}
-        <RasterSource
-          id="satellite"
-          tiles={SATELLITE_TILES}
-          tileSize={SATELLITE_TILE_SIZE}
-          maxzoom={SATELLITE_MAX_ZOOM}
-          attribution={SATELLITE_ATTRIBUTION}
+      <View style={StyleSheet.absoluteFill} onTouchStart={(e) => e.stopPropagation()}>
+        <MapLibreMap
+          style={StyleSheet.absoluteFill}
+          mapStyle={BASEMAP_STYLE_JSON}
+          attribution={false}
+          touchRotate={false}
+          touchPitch={false}
+          onPress={onMapPress}
         >
-          <Layer
-            id="satellite"
-            type="raster"
-            beforeId={SATELLITE_ANCHOR_LAYER}
-            layout={{ visibility: basemap === "satellite" ? "visible" : "none" }}
+          <Camera
+            ref={cameraRef}
+            initialViewState={{ bounds: regionToBounds(BC_REGION) }}
           />
-        </RasterSource>
 
-        {/*
-          Outlines of downloaded offline regions. `beforeId="clusters"` is
-          required, not cosmetic: this source unmounts whenever the overlay is
-          cleared, and a layer added back later is appended to the *top* of the
-          style — so without it the outline would render over the pins the second
-          time a region is opened. Anchoring to the first `occ` layer keeps the
-          rectangles underneath regardless of insertion order.
-        */}
-        {regionShape && (
-          <GeoJSONSource id="offline-regions" data={regionShape}>
+          {/*
+            Online-only satellite imagery, slotted into the topo style below the
+            contours so roads, boundaries and labels stay on top (see
+            SATELLITE_ANCHOR_LAYER). Permanently mounted and toggled through
+            `visibility` rather than conditionally rendered — a remounted layer
+            is appended to the top of the style (the trap noted on `occ-overlay`
+            below), and a hidden layer costs nothing: MapLibre requests no tiles
+            for a source none of whose layers are visible. Offline, failed tiles
+            draw nothing and the topo underneath shows through.
+          */}
+          <RasterSource
+            id="satellite"
+            tiles={SATELLITE_TILES}
+            tileSize={SATELLITE_TILE_SIZE}
+            maxzoom={SATELLITE_MAX_ZOOM}
+            attribution={SATELLITE_ATTRIBUTION}
+          >
             <Layer
-              id="offline-region-fill"
-              type="fill"
-              beforeId="clusters"
-              style={regionFillStyle}
+              id="satellite"
+              type="raster"
+              beforeId={SATELLITE_ANCHOR_LAYER}
+              layout={{ visibility: basemap === "satellite" ? "visible" : "none" }}
+            />
+          </RasterSource>
+
+          {/*
+            Outlines of downloaded offline regions. `beforeId="clusters"` is
+            required, not cosmetic: this source unmounts whenever the overlay is
+            cleared, and a layer added back later is appended to the *top* of the
+            style — so without it the outline would render over the pins the second
+            time a region is opened. Anchoring to the first `occ` layer keeps the
+            rectangles underneath regardless of insertion order.
+          */}
+          {regionShape && (
+            <GeoJSONSource id="offline-regions" data={regionShape}>
+              <Layer
+                id="offline-region-fill"
+                type="fill"
+                beforeId="clusters"
+                style={regionFillStyle}
+              />
+              <Layer
+                id="offline-region-casing"
+                type="line"
+                beforeId="clusters"
+                style={regionCasingStyle}
+              />
+              <Layer
+                id="offline-region-line-other"
+                type="line"
+                beforeId="clusters"
+                filter={UNFOCUSED_FILTER as never}
+                style={regionOtherLineStyle}
+              />
+              <Layer
+                id="offline-region-line-focused"
+                type="line"
+                beforeId="clusters"
+                filter={FOCUSED_FILTER as never}
+                style={regionFocusedLineStyle}
+              />
+            </GeoJSONSource>
+          )}
+
+          <GeoJSONSource
+            id="occ"
+            ref={shapeRef}
+            data={featureJson}
+            cluster
+            clusterRadius={50}
+            clusterMaxZoom={14}
+            onPress={onFeaturePress}
+          >
+            <Layer
+              id="clusters"
+              type="circle"
+              filter={CLUSTER_FILTER as never}
+              style={searchMode ? clusterCircleSearchStyle : clusterCircleStyle}
             />
             <Layer
-              id="offline-region-casing"
-              type="line"
-              beforeId="clusters"
-              style={regionCasingStyle}
+              id="cluster-count"
+              type="symbol"
+              filter={CLUSTER_FILTER as never}
+              style={clusterTextStyle}
             />
             <Layer
-              id="offline-region-line-other"
-              type="line"
-              beforeId="clusters"
-              filter={UNFOCUSED_FILTER as never}
-              style={regionOtherLineStyle}
+              id="points"
+              type="circle"
+              filter={POINT_FILTER as never}
+              style={pointCircleStyle}
             />
             <Layer
-              id="offline-region-line-focused"
-              type="line"
-              beforeId="clusters"
-              filter={FOCUSED_FILTER as never}
-              style={regionFocusedLineStyle}
+              id="point-code"
+              type="symbol"
+              filter={POINT_FILTER as never}
+              style={pointTextStyle}
             />
           </GeoJSONSource>
-        )}
 
-        <GeoJSONSource
-          id="occ"
-          ref={shapeRef}
-          data={featureCollection as unknown as GeoJSON.FeatureCollection}
-          cluster
-          clusterRadius={50}
-          clusterMaxZoom={14}
-          onPress={onFeaturePress}
-        >
-          <Layer
-            id="clusters"
-            type="circle"
-            filter={CLUSTER_FILTER as never}
-            style={searchMode ? clusterCircleSearchStyle : clusterCircleStyle}
-          />
-          <Layer
-            id="cluster-count"
-            type="symbol"
-            filter={CLUSTER_FILTER as never}
-            style={clusterTextStyle}
-          />
-          <Layer
-            id="points"
-            type="circle"
-            filter={POINT_FILTER as never}
-            style={pointCircleStyle}
-          />
-          <Layer
-            id="point-code"
-            type="symbol"
-            filter={POINT_FILTER as never}
-            style={pointTextStyle}
-          />
-        </GeoJSONSource>
+          <GeoJSONSource id="community-links" data={linkShape}>
+            <Layer id="community-links" type="line" style={communityLinkStyle} />
+          </GeoJSONSource>
+          <GeoJSONSource id="community" data={communityShape} onPress={onCommunityPress}>
+            <Layer id="community-ring" type="circle" style={communityRingStyle} />
+            <Layer
+              id="community-selected"
+              type="circle"
+              filter={["==", ["get", "minfilno"], openMinfilno] as never}
+              style={communitySelectedStyle}
+            />
+          </GeoJSONSource>
 
-        <GeoJSONSource id="community-links" data={linkShape}>
-          <Layer id="community-links" type="line" style={communityLinkStyle} />
-        </GeoJSONSource>
-        <GeoJSONSource id="community" data={communityShape} onPress={onCommunityPress}>
-          <Layer id="community-ring" type="circle" style={communityRingStyle} />
-          <Layer
-            id="community-selected"
-            type="circle"
-            filter={["==", ["get", "minfilno"], openMinfilno] as never}
-            style={communitySelectedStyle}
-          />
-        </GeoJSONSource>
+          {/*
+            The open pin on an un-clustered source, so its gold ring survives being
+            zoomed out (see overlayShape). Declared after `occ` so it paints above
+            the base pins, and kept permanently mounted with an empty collection
+            when idle rather than conditionally rendered — a source that unmounts
+            has its layers re-appended to the top of the style on remount, which is
+            the trap the offline-regions source works around with `beforeId` above.
 
-        {/*
-          The open pin on an un-clustered source, so its gold ring survives being
-          zoomed out (see overlayShape). Declared after `occ` so it paints above
-          the base pins, and kept permanently mounted with an empty collection
-          when idle rather than conditionally rendered — a source that unmounts
-          has its layers re-appended to the top of the style on remount, which is
-          the trap the offline-regions source works around with `beforeId` above.
+            `onPress` is required, not optional: a press goes to the source whose
+            layer has the highest z-index under the touch, so without a handler
+            these layers would swallow taps and make the open pin dead.
+          */}
+          <GeoJSONSource
+            id="occ-overlay"
+            data={overlayShape as unknown as GeoJSON.FeatureCollection}
+            onPress={onFeaturePress}
+          >
+            <Layer id="overlay-point" type="circle" style={pointCircleStyle} />
+            <Layer id="overlay-code" type="symbol" style={pointTextStyle} />
+            <Layer
+              id="point-selected"
+              type="circle"
+              filter={
+                ["==", ["get", "id"], selectedId ?? -1] as never
+              }
+              style={selectedRingStyle}
+            />
+          </GeoJSONSource>
 
-          `onPress` is required, not optional: a press goes to the source whose
-          layer has the highest z-index under the touch, so without a handler
-          these layers would swallow taps and make the open pin dead.
-        */}
-        <GeoJSONSource
-          id="occ-overlay"
-          data={overlayShape as unknown as GeoJSON.FeatureCollection}
-          onPress={onFeaturePress}
-        >
-          <Layer id="overlay-point" type="circle" style={pointCircleStyle} />
-          <Layer id="overlay-code" type="symbol" style={pointTextStyle} />
-          <Layer
-            id="point-selected"
-            type="circle"
-            filter={
-              ["==", ["get", "id"], selectedId ?? -1] as never
-            }
-            style={selectedRingStyle}
-          />
-        </GeoJSONSource>
-
-        {userLoc && <UserLocation animated heading />}
-      </MapLibreMap>
+          {userLoc && <UserLocation animated heading />}
+        </MapLibreMap>
+      </View>
 
       {/* Floating chrome: search pill and status filters, AllTrails-style. */}
       <View style={[styles.topBar, { top: insets.top + 8 }]} pointerEvents="box-none">

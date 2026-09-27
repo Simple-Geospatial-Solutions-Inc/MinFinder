@@ -1,9 +1,9 @@
-import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetScrollView, type BottomSheetBackgroundProps } from "@gorhom/bottom-sheet";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Dimensions, LayoutAnimation, Pressable, StyleSheet, Text, View } from "react-native";
-import { useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
+import Animated, { useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -132,8 +132,9 @@ export function DetailsSheet({
   // Starts below the screen; dropping onto it means the sheet has been placed.
   const screenHeight = Dimensions.get("window").height;
   const position = useSharedValue(screenHeight);
-  // Taking over from the peek card, whose content has faded, this sheet's
-  // content fades up in place rather than arriving all at once.
+  // Taking over from the peek card, this sheet lands in place over it and fades
+  // in, background and all, so the card's content crossfades into this one's.
+  // The card goes once it is covered.
   const reveal = useSharedValue(1);
   const handingOff = !!onHandoff;
   useLayoutEffect(() => {
@@ -143,15 +144,15 @@ export function DetailsSheet({
     () => position.value < screenHeight,
     (shown, was) => {
       if (!shown || was || !onHandoff) return;
-      reveal.value = withTiming(1, { duration: 220 });
-      scheduleOnRN(onHandoff);
+      reveal.value = withTiming(1, { duration: 200 }, () => scheduleOnRN(onHandoff));
     },
     [onHandoff, screenHeight],
   );
-  const revealStyle = useAnimatedStyle(() => ({
-    opacity: reveal.value,
-    transform: [{ translateY: (1 - reveal.value) * 8 }],
-  }));
+  const revealStyle = useAnimatedStyle(() => ({ opacity: reveal.value }));
+  const renderBackground = useCallback(
+    ({ style }: BottomSheetBackgroundProps) => <Animated.View pointerEvents="none" style={[style, revealStyle]} />,
+    [revealStyle],
+  );
 
   const reduceMotion = useReducedMotion();
   const toggleNames = useCallback(() => {
@@ -190,6 +191,7 @@ export function DetailsSheet({
       backdrop={!onHandoff}
       animateOnMount={!onHandoff}
       animatedPosition={position}
+      backgroundComponent={renderBackground}
       topInset={insets.top}
       onClose={onClose}
     >
