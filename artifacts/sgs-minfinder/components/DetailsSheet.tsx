@@ -56,6 +56,9 @@ const CLAMP = Extrapolation.CLAMP;
 // From the peek, a swipe up this far, or this fast (pt/s), opens the record.
 const PEEK_LIFT = 24;
 const PEEK_FLICK = 300;
+// Room under the last row of a list, past the home indicator, so a screen's
+// rounded corners never clip it.
+const END_BUFFER = 64;
 
 /**
  * Gorhom's drag, except from the peek. There it settles on whichever height
@@ -544,7 +547,7 @@ export function MineSheet({
           section={tab}
           isPaid={isPaid}
           scrollEnabled={up}
-          bottomInset={insets.bottom + 32}
+          bottomInset={insets.bottom + END_BUFFER}
           onLeave={onClose}
           onRequestUpgrade={onRequestUpgrade}
         />
@@ -554,7 +557,7 @@ export function MineSheet({
          short of the next height and spring back. */
       <BottomSheetScrollView
         scrollEnabled={up}
-        contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 32 }]}
+        contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + END_BUFFER }]}
       >
         {bodyOn && (
           <Animated.View style={[styles.rest, restStyle]} {...side(up)}>
