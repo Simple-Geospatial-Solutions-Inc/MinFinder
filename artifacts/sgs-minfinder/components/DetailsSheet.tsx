@@ -1,4 +1,13 @@
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, type BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
+import BottomSheet, {
+  ANIMATION_SOURCE,
+  BottomSheetBackdrop,
+  BottomSheetScrollView,
+  useBottomSheetInternal,
+  useGestureEventsHandlersDefault,
+  type BottomSheetBackdropProps,
+  type GestureEventHandlerCallbackType,
+  type GestureEventsHandlersHookType,
+} from "@gorhom/bottom-sheet";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -44,6 +53,44 @@ const CLOSE = 36;
 // The peek's title is the details title at this scale.
 const PEEK_SCALE = type.title.fontSize / type.display.fontSize;
 const CLAMP = Extrapolation.CLAMP;
+// From the peek, a swipe up this far, or this fast (pt/s), opens the record.
+const PEEK_LIFT = 24;
+const PEEK_FLICK = 300;
+
+/**
+ * Gorhom's drag, except from the peek. There it settles on whichever height
+ * the swipe ends nearest, and the record is a long way up, so a soft swipe
+ * springs back; here any clear swipe up opens the record, never past it.
+ */
+const usePeekGestures: GestureEventsHandlersHookType = () => {
+  const defaults = useGestureEventsHandlersDefault();
+  const { handleOnStart: baseStart, handleOnEnd: baseEnd } = defaults;
+  const { animatedPosition, animatedDetentsState, animateToPosition } = useBottomSheetInternal();
+  const start = useSharedValue(0);
+  const handleOnStart = useCallback<GestureEventHandlerCallbackType>(
+    (source, payload) => {
+      "worklet";
+      start.value = animatedPosition.value;
+      baseStart(source, payload);
+    },
+    [baseStart, start, animatedPosition],
+  );
+  const handleOnEnd = useCallback<GestureEventHandlerCallbackType>(
+    (source, payload) => {
+      "worklet";
+      const { detents } = animatedDetentsState.get();
+      const { translationY, velocityY } = payload;
+      const fromPeek = !!detents && detents.length > 1 && Math.abs(start.value - detents[0]) < 1;
+      if (fromPeek && translationY < 0 && (translationY < -PEEK_LIFT || velocityY < -PEEK_FLICK)) {
+        animateToPosition(detents[1], ANIMATION_SOURCE.GESTURE, velocityY / 2);
+        return;
+      }
+      baseEnd(source, payload);
+    },
+    [baseEnd, start, animatedDetentsState, animateToPosition],
+  );
+  return { ...defaults, handleOnStart, handleOnEnd };
+};
 
 type Tab = "details" | "reports" | "comments";
 
@@ -286,10 +333,6 @@ export function MineSheet({
   const onAnimate = (from: number, to: number) => {
     // Pulled down from the record: close rather than settle on the peek.
     if (from >= 1 && to === 0 && expandedRef.current) return sheet.current?.close();
-    // A hard fling from the peek stops at the record's height; a second pull
-    // takes it the rest of the way. (Leaving full height out of the snap points
-    // until then did the same, but made soft swipes rebound.)
-    if (from === 0 && to === 2) return sheet.current?.snapToIndex(1);
     setTarget(Math.max(to, 0));
     if (to >= 1 && !expandedRef.current) onExpand();
   };
@@ -327,6 +370,7 @@ export function MineSheet({
       enableDynamicSizing={false}
       enablePanDownToClose
       animatedIndex={index}
+      gestureEventsHandlersHook={usePeekGestures}
       onAnimate={onAnimate}
       backdropComponent={renderBackdrop}
       topInset={insets.top}
