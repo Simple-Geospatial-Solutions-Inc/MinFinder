@@ -60,7 +60,7 @@ const PEEK_FLICK = 300;
 /**
  * Gorhom's drag, except from the peek. There it settles on whichever height
  * the swipe ends nearest, and the record is a long way up, so a soft swipe
- * springs back; here any clear swipe up opens the record, never past it.
+ * springs back; here any clear swipe up opens the record.
  */
 const usePeekGestures: GestureEventsHandlersHookType = () => {
   const defaults = useGestureEventsHandlersDefault();
@@ -282,7 +282,8 @@ export function MineSheet({
   const colBottom = chip ? chipPeekY + m.chipH : metaPeekY + m.badgeH;
   const pairPeekY = Math.max(colBottom, m.headerY + CLOSE) + 16;
   const peekHeight = Math.round(HANDLE + pairPeekY + PILL + insets.bottom + 16);
-  const snapPoints = useMemo(() => [peekHeight, "60%", "100%"], [peekHeight]);
+  // Two heights: the peek for browsing pins, the full record for reading it.
+  const snapPoints = useMemo(() => [peekHeight, "100%"], [peekHeight]);
 
   const titleStyle = useAnimatedStyle(() => ({
     transform: [{ scale: interpolate(p.value, [0, 1], [PEEK_SCALE, 1]) }],
@@ -369,8 +370,7 @@ export function MineSheet({
     <Sheet
       ref={sheet}
       open={!!current}
-      // Held at the record while it is open there, whichever of its heights.
-      index={expanded ? Math.max(1, target) : 0}
+      index={expanded ? 1 : 0}
       snapPoints={snapPoints}
       enableDynamicSizing={false}
       enablePanDownToClose
@@ -533,7 +533,7 @@ export function MineSheet({
           fact, so the list still soaks up part of each swipe and soft ones fall
           short of the next height and spring back. */}
       <BottomSheetScrollView
-        scrollEnabled={target === 2}
+        scrollEnabled={up}
         contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 32 }]}
       >
         {bodyOn && (
