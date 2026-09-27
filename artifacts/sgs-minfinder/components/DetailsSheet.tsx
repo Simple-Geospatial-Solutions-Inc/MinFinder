@@ -235,7 +235,9 @@ export function MineSheet({
   const colBottom = chip ? chipPeekY + m.chipH : metaPeekY + m.badgeH;
   const pairPeekY = Math.max(colBottom, m.headerY + CLOSE) + 16;
   const peekHeight = Math.round(HANDLE + pairPeekY + PILL + insets.bottom + 16);
-  const snapPoints = useMemo(() => [peekHeight, "60%", "100%"], [peekHeight]);
+  // Full height only once the record is out: a hard fling from the peek stops
+  // at the record's height, and a second pull takes it the rest of the way.
+  const snapPoints = useMemo(() => (up ? [peekHeight, "60%", "100%"] : [peekHeight, "60%"]), [peekHeight, up]);
 
   const titleStyle = useAnimatedStyle(() => ({
     transform: [{ scale: interpolate(p.value, [0, 1], [PEEK_SCALE, 1]) }],
