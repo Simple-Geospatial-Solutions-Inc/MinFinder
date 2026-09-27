@@ -529,33 +529,36 @@ export function MineSheet({
         )}
       </View>
 
-      {/* Scrolls only at full height. Below it gorhom locks the scroll after the
-          fact, so the list still soaks up part of each swipe and soft ones fall
-          short of the next height and spring back. */}
+      {bodyOn && reportable && tab !== "details" ? (
+        // Free and Pro alike: comments and searches are for everyone; the exact
+        // points inside stay behind the same gate as the coordinates. Brings its
+        // own list, so its add button can stay put above it.
+        <FieldReports
+          mine={{
+            minfilno,
+            name: occurrence.NAME1?.trim() || `MINFILE ${minfilno}`,
+            published: { lat: occurrence.LATITUDE!, lon: occurrence.LONGITUDE! },
+          }}
+          reports={reports}
+          state={reportsState}
+          section={tab}
+          isPaid={isPaid}
+          scrollEnabled={up}
+          bottomInset={insets.bottom + 32}
+          onLeave={onClose}
+          onRequestUpgrade={onRequestUpgrade}
+        />
+      ) : (
+      /* Scrolls only at full height. Below it gorhom locks the scroll after the
+         fact, so the list still soaks up part of each swipe and soft ones fall
+         short of the next height and spring back. */
       <BottomSheetScrollView
         scrollEnabled={up}
         contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 32 }]}
       >
         {bodyOn && (
           <Animated.View style={[styles.rest, restStyle]} {...side(up)}>
-
-          {/* Free and Pro alike: comments and searches are for everyone; the exact
-              points inside stay behind the same gate as the coordinates. */}
-          {reportable && tab !== "details" ? (
-            <FieldReports
-              mine={{
-                minfilno,
-                name: occurrence.NAME1?.trim() || `MINFILE ${minfilno}`,
-                published: { lat: occurrence.LATITUDE!, lon: occurrence.LONGITUDE! },
-              }}
-              reports={reports}
-              state={reportsState}
-              section={tab}
-              isPaid={isPaid}
-              onLeave={onClose}
-              onRequestUpgrade={onRequestUpgrade}
-            />
-          ) : !isPaid ? (
+          {!isPaid ? (
             // Free tier keeps the summary above (name, status, MINFILNO) and swaps
             // the full record for an upgrade prompt.
             <View style={[styles.upsell, { backgroundColor: colors.muted }]}>
@@ -610,6 +613,7 @@ export function MineSheet({
           </Animated.View>
         )}
       </BottomSheetScrollView>
+      )}
     </Sheet>
   );
 }
