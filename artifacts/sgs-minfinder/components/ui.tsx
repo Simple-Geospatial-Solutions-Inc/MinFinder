@@ -392,7 +392,7 @@ export function Sheet({
   useEffect(() => {
     if (open === false) inner.current?.close();
     // Reopened mid-close: take the sheet back up before onClose fires.
-    else if (open) inner.current?.snapToIndex(0);
+    else if (open) inner.current?.snapToIndex(props.index ?? 0);
   }, [open]);
   useImperativeHandle(ref, () => inner.current!, [mounted]);
 

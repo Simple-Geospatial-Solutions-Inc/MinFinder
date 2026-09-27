@@ -43,12 +43,11 @@ import {
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { DetailsSheet } from "@/components/DetailsSheet";
+import { MineSheet } from "@/components/DetailsSheet";
 import { OfflineRegionPill } from "@/components/OfflineRegionPill";
 import { PillMenu } from "@/components/PillMenu";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { SatelliteCredit } from "@/components/SatelliteCredit";
-import { QuickInfoCard } from "@/components/QuickInfoCard";
 import { SearchMatchesPill } from "@/components/SearchMatchesPill";
 import {
   floating,
@@ -327,13 +326,12 @@ export default function MapScreen() {
 
   // All occurrences with coords, loaded once.
   const [allRows, setAllRows] = useState<Occurrence[]>([]);
-  // Two-tier popup: tapping a marker shows `quickInfo` (the peek sheet). Its
-  // Details button promotes that occurrence into `selected`, which opens the
-  // full DetailsSheet. DetailsSheet gates its own body and Navigate
-  // button on the Pro entitlement, so search picks (which skip quickInfo
-  // entirely) stay behind the paywall too.
+  // Two-tier popup: tapping a marker shows `quickInfo` (the mine sheet as a
+  // peek). Pulling it up, or its Details button, promotes that occurrence into
+  // `selected`, the same sheet as the full record. MineSheet gates its own body
+  // and Navigate button on the Pro entitlement, so search picks (which skip
+  // quickInfo entirely) stay behind the paywall too.
   const [quickInfo, setQuickInfo] = useState<Occurrence | null>(null);
-  const [peekKey, setPeekKey] = useState(0);
   const [selected, setSelected] = useState<Occurrence | null>(null);
   // Search hits carry which of the occurrence's names matched, so a row found by
   // an old claim name can show that name rather than the primary one.
@@ -352,7 +350,7 @@ export default function MapScreen() {
   // through `matchedNameById` — but the row the user tapped was titled with the
   // matched name, and the sheet must not silently drop it.
   const [pickedMatch, setPickedMatch] = useState<string | null>(null);
-  // Paywall lives here rather than inside DetailsSheet, which unmounts as it
+  // Paywall lives here rather than inside MineSheet, which unmounts as it
   // hands a free user over to the paywall.
   const [paywallFor, setPaywallFor] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -646,7 +644,11 @@ export default function MapScreen() {
         cameraRef.current?.flyTo({ center: [lng, lat], zoom, duration: 400 });
       } else if (props.id != null) {
         const occ = occById.get(props.id);
-        if (occ) setQuickInfo(occ);
+        if (occ) {
+          // A new pin opens as a peek, even over an open record.
+          setSelected(null);
+          setQuickInfo(occ);
+        }
       }
     },
     [occById],
@@ -1320,33 +1322,20 @@ export default function MapScreen() {
         <SatelliteCredit top={insets.top + TOP_BAR_HEIGHT + 8 + (slotTaken ? REGION_PILL_HEIGHT + 8 : 0)} />
       )}
 
-      {/* Details opens on top of the card, which stays put underneath until
-          the sheet is drawn, then goes at once (a fresh key, not a slide down). */}
-      <QuickInfoCard
-        key={peekKey}
-        occurrence={quickInfo}
-        matchedName={quickInfoMatch}
-        onClose={() => setQuickInfo(null)}
+      <MineSheet
+        occurrence={quickInfo ?? selected}
+        matchedName={quickInfo ? quickInfoMatch : selectedMatch}
+        expanded={!quickInfo && !!selected}
         onExpand={() => {
           if (!quickInfo) return;
           setPickedMatch(null);
           setSelected(quickInfo);
+          setQuickInfo(null);
         }}
-        onRequestUpgrade={setPaywallFor}
-      />
-
-      <DetailsSheet
-        occurrence={selected}
-        matchedName={selectedMatch}
-        onHandoff={
-          quickInfo && selected
-            ? () => {
-                setQuickInfo(null);
-                setPeekKey((k) => k + 1);
-              }
-            : undefined
-        }
-        onClose={() => setSelected(null)}
+        onClose={() => {
+          setQuickInfo(null);
+          setSelected(null);
+        }}
         // The paywall stacks over the mine: buying unlocks the open sheet in place.
         onRequestUpgrade={setPaywallFor}
       />
