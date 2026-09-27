@@ -2,7 +2,7 @@ import { useSubscription } from "@/lib/revenuecat";
 
 /**
  * Entitlement gate for premium features (Navigate-to-compass and full
- * DetailsSheet body). Returns `{ isPaid, isReady }`.
+ * MineSheet body). Returns `{ isPaid, isReady }`.
  *
  * Backed by RevenueCat via `SubscriptionProvider` mounted in `app/_layout.tsx`.
  * Reflects the active "SGS MinFinder Pro" entitlement from the user's CustomerInfo.

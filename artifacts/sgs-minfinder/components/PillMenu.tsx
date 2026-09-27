@@ -224,7 +224,7 @@ function Option({
 const styles = StyleSheet.create({
   window: { position: "absolute", top: 0, bottom: 0, right: 0, overflow: "hidden" },
   row: { position: "absolute", top: 0, bottom: 0, right: 4, flexDirection: "row" },
-  option: { flex: 1, alignItems: "center", justifyContent: "center" },
+  option: { flexGrow: 1, flexShrink: 1, flexBasis: "auto", alignItems: "center", justifyContent: "center" },
   content: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 },
   label: { fontFamily: "Inter_600SemiBold", fontSize: 14, flexShrink: 1 },
   divider: { position: "absolute", left: 0, top: (HEIGHT - 24) / 2, width: StyleSheet.hairlineWidth, height: 24 },

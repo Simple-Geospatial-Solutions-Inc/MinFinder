@@ -4,7 +4,7 @@ import BottomSheet, {
   type BottomSheetProps,
 } from "@gorhom/bottom-sheet";
 import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 
 import { Feather, type FeatherIconName } from "@/components/Icon";
@@ -376,6 +376,15 @@ export function ListRow({
  * before unmounting when it turns false. `onClose` then only reports closes
  * the user started: a swipe, a backdrop tap.
  */
+// Gorhom's iOS spring, made to finish. Gorhom stops it with rest thresholds that
+// Reanimated 4 no longer reads; on its default energy threshold this heavily
+// overdamped spring creeps the last fraction of a point for seconds. Until it
+// ends gorhom treats the sheet as still opening, and a drag in that time is
+// undone by the next re-render. Android's default is a timing curve, and ends.
+const SPRING = Platform.select({
+  ios: { damping: 500, stiffness: 1000, mass: 3, overshootClamping: true, energyThreshold: 1e-5 },
+});
+
 export function Sheet({
   ref,
   open,
@@ -389,10 +398,20 @@ export function Sheet({
   if (open && !mounted) setMounted(true);
   const openRef = useRef(open);
   openRef.current = open;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  // Kept stable: gorhom re-runs its placement whenever this changes, and one
+  // that lands before its mount animation has finished sends the sheet back to
+  // where it opened.
+  const handleClose = useCallback(() => {
+    if (openRef.current === undefined) return onCloseRef.current?.();
+    setMounted(false);
+    if (openRef.current) onCloseRef.current?.();
+  }, []);
   useEffect(() => {
     if (open === false) inner.current?.close();
     // Reopened mid-close: take the sheet back up before onClose fires.
-    else if (open) inner.current?.snapToIndex(0);
+    else if (open) inner.current?.snapToIndex(props.index ?? 0);
   }, [open]);
   useImperativeHandle(ref, () => inner.current!, [mounted]);
 
@@ -416,11 +435,8 @@ export function Sheet({
       handleIndicatorStyle={[styles.handle, { backgroundColor: colors.border }]}
       backdropComponent={backdrop ? renderBackdrop : undefined}
       style={floating}
-      onClose={() => {
-        if (open === undefined) return onClose?.();
-        setMounted(false);
-        if (openRef.current) onClose?.();
-      }}
+      animationConfigs={SPRING}
+      onClose={handleClose}
       {...props}
     />
   );

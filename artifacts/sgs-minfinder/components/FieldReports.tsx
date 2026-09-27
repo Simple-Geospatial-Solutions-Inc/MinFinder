@@ -1,14 +1,15 @@
+import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { LinearTransition } from "react-native-reanimated";
 
 import { MAX_ACCURACY_M, useLiveFix, type LiveFix } from "@/components/capture/gps";
 import { MineGlyph } from "@/components/capture/MineGlyph";
 import { reportStatus, StatusChip } from "@/components/capture/StatusChip";
 import { Feather, type FeatherIconName } from "@/components/Icon";
-import { Chip, ListRow, PillButton, radius, TextButton, type } from "@/components/ui";
+import { Chip, GUTTER, ListRow, PillButton, radius, TextButton, type } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 import { API_URL, authHeader, useSignedIn } from "@/lib/auth";
 import { bearingDegrees, bearingToCompass, distanceMeters, formatDistance } from "@/lib/geo";
@@ -180,6 +181,10 @@ export function FieldReports({
   state: ReportsState;
   section: ReportSection;
   isPaid: boolean;
+  /** The list scrolls only at the sheet's full height, as the record's does. */
+  scrollEnabled: boolean;
+  /** Room below the list for the home indicator. */
+  bottomInset: number;
   /** Called before navigating away, so the sheet can close. */
   onLeave: () => void;
   onRequestUpgrade: (feature: string) => void;
@@ -202,6 +207,8 @@ function ReportList({
   section,
   isPaid,
   fix,
+  scrollEnabled,
+  bottomInset,
   onLeave,
   onRequestUpgrade,
 }: {
@@ -211,6 +218,8 @@ function ReportList({
   section: ReportSection;
   isPaid: boolean;
   fix: LiveFix | null;
+  scrollEnabled: boolean;
+  bottomInset: number;
   onLeave: () => void;
   onRequestUpgrade: (feature: string) => void;
 }) {
@@ -282,9 +291,10 @@ function ReportList({
   const sub = { color: colors.mutedForeground };
 
   return (
-    <View style={styles.section}>
-      {/* The same quiet row on both tabs, so adding never outshouts what's already here. */}
-      <View style={styles.sectionHead}>
+    <>
+      {/* The same quiet row on both tabs, so adding never outshouts what's already
+          here; held above the list, so adding is never a scroll away. */}
+      <View style={[styles.sectionHead, styles.pinned]}>
         <Text style={[type.meta, state === "error" ? { color: colors.destructive } : sub, { flex: 1 }]}>
           {state === "loading"
             ? "Loading…"
@@ -310,6 +320,10 @@ function ReportList({
         />
       </View>
 
+      <BottomSheetScrollView
+        scrollEnabled={scrollEnabled}
+        contentContainerStyle={[styles.section, styles.list, { paddingBottom: bottomInset }]}
+      >
       {summary.best && (
         <Banner tone="ok" icon="check" title={`Better location confirmed by ${summary.best.confirms} visitors`}>
           {`The ${LABEL_TEXT[summary.best.label!].toLowerCase()} is ${place(summary.best, mine, isPaid)}. Last visit ${day(summary.best.last_visit_at!)}.`}
@@ -393,7 +407,8 @@ function ReportList({
           <TextButton label={showHidden ? "Hide" : "Show"} onPress={() => setShowHidden((s) => !s)} />
         </View>
       )}
-    </View>
+      </BottomSheetScrollView>
+    </>
   );
 }
 
@@ -557,17 +572,7 @@ function ReportItem({
           </Text>
           <TextButton label="Delete" icon="trash-2" tone="destructive" onPress={() => confirmDelete(r)} />
         </View>
-      ) : theirs(r) && r.kind === "note" ? (
-        <View style={styles.chips}>
-          <Chip
-            label={`Helpful${helpfulCount(r, response) ? ` · ${helpfulCount(r, response)}` : ""}`}
-            role="checkbox"
-            selected={!!response?.helpful}
-            onPress={onHelpful}
-            icon={(c) => <Feather name="thumbs-up" size={16} color={c} />}
-          />
-        </View>
-      ) : theirs(r) ? (
+      ) : theirs(r) && r.kind !== "note" ? (
         <View style={{ gap: 6 }}>
           {here ? (
             <View style={styles.chips} accessibilityRole="radiogroup">
@@ -602,9 +607,7 @@ function ReportItem({
       ) : null}
 
       {theirs(r) &&
-        (flagged ? (
-          <Text style={[type.meta, sub]}>Thanks. SGS will take a look.</Text>
-        ) : flagging ? (
+        (flagging ? (
           <View style={[styles.menu, { borderColor: colors.border }]}>
             {REPORT_REASONS.map(([reason, text]) => (
               <ListRow key={reason} onPress={() => void flag(reason)} accessibilityLabel={text}>
@@ -617,7 +620,31 @@ function ReportItem({
             </View>
           </View>
         ) : (
-          <TextButton label="Flag" icon="flag" onPress={() => (signedIn ? setFlagging(true) : askSignIn("flag it"))} />
+          <View style={styles.ownRow}>
+            {flagged ? (
+              <Text style={[type.meta, sub, styles.shrink]}>Thanks. SGS will take a look.</Text>
+            ) : (
+              <TextButton label="Flag" icon="flag" onPress={() => (signedIn ? setFlagging(true) : askSignIn("flag it"))} />
+            )}
+            {/* Tucked in the corner, just the thumb and its count, so it never competes with the comment. */}
+            {r.kind === "note" && (
+              <Pressable
+                onPress={onHelpful}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: !!response?.helpful }}
+                accessibilityLabel={`Helpful${helpfulCount(r, response) ? `, ${helpfulCount(r, response)}` : ""}`}
+                hitSlop={{ left: 12, right: 8 }}
+                style={({ pressed }) => [styles.helpful, { opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Feather name="thumbs-up" size={16} color={response?.helpful ? colors.primary : colors.mutedForeground} />
+                {!!helpfulCount(r, response) && (
+                  <Text style={[type.meta, { color: response?.helpful ? colors.primary : colors.mutedForeground }]}>
+                    {helpfulCount(r, response)}
+                  </Text>
+                )}
+              </Pressable>
+            )}
+          </View>
         ))}
       {error && (
         <Text style={[type.meta, { color: colors.destructive }]} accessibilityLiveRegion="polite">
@@ -677,8 +704,11 @@ function MenuRow({
 
 const styles = StyleSheet.create({
   section: { gap: 12 },
+  helpful: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 44, marginLeft: "auto" },
   ownRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   sectionHead: { flexDirection: "row", alignItems: "center", gap: 12 },
+  pinned: { paddingHorizontal: GUTTER, paddingTop: 24, paddingBottom: 12 },
+  list: { paddingHorizontal: GUTTER },
   banner: {
     flexDirection: "row",
     gap: 10,
