@@ -54,7 +54,7 @@ Google's form doesn't ask about those.)
 
 Keep whatever 1.1 declared for purchases.
 
-**Account deletion (Guideline 5.1.1(v)):** in-app, at menu → Reports → Account → Delete account.
+**Account deletion (Guideline 5.1.1(v)):** in-app, at menu →My reports → Account → Delete account.
 
 ## App Review notes for 1.2.0
 
@@ -73,7 +73,7 @@ with the reviewer's own Apple ID, so there is no demo account.
 >
 > To try it: tap any mine on the map → Details → the Reports and Comments tabs. KELOWNA (search
 > "Kelowna") has a comment from another member, so you can mark it Helpful, flag it ("Flag")
-> and block its author. You can add your own comment from anywhere.
+> and block its author (Flag → "Block this member"). You can add your own comment from anywhere.
 >
 > Marking a location, "Couldn't find it" and Confirm/Dispute need a GPS fix within 75 m of a mine in
 > British Columbia, so they can't be tried from outside BC. This video shows them on site:
@@ -86,7 +86,7 @@ with the reviewer's own Apple ID, so there is no demo account.
 > to the Terms of Use, which prohibit objectionable content, when signing in. Your first reports
 > during review will show as "In review" for that reason.
 >
-> Account deletion: menu → Reports → Account → Delete account. Contact: support@sgss.ca.
+> Account deletion: menu →My reports → Account → Delete account. Contact: support@sgss.ca.
 
 ### Google Play: App content → App access
 
@@ -97,11 +97,15 @@ Choose "All or some functionality is restricted", then add one set of instructio
 - **Password:** its password
 - **Any other information:**
 
-> Tap "Sign in with Google" under menu → Reports and use the account above. Reports and comments are
+> Tap "Sign in with Google" under menu →My reports and use the account above. Reports and comments are
 > under a mine's Details → Reports / Comments; KELOWNA has a comment from another member to mark
-> Helpful or flag. Marking a location and confirming others' reports need GPS within 75 m of a BC
-> mine; this video shows them on site: <VIDEO_URL>. Account deletion: menu → Reports → Account →
-> Delete account.
+> Helpful, flag, or block its author (Flag → "Block this member"). Marking a location and confirming others' reports need GPS within 75 m of a BC
+> mine; this video shows them on site: <VIDEO_URL>. MinFinder Pro (exact coordinates of reported
+> points): menu → About → Redeem a promo code, and enter <PROMO_CODE>. Account deletion: menu →My reports → Account → Delete account.
+
+Tick "Sign in details in this declaration provide full access…". Strictly, Pro follows the Play
+Store account, not the sign-in, so the promo code is what makes that literally true. It's optional:
+earlier versions were approved without one. If you skip it, drop the Pro sentence above.
 
 ## Before publishing
 
@@ -114,6 +118,8 @@ Choose "All or some functionality is restricted", then add one set of instructio
 - **Review Google account:** create one only for Play review (for example
   `minfinder.review@gmail.com`), with 2-step verification off so a sign-in from Google's review
   location isn't blocked. Put its details in Play Console only, never in this repo.
+- **Optional, a Pro promo code for Play review:** Play Console → Monetize → Promo codes, for the lifetime
+  product. Replace `<PROMO_CODE>` with it. It works whichever Play account the reviewer's phone uses.
 - **A comment on KELOWNA from a staff account**, approved in `/admin`. Reviewers can't mark their
   own comment Helpful or flag it, so they need someone else's to try those.
 - **The on-site video:** a screen recording at a real mine of marking an adit (including the "more
