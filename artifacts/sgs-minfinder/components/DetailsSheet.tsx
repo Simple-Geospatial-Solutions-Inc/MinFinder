@@ -332,7 +332,13 @@ export function MineSheet({
       topInset={insets.top}
       onClose={onClose}
     >
-      <BottomSheetScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}>
+      {/* Scrolls only at full height. Below it gorhom locks the scroll after the
+          fact, so the list still soaks up part of each swipe and soft ones fall
+          short of the next height and spring back. */}
+      <BottomSheetScrollView
+        scrollEnabled={target === 2}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
+      >
         <View style={styles.header} onLayout={measure("headerY", "y")}>
           <View style={styles.titleCol}>
             {/* The peek leads with the matched name, as the search dropdown
