@@ -302,6 +302,17 @@ export function MineSheet({
     return { opacity: t, transform: [{ translateY: (1 - t) * 12 }] };
   });
 
+  // Stable for the same reason as Sheet's onClose: a new one each render has
+  // gorhom re-place the sheet, and mid-open that undoes the first swipe.
+  const onExpandRef = useRef(onExpand);
+  onExpandRef.current = onExpand;
+  const onAnimate = useCallback((from: number, to: number) => {
+    // Pulled down from the record: close rather than settle on the peek.
+    if (from >= 1 && to === 0 && expandedRef.current) return sheet.current?.close();
+    setTarget(Math.max(to, 0));
+    if (to >= 1 && !expandedRef.current) onExpandRef.current();
+  }, []);
+
   const reduceMotion = useReducedMotion();
   const toggleNames = useCallback(() => {
     if (!reduceMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -330,12 +341,6 @@ export function MineSheet({
     router.push({ pathname: "/compass", params: { id: String(occurrence.id) } });
   };
 
-  const onAnimate = (from: number, to: number) => {
-    // Pulled down from the record: close rather than settle on the peek.
-    if (from >= 1 && to === 0 && expandedRef.current) return sheet.current?.close();
-    setTarget(Math.max(to, 0));
-    if (to >= 1 && !expandedRef.current) onExpand();
-  };
 
   const name = occurrence.NAME1 || "Unnamed";
   const title = (text: string) => (
