@@ -54,7 +54,7 @@ Google's form doesn't ask about those.)
 
 Keep whatever 1.1 declared for purchases.
 
-**Account deletion (Guideline 5.1.1(v)):** in-app, at menu →My reports → Account → Delete account.
+**Account deletion (Guideline 5.1.1(v)):** in-app, at menu → My reports → Account → Delete account.
 
 ## App Review notes for 1.2.0
 
@@ -86,7 +86,7 @@ with the reviewer's own Apple ID, so there is no demo account.
 > to the Terms of Use, which prohibit objectionable content, when signing in. Your first reports
 > during review will show as "In review" for that reason.
 >
-> Account deletion: menu →My reports → Account → Delete account. Contact: support@sgss.ca.
+> Account deletion: menu → My reports → Account → Delete account. Contact: support@sgss.ca.
 
 ### Google Play: App content → App access
 
@@ -97,11 +97,11 @@ Choose "All or some functionality is restricted", then add one set of instructio
 - **Password:** its password
 - **Any other information:**
 
-> Tap "Sign in with Google" under menu →My reports and use the account above. Reports and comments are
+> Tap "Sign in with Google" under menu → My reports and use the account above. Reports and comments are
 > under a mine's Details → Reports / Comments; KELOWNA has a comment from another member to mark
 > Helpful, flag, or block its author (Flag → "Block this member"). Marking a location and confirming others' reports need GPS within 75 m of a BC
 > mine; this video shows them on site: <VIDEO_URL>. MinFinder Pro (exact coordinates of reported
-> points): menu → About → Redeem a promo code, and enter <PROMO_CODE>. Account deletion: menu →My reports → Account → Delete account.
+> points): menu → About → Redeem a promo code, and enter <PROMO_CODE>. Account deletion: menu → My reports → Account → Delete account.
 
 Tick "Sign in details in this declaration provide full access…". Strictly, Pro follows the Play
 Store account, not the sign-in, so the promo code is what makes that literally true. It's optional:
